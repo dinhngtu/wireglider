@@ -8,13 +8,16 @@ LDLIBS+=-pthread
 
 CPPFLAGS+=-I/lib/modules/$(shell uname -r)/build/usr/include
 
+# make
 TDUTIL_ROOT?=$(realpath ../tdutil)
 CPPFLAGS+=-I$(TDUTIL_ROOT)/include
 LDFLAGS+=-L$(TDUTIL_ROOT)
 LDLIBS+=-ltdutil
 
-#LIBURING_ROOT?=$(realpath ../liburing)
-#CPPFLAGS+=-I$(LIBURING_ROOT)/src/include
+LIBURING_ROOT?=$(realpath ../liburing)
+CPPFLAGS+=-I$(LIBURING_ROOT)/src/include
+LDFLAGS+=-L$(LIBURING_ROOT)/src
+LDLIBS+=-Wl,-Bstatic -luring -Wl,-Bdynamic
 
 # ./b2 variant=release link=static runtime-link=shared stage
 BOOST_ROOT?=$(realpath ../boost_1_85_0)
@@ -25,25 +28,28 @@ LDLIBS+=
 CXXOPTS_ROOT?=$(realpath ../cxxopts)
 CPPFLAGS+=-I$(CXXOPTS_ROOT)/include
 
+# cargo build --release
 BORINGTUN_ROOT?=$(realpath ../boringtun)
 CPPFLAGS+=-I$(BORINGTUN_ROOT)/boringtun/src
 LDFLAGS+=-L$(BORINGTUN_ROOT)/target/release
 LDLIBS+=-lboringtun
 
+# mkdir build; cd build; cmake ..; make
 FMT_ROOT?=$(realpath ../fmt)
 CPPFLAGS+=-I$(FMT_ROOT)/include
 LDFLAGS+=-L$(FMT_ROOT)/build
 LDLIBS+=-lfmt
 
+# mkdir -p out/release; cd out/release; cmake ../..; make
 MIMALLOC_ROOT?=$(realpath ../mimalloc)
 CPPFLAGS+=-I$(MIMALLOC_ROOT)/include
 LDFLAGS+=-L$(MIMALLOC_ROOT)/out/release
-LDLIBS+=-lmimalloc
+LDLIBS+=-Wl,-Bstatic -lmimalloc -Wl,-Bdynamic
 
 XXHASH_ROOT?=$(realpath ../xxHash)
 CPPFLAGS+=-I$(XXHASH_ROOT) -DXXH_INLINE_ALL
 
-# build$ cmake .. -DLIBTINS_BUILD_SHARED=0 -DLIBTINS_ENABLE_CXX11=1
+# mkdir build; cd build; cmake .. -DLIBTINS_BUILD_SHARED=0 -DLIBTINS_ENABLE_CXX11=1; make
 #TINS_ROOT?=$(realpath ../libtins)
 #CPPFLAGS+=-I$(TINS_ROOT)/include
 #LDFLAGS+=-L$(TINS_ROOT)/build/lib
