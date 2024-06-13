@@ -14,7 +14,10 @@
                 "${workspaceFolder}/../libtins/include",
                 "${workspaceFolder}/../xxHash"
             ],
-            "defines": [],
+            "defines": [
+                "_GNU_SOURCE",
+                "_FILE_OFFSET_BITS=64"
+            ],
             "compilerPath": "/usr/bin/gcc",
             "intelliSenseMode": "linux-gcc-x64",
             "cppStandard": "c++20",

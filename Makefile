@@ -1,7 +1,7 @@
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
 CPPFLAGS+=-Iinclude
-CFLAGS+=-Wall -Wextra -Wformat=2 -Wshadow -Werror=return-type -std=c11 -fwrapv
-CXXFLAGS+=-Wall -Wextra -Wformat=2 -Wshadow -Werror=return-type -std=c++20 -fwrapv
+CFLAGS+=-Wall -Wextra -Wformat=2 -Wshadow -Werror=return-type -std=c11 -fwrapv -march=x86-64-v3
+CXXFLAGS+=-Wall -Wextra -Wformat=2 -Wshadow -Werror=return-type -std=c++20 -fwrapv -march=x86-64-v3
 
 CPPFLAGS+=-pthread
 LDLIBS+=-pthread
@@ -44,10 +44,10 @@ XXHASH_ROOT?=$(realpath ../xxHash)
 CPPFLAGS+=-I$(XXHASH_ROOT) -DXXH_INLINE_ALL
 
 # build$ cmake .. -DLIBTINS_BUILD_SHARED=0 -DLIBTINS_ENABLE_CXX11=1
-TINS_ROOT?=$(realpath ../libtins)
-CPPFLAGS+=-I$(TINS_ROOT)/include
-LDFLAGS+=-L$(TINS_ROOT)/build/lib
-LDLIBS+=-ltins
+#TINS_ROOT?=$(realpath ../libtins)
+#CPPFLAGS+=-I$(TINS_ROOT)/include
+#LDFLAGS+=-L$(TINS_ROOT)/build/lib
+#LDLIBS+=-ltins
 
 ifeq ($(DEBUG), 1)
 	CPPFLAGS+=-DDEBUG=1
@@ -97,7 +97,7 @@ all: $(TARGETS)
 $(TARGETS): %: %.cpp $(OBJ_MIMALLOC)
 	$(LINK.cpp) $(OBJ_MIMALLOC) $< $(filter-out $(OBJ_MIMALLOC),$(filter %.o,$^)) $(LOADLIBES) $(LDLIBS) -o $@
 
-wgss: worker.o netutil.o
+wgss: worker.o netutil.o checksum.o checksum-x64.o
 
 clean:
 	$(RM) $(TARGETS)

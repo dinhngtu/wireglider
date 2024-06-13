@@ -3,9 +3,10 @@
 #include <memory>
 #include <vector>
 #include <mutex>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
 #include <tdutil/epollman.hpp>
 #include <wireguard_ffi.h>
-#include <tins/tins.h>
 #include <boost/unordered/concurrent_flat_map.hpp>
 #include <xxhash.h>
 
@@ -14,6 +15,7 @@
 
 namespace boost {
 
+/*
 static inline std::size_t hash_value(const Tins::IPv4Address &a) {
     return a;
 }
@@ -21,6 +23,7 @@ static inline std::size_t hash_value(const Tins::IPv4Address &a) {
 static inline std::size_t hash_value(const Tins::IPv6Address &a) {
     return XXH3_64bits(a.begin(), a.address_size);
 }
+*/
 
 } // namespace boost
 
@@ -33,14 +36,14 @@ struct WorkerArg {
     bool srv_v6;
 };
 
-using ClientAddress = std::variant<Tins::IPv4Address, Tins::IPv6Address>;
+// using ClientAddress = std::variant<Tins::IPv4Address, Tins::IPv6Address>;
+struct ClientAddress {};
 
 struct Client {
     uint32_t index;
-    struct {
-        std::mutex mutex;
-        wireguard_tunnel *tunnel;
-    };
+    std::mutex mutex;
+    // protected by mutex:
+    wireguard_tunnel *tunnel;
 };
 
 class Worker {
@@ -57,8 +60,8 @@ private:
     void do_server(epoll_event *ev);
 
     constexpr size_t calc_overhead() {
-        size_t ret = sizeof(udphdr) + sizeof(32);
-        ret += _arg.srv_v6 ? sizeof(ipv6hdr) : sizeof(iphdr);
+        size_t ret = sizeof(udphdr) + 32;
+        ret += _arg.srv_v6 ? sizeof(ip6_hdr) : sizeof(iphdr);
         return ret;
     }
 

@@ -2,9 +2,10 @@
 #include <array>
 #include <utility>
 #include <span>
-#include <linux/ip.h>
-#include <linux/tcp.h>
-#include <linux/udp.h>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
 #include <fmt/format.h>
 #include <boost/endian.hpp>
 #include <tdutil/io.hpp>
@@ -90,11 +91,11 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll
     static std::vector<uint8_t> _recvbuf(65536 + sizeof(virtio_net_hdr));
     auto msize = read(_arg.tun->fd(), _recvbuf.data(), _recvbuf.size());
     if (msize < 0)
-        return;
+        return {};
     auto rest = std::span(_recvbuf).subspan(0, msize);
 
     if (rest.size() < sizeof(virtio_net_hdr))
-        return;
+        return {};
     auto vnethdr = *reinterpret_cast<virtio_net_hdr *>(rest.data());
     rest = rest.subspan(sizeof(virtio_net_hdr));
 
@@ -105,9 +106,9 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll
     auto l4_csum_offset = vnethdr.csum_start + vnethdr.csum_offset;
     convert_span<uint16_t>(rest.subspan(l4_csum_offset, sizeof(uint16_t)))[0] = 0;
 
-    bool tcp = vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV4 || vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV6;
+    bool istcp = vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV4 || vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV6;
     uint32_t tcpseq0;
-    if (tcp)
+    if (istcp)
         tcpseq0 = big_to_native(reinterpret_cast<tcphdr *>(&rest[vnethdr.csum_start])->seq);
 
     auto seghdr = rest.subspan(0, vnethdr.hdr_len);
@@ -138,11 +139,11 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll
             }
             ip->tot_len = outbuf.size();
             native_to_big_inplace(ip->tot_len);
-            ip->check = ~checksum(std::span(outbuf).subspan(0, vnethdr.csum_start), 0);
+            ip->check = checksum(std::span(outbuf).subspan(0, vnethdr.csum_start), 0);
             native_to_big_inplace(ip->check);
         }
 
-        if (tcp) {
+        if (istcp) {
             // set TCP seq and adjust TCP flags
             auto tcp = reinterpret_cast<tcphdr *>(&outbuf[vnethdr.csum_start]);
             auto &tcpseq = tcp->seq;
@@ -159,25 +160,29 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll
         }
 
         uint32_t &l4_csum = *reinterpret_cast<uint32_t *>(&outbuf[l4_csum_offset]);
-        auto addroff = _arg.tun_v6 ? offsetof(ipv6hdr, saddr) : offsetof(iphdr, saddr);
+        auto addroff = _arg.tun_v6 ? offsetof(ip6_hdr, ip6_src) : offsetof(iphdr, saddr);
         auto addrsize = _arg.tun_v6 ? 16 : 4;
         auto srcaddr = outbuf.subspan(addroff, addrsize);
         auto dstaddr = outbuf.subspan(addroff + addrsize, addrsize);
-        l4_csum = pseudo_header_checksum(tcp ? IPPROTO_TCP : IPPROTO_UDP, srcaddr, dstaddr, outbuf.size());
-        l4_csum = ~checksum(outbuf.subspan(vnethdr.csum_start), l4_csum);
+        l4_csum = pseudo_header_checksum(istcp ? IPPROTO_TCP : IPPROTO_UDP, srcaddr, dstaddr, outbuf.size());
+        l4_csum = checksum(outbuf.subspan(vnethdr.csum_start), l4_csum);
         native_to_big_inplace(l4_csum);
 
         // to next packet
         rest = rest.subspan(datalen);
     }
+
+    return vnethdr;
 }
 
 void Worker::do_server_write(virtio_net_hdr vnethdr, std::vector<std::vector<uint8_t>> &out) {
-    ClientAddress addr = Tins::IPv4Address();
+    // ClientAddress addr = Tins::IPv4Address();
+    ClientAddress addr;
     Client *client = nullptr;
     bool first = true;
     std::unique_lock<std::mutex> client_lock;
 
+    /*
     std::vector<uint8_t> encbuf(vnethdr.hdr_len + vnethdr.gso_size + _overhead);
     for (auto &pkt : out) {
         auto res = wireguard_write(client->tunnel, pkt.data(), pkt.size() - _overhead, encbuf.data(), encbuf.size());
@@ -185,6 +190,7 @@ void Worker::do_server_write(virtio_net_hdr vnethdr, std::vector<std::vector<uin
             room = room.subspan(res.size);
         }
     }
+    */
 
     // TODO
     /*
