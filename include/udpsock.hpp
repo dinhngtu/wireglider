@@ -15,13 +15,7 @@ public:
         _sock = tdutil::FileDescriptor(socket(AF_INET, SOCK_DGRAM, 0));
         _sock.check();
 
-        int rup = 1;
-        if (setsockopt(_sock, SOL_SOCKET, SO_REUSEPORT, &rup, sizeof(rup)) < 0)
-            throw std::system_error(errno, std::system_category(), "setsockopt(SO_REUSEPORT)");
-
-        int gro = 1;
-        if (setsockopt(_sock, SOL_UDP, UDP_GRO, &gro, sizeof(gro)) < 0)
-            throw std::system_error(errno, std::system_category(), "setsockopt(UDP_GRO)");
+        set_offloads();
 
         if (bind(_sock, reinterpret_cast<sockaddr *>(&sin), sizeof(sin)) < 0)
             throw std::system_error(errno, std::system_category(), "bind");
@@ -33,8 +27,12 @@ public:
         _sock = tdutil::FileDescriptor(socket(AF_INET6, SOCK_DGRAM, 0));
         _sock.check();
 
+        set_offloads();
+
         if (bind(_sock, reinterpret_cast<sockaddr *>(&sin6), sizeof(sin6)) < 0)
             throw std::system_error(errno, std::system_category(), "bind");
+
+        _sock.set_nonblock();
     }
 
     constexpr tdutil::FileDescriptor &fd() {
@@ -42,8 +40,19 @@ public:
     }
 
 private:
-    tdutil::FileDescriptor _sock;
+    void set_offloads() {
+        int rup = 1;
+        if (setsockopt(_sock, SOL_SOCKET, SO_REUSEPORT, &rup, sizeof(rup)) < 0)
+            throw std::system_error(errno, std::system_category(), "setsockopt(SO_REUSEPORT)");
+
+        int gro = 1;
+        if (setsockopt(_sock, SOL_UDP, UDP_GRO, &gro, sizeof(gro)) < 0)
+            throw std::system_error(errno, std::system_category(), "setsockopt(UDP_GRO)");
+    }
+
+private:
     std::variant<sockaddr_in, sockaddr_in6> _sin;
+    tdutil::FileDescriptor _sock;
 };
 
 } // namespace wgss
