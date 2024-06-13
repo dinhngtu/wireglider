@@ -38,11 +38,11 @@ LDLIBS+=
 CXXOPTS_ROOT?=$(realpath ../cxxopts)
 CPPFLAGS+=-I$(CXXOPTS_ROOT)/include
 
-# cargo build --release
+# cargo build --lib --release --features "device ffi-bindings"
 BORINGTUN_ROOT?=$(realpath ../boringtun)
 CPPFLAGS+=-I$(BORINGTUN_ROOT)/boringtun/src
 LDFLAGS+=-L$(BORINGTUN_ROOT)/target/release
-LDLIBS+=-lboringtun
+LDLIBS+=-Wl,-Bstatic -lboringtun -Wl,-Bdynamic
 
 # mkdir build; cd build; cmake ..; make
 FMT_ROOT?=$(realpath ../fmt)
@@ -75,7 +75,7 @@ CPPFLAGS+=-I$(XXHASH_ROOT) -DXXH_INLINE_ALL
 URCU_ROOT?=$(realpath ../userspace-rcu)
 CPPFLAGS+=-I$(URCU_ROOT)/include -D_LGPL_SOURCE
 LDFLAGS+=-L$(URCU_ROOT)/src
-LDLIBS+=-Wl,-Bstatic -lurcu-qsbr -Wl,-Bdynamic
+LDLIBS+=-Wl,-Bstatic -lurcu-qsbr -lurcu-cds -Wl,-Bdynamic
 
 # mkdir build; cd build; cmake .. -DLIBTINS_BUILD_SHARED=0 -DLIBTINS_ENABLE_CXX11=1; make
 #TINS_ROOT?=$(realpath ../libtins)

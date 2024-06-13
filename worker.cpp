@@ -125,7 +125,7 @@ std::optional<PacketBatch> Worker::do_tun_read(epoll_event *ev, std::vector<uint
 }
 
 PacketBatch Worker::do_tun_gso_split(PacketBatch &pb, std::vector<uint8_t> &outbuf, const virtio_net_hdr &vnethdr) {
-    auto reserve_size = pb.data.size() + pb.nr_segments() * pb.prefix.size();
+    [[maybe_unused]] auto reserve_size = pb.data.size() + pb.nr_segments() * pb.prefix.size();
     // if (outbuf.size() < reserve_size)
     // outbuf.resize(reserve_size);
     assert(outbuf.size() >= reserve_size);
@@ -139,7 +139,7 @@ PacketBatch Worker::do_tun_gso_split(PacketBatch &pb, std::vector<uint8_t> &outb
     store_big_u16(&pb.prefix[l4_csum_offset], 0);
 
     bool istcp = vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV4 || vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV6;
-    uint32_t tcpseq0;
+    uint32_t tcpseq0 = 0;
     if (istcp)
         tcpseq0 = big_to_native(reinterpret_cast<tcphdr *>(&rest[vnethdr.csum_start])->seq);
 
