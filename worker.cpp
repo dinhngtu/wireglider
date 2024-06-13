@@ -65,26 +65,29 @@ void Worker::do_tun(epoll_event *ev) {
  * https://github.com/WireGuard/wireguard-go/blob/12269c2761734b15625017d8565745096325392f/tun/offload_linux.go#L901
  *
  * The received tun buffer looks like this:
- * ┌──────────────────── virtio_net_hdr ────────────────────┬───── iphdr ──────┬───── l4hdr ─────┐
- * │ flags gso_type hdr_len gso_size csum_start csum_offset │ ... iph_csum ... │ ... l4_csum ... │ giant payload ...
+ * ┌──────────────────── virtio_net_hdr ────────────────────┬───── iphdr ──────┬───── l4hdr ─────┬───────────────────┐
+ * │ flags gso_type hdr_len gso_size csum_start csum_offset │ ... iph_csum ... │ ... l4_csum ... │ giant payload ... │
+ * └─────────────────────│─────│─────────│───────────│──────┼──────────────────┴─────────────────┼───────────────────┘
  *                    ┌──│─────│─────────┘           │      └──────────── == sizeof ─────────────┘
  *                    │  │  ┌──│─────────────────────┘                        ↑
  *                    │  │  │  └──────────────┐                               │
  *                    │  └──│─────────────────│───────────────────────────────┘
  *                    ├─ + →┤                 ↓
- *                    ↓     ↓           ┌─ >= sizeof ──┐
- * │ ... iph_csum ... │ ... l4_csum ... │ payload_part │
- * │        ↑         │        ↑                       │
- * └────────┴─────────┤        │                       │
- *                    └─ (+pseudoheader) ──────────────┘
+ *                    ↓     │           ┌─ >= sizeof ──┐
+ * ┌──────────────────┼─────↓───────────┼──────────────┤
+ * │ ... iph_csum ... │ ... l4_csum ... │ payload part │
+ * ├────────↑─────────┼────────↑────────┴──────────────┤
+ * │        │    Check│sums  to│  calculate            │
+ * └→───────┴────────←┤        │                       │
+ *                    └→ (+pseudoheader if needed) ───←┘
  * GSO processing results in multiple split IP packets...
- * │ ... iph_csum ... │ ... l4_csum ... │ payload_part │
- * │ ... iph_csum ... │ ... l4_csum ... │ payload_part │
+ * │ ... iph_csum ... │ ... l4_csum ... │ payload part │
+ * │ ... iph_csum ... │ ... l4_csum ... │ payload part │
  *   ...
  */
 virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll_event *ev) {
     // don't use directly
-    static std::vector<uint8_t> _recvbuf(65536);
+    static std::vector<uint8_t> _recvbuf(65536 + sizeof(virtio_net_hdr));
     auto msize = read(_arg.tun->fd(), _recvbuf.data(), _recvbuf.size());
     if (msize < 0)
         return;
