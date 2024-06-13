@@ -1,5 +1,8 @@
 #pragma once
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wvolatile"
+
 /* SPDX-License-Identifier: GPL-2.0+ */
 
 /*
@@ -17,6 +20,7 @@
 #include "rundown.hpp"
 
 struct maple_pnode;
+struct maple_enode;
 
 /*
  * Allocated nodes are mutable until they have been inserted into the tree,
@@ -798,3 +802,5 @@ void mt_cache_shrink(void);
 #define trace_ma_op(x, y)
 #define trace_ma_read(x, y)
 #define trace_ma_write(x, y, z, t)
+
+#pragma GCC diagnostic pop

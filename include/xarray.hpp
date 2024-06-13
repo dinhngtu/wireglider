@@ -11,7 +11,7 @@
 
 #include <cstdint>
 #include <pthread.h>
-#include "kernel_compat.hpp"
+#include "kernel_compat_internal.hpp"
 #include "rundown.hpp"
 
 /*
