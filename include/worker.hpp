@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 #include <mutex>
 #include <tdutil/epollman.hpp>
 #include <wireguard_ffi.h>
@@ -50,13 +51,22 @@ public:
 
 private:
     void do_tun(epoll_event *ev);
-    void do_tun_read(epoll_event *ev);
+    virtio_net_hdr do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll_event *ev);
+    void do_server_write(virtio_net_hdr vnethdr, std::vector<std::vector<uint8_t>> &out);
+
     void do_server(epoll_event *ev);
+
+    constexpr size_t calc_overhead() {
+        size_t ret = sizeof(udphdr) + sizeof(32);
+        ret += _arg.srv_v6 ? sizeof(ipv6hdr) : sizeof(iphdr);
+        return ret;
+    }
 
 private:
     WorkerArg _arg;
     tdutil::EpollManager<> _poll;
     boost::concurrent_flat_map<ClientAddress, Client> _clients;
+    size_t _overhead;
 };
 
 // this function forces all worker allocations to happen within its own thread

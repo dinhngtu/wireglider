@@ -72,6 +72,8 @@
         "regex": "cpp",
         "shared_mutex": "cpp",
         "span": "cpp",
-        "*.ipp": "cpp"
+        "*.ipp": "cpp",
+        "typeindex": "cpp",
+        "set": "cpp"
     }
 }
