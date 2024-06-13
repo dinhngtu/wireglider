@@ -72,23 +72,19 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    std::unique_ptr<UdpServer> server;
+    std::vector<UdpServer> server;
     bool srv_is_v6;
     if (auto sin = std::get_if<sockaddr_in>(&listen_addr)) {
         sin->sin_port = htons(listen_port);
-        server = std::make_unique<UdpServer>(*sin);
+        server.emplace_back(*sin);
         srv_is_v6 = false;
     } else if (auto sin6 = std::get_if<sockaddr_in6>(&listen_addr)) {
         sin6->sin6_port = htons(listen_port);
-        server = std::make_unique<UdpServer>(*sin6);
+        server.emplace_back(*sin6);
         srv_is_v6 = true;
     } else {
         throw std::runtime_error("cannot get server address");
     }
-    int gro = 1;
-    if (setsockopt(server->fd(), SOL_UDP, UDP_GRO, &gro, sizeof(gro)) < 0)
-        throw std::system_error(errno, std::system_category(), "setsockopt(UDP_GRO)");
-    server->fd().set_nonblock();
 
     std::vector<Tun> tun;
     bool tun_is_v6;
@@ -115,7 +111,7 @@ int main(int argc, char **argv) {
         worker_func,
         WorkerArg{
             .tun = &tun[0],
-            .server = server.get(),
+            .server = &server[0],
             .tun_is_v6 = tun_is_v6,
             .srv_is_v6 = srv_is_v6,
             .clients = clients.get(),
@@ -124,12 +120,16 @@ int main(int argc, char **argv) {
     pthread_setname_np(w0.native_handle(), "worker0");
     if (tun[0].features() & IFF_MULTI_QUEUE) {
         for (int i = 1; i < njobs; i++) {
+            if (auto sin = std::get_if<sockaddr_in>(&listen_addr))
+                server.emplace_back(*sin);
+            else if (auto sin6 = std::get_if<sockaddr_in6>(&listen_addr))
+                server.emplace_back(*sin6);
             tun.push_back(tun[0].clone());
             auto &w = workers.emplace_back(
                 worker_func,
                 WorkerArg{
                     .tun = &tun[i],
-                    .server = server.get(),
+                    .server = &server[i],
                     .tun_is_v6 = tun_is_v6,
                     .srv_is_v6 = srv_is_v6,
                     .clients = clients.get(),

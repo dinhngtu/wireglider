@@ -55,6 +55,9 @@ struct CdsHashtableNode {
     K _cds_lfht_key;
 };
 
+template <std::totally_ordered K, IsCdsHashtableNode<K> V>
+class CdsHashtable;
+
 template <typename K, IsCdsHashtableNode<K> V>
 class CdsHashtableIterator {
 public:
@@ -89,6 +92,8 @@ public:
     friend constexpr bool operator==(const CdsHashtableIterator &a, const CdsHashtableIterator &b) noexcept {
         return a._tbl == b._tbl && a._iter.node == b._iter.node;
     }
+
+    friend class CdsHashtable<K, V>;
 
 private:
     explicit CdsHashtableIterator(cds_lfht *tbl) : _tbl(tbl) {
@@ -159,7 +164,7 @@ public:
 
     iterator find([[maybe_unused]] const RundownGuard &rcu, const K &k) {
         iterator it(_tbl);
-        cds_lfht_lookup(_tbl, std::hash(k), compare, &k, &it._iter);
+        cds_lfht_lookup(_tbl, std::hash<K>{}(k), compare, &k, &it._iter);
         return it;
     }
 
@@ -205,15 +210,14 @@ private:
     }
 
     static int compare(struct cds_lfht_node *node, const void *key) {
-        K leftkey = CdsHashtableNode<K, V>::get(node)->_cds_lfht_key;
-        switch (std::compare_three_way(leftkey, *static_cast<const K *>(key))) {
-        case std::strong_ordering::less:
+        const K &leftkey = CdsHashtableNode<K, V>::get(node)->_cds_lfht_key;
+        auto comp = leftkey <=> *static_cast<const K *>(key);
+        if (comp == std::strong_ordering::less)
             return -1;
-        case std::strong_ordering::equal:
+        else if (comp == std::strong_ordering::equal)
             return 0;
-        case std::strong_ordering::greater:
+        else
             return 1;
-        }
     }
 
 private:

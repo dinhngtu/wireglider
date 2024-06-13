@@ -1,4 +1,3 @@
-#include <cstdio>
 #include <array>
 #include <utility>
 #include <span>
@@ -38,8 +37,8 @@ void Worker::run() {
     // there are only 2 file descriptors to watch
     std::array<epoll_event, 2> evbuf;
 
-    _poll.add(_arg.tun->fd(), EPOLLIN);
-    _poll.add(_arg.server->fd(), EPOLLIN);
+    tun_enable(EPOLLIN);
+    server_enable(EPOLLIN);
 
     while (1) {
         auto nevents = _poll.wait(evbuf, -1);
@@ -61,7 +60,7 @@ void Worker::run() {
 void Worker::do_tun(epoll_event *ev) {
     if (ev->events & EPOLLIN) {
         virtio_net_hdr vnethdr;
-        auto read_pb = do_tun_read(ev, _recvbuf, vnethdr);
+        auto read_pb = do_tun_recv(_recvbuf, vnethdr);
         if (!read_pb)
             return;
 
@@ -71,7 +70,9 @@ void Worker::do_tun(epoll_event *ev) {
         if (!crypt)
             return;
 
-        do_tun_send_server(crypt->first, crypt->second);
+        auto ret = do_server_send(crypt->first.data, crypt->first.segment_size, crypt->second, true);
+        if (ret < 0 && !is_eagain(-ret))
+            fmt::print("do_server_send: {}\n", strerrordesc_np(ret));
     }
 }
 
@@ -100,7 +101,7 @@ void Worker::do_tun(epoll_event *ev) {
  * │ ... iph_csum ... │ ...  l4_csum ... │ payload part │
  *   ...
  */
-std::optional<PacketBatch> Worker::do_tun_read(epoll_event *ev, std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr) {
+std::optional<PacketBatch> Worker::do_tun_recv(std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr) {
     // if (outbuf.size() < 65536 + sizeof(virtio_net_hdr))
     // outbuf.resize(65536 + sizeof(virtio_net_hdr));
     assert(outbuf.size() >= 65536 + sizeof(virtio_net_hdr));
@@ -196,14 +197,14 @@ PacketBatch Worker::do_tun_gso_split(PacketBatch &pb, std::vector<uint8_t> &outb
         if (_arg.tun_is_v6) {
             const auto addroff = offsetof(ip6_hdr, ip6_src);
             const auto addrsize = sizeof(in6_addr);
-            auto srcaddr = thispkt.subspan<addroff, addrsize>();
-            auto dstaddr = thispkt.subspan<addroff + addrsize, addrsize>();
+            std::span<const uint8_t, addrsize> srcaddr = thispkt.subspan<addroff, addrsize>();
+            std::span<const uint8_t, addrsize> dstaddr = thispkt.subspan<addroff + addrsize, addrsize>();
             l4_csum_tmp = pseudo_header_checksum(istcp ? IPPROTO_TCP : IPPROTO_UDP, srcaddr, dstaddr, thispkt.size());
         } else {
             const auto addroff = offsetof(ip, ip_src);
             const auto addrsize = sizeof(in_addr);
-            auto srcaddr = thispkt.subspan<addroff, addrsize>();
-            auto dstaddr = thispkt.subspan<addroff + addrsize, addrsize>();
+            std::span<const uint8_t, addrsize> srcaddr = thispkt.subspan<addroff, addrsize>();
+            std::span<const uint8_t, addrsize> dstaddr = thispkt.subspan<addroff + addrsize, addrsize>();
             l4_csum_tmp = pseudo_header_checksum(istcp ? IPPROTO_TCP : IPPROTO_UDP, srcaddr, dstaddr, thispkt.size());
         }
         auto l4_csum = checksum(thispkt.subspan(vnethdr.csum_start), l4_csum_tmp);
@@ -227,7 +228,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     size_t crypted_segment_size = 0;
 
     // be conservative
-    auto reserve_size = pb.data.size() + _overhead * pb.nr_segments();
+    [[maybe_unused]] auto reserve_size = pb.data.size() + _overhead * pb.nr_segments();
     // if (outbuf.size() < reserve_size)
     // outbuf.resize(reserve_size);
     assert(outbuf.size() >= reserve_size);
@@ -263,15 +264,15 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
                 assert(rest.empty() || crypted_segment_size == res.size);
         }
     }
-    PacketBatch pb{
+    PacketBatch newpb{
         .prefix = {},
         .data = std::span(outbuf.data(), outbuf.size() - remain.size()),
         .segment_size = crypted_segment_size,
     };
-    return std::make_pair(pb, client->_cds_lfht_key);
+    return std::make_pair(newpb, client->_cds_lfht_key);
 }
 
-void Worker::do_tun_send_server(PacketBatch pb, ClientEndpoint ep) {
+int Worker::do_server_send(std::span<uint8_t> data, size_t segment_size, ClientEndpoint ep, bool queue_again) {
     msghdr mh;
     memset(&mh, 0, sizeof(mh));
     if (auto sin6 = std::get_if<sockaddr_in6>(&ep)) {
@@ -281,7 +282,7 @@ void Worker::do_tun_send_server(PacketBatch pb, ClientEndpoint ep) {
         mh.msg_name = sin;
         mh.msg_namelen = sizeof(sockaddr_in);
     }
-    iovec iov{pb.data.data(), pb.data.size()};
+    iovec iov{data.data(), data.size()};
     mh.msg_iov = &iov;
     mh.msg_iovlen = 1;
     std::array<uint8_t, CMSG_SPACE(sizeof(uint16_t))> _cm;
@@ -289,17 +290,47 @@ void Worker::do_tun_send_server(PacketBatch pb, ClientEndpoint ep) {
     cm->cmsg_level = SOL_UDP;
     cm->cmsg_type = UDP_SEGMENT;
     cm->cmsg_len = _cm.size();
-    *reinterpret_cast<uint16_t *>(CMSG_DATA(cm)) = pb.segment_size;
+    *reinterpret_cast<uint16_t *>(CMSG_DATA(cm)) = segment_size;
     mh.msg_control = cm;
     mh.msg_controllen = _cm.size();
 
-    if (sendmsg(_arg.server->fd(), &mh, 0) < 0)
-        perror("sendmsg");
+    if (sendmsg(_arg.server->fd(), &mh, 0) < 0) {
+        if (queue_again && is_eagain()) {
+            auto tosend = new ServerSend(data, segment_size, ep);
+            _serversend.push_back(*tosend);
+            server_enable(EPOLLOUT);
+        }
+        return -errno;
+    } else {
+        return 0;
+    }
 }
 
 void Worker::do_server(epoll_event *ev) {
+    if (ev->events & EPOLLOUT) {
+        while (!_serversend.empty()) {
+            auto ret = do_server_send(
+                _serversend.front().buf,
+                _serversend.front().segment_size,
+                _serversend.front().ep,
+                false);
+            if (is_eagain(-ret)) {
+                break;
+            } else {
+                if (ret < 0)
+                    fmt::print("do_server_send: {}\n", strerrordesc_np(ret));
+                _serversend.pop_front_and_dispose([](auto x) { delete x; });
+            }
+        }
+        if (_serversend.empty())
+            server_disable(EPOLLOUT);
+        else if (_serversend.size() < 64)
+            tun_enable(EPOLLIN);
+        else
+            tun_disable(EPOLLIN);
+    }
     if (ev->events & EPOLLIN) {
-        auto crypt = do_server_read(ev, _recvbuf);
+        auto crypt = do_server_recv(ev, _recvbuf);
         if (!crypt)
             return;
 
@@ -309,7 +340,7 @@ void Worker::do_server(epoll_event *ev) {
     }
 }
 
-std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_read(
+std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
     epoll_event *ev,
     std::vector<uint8_t> &buf) {
     if (buf.size() < 65536)
@@ -358,14 +389,16 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_read(
     return std::make_pair(pb, ep);
 }
 
-PacketBatch Worker::do_server_decap(PacketBatch pb, ClientEndpoint ep, std::vector<uint8_t> &buf) {
+std::optional<PacketBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint ep, std::vector<uint8_t> &buf) {
     RundownGuard rcu;
     auto it = _arg.clients->find(rcu, ep);
     if (it == _arg.clients->end())
-        return;
+        return std::nullopt;
 
     std::lock_guard<std::mutex> client_lock(it->mutex);
+
     // TODO
+    return PacketBatch{};
 }
 
 } // namespace wgss
