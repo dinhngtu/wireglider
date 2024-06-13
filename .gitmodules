@@ -1,0 +1,6 @@
+[submodule "boringtun"]
+	path = boringtun
+	url = https://github.com/cloudflare/boringtun.git
+[submodule "mimalloc"]
+	path = mimalloc
+	url = https://github.com/microsoft/mimalloc.git

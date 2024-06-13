@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/../tdutil/include",
+                "${workspaceFolder}/../liburing/src/include",
+                "${workspaceFolder}/../cxxopts/include",
+                "${workspaceFolder}/../boringtun/boringtun/src",
+                "${workspaceFolder}/../fmt/include"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "intelliSenseMode": "linux-gcc-x64",
+            "cppStandard": "c++20",
+            "cStandard": "c11"
+        }
+    ],
+    "version": 4
+}
