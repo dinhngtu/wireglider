@@ -1,14 +1,22 @@
 #include <cstdio>
 #include <memory>
 #include <array>
+#include <vector>
 #include <utility>
+#include <span>
 #include <linux/ip.h>
+#include <linux/tcp.h>
+#include <linux/udp.h>
 #include <fmt/format.h>
+#include <boost/endian.hpp>
 #include <tdutil/io.hpp>
+#include <tdutil/util.hpp>
 
 #include "worker.hpp"
+#include "checksum.hpp"
 
 using namespace tdutil;
+using namespace boost::endian;
 
 namespace wgss {
 
@@ -17,7 +25,9 @@ void worker_func(WorkerArg arg) {
     w.run();
 }
 
-Worker::Worker(const WorkerArg &arg) : _arg(arg) {}
+Worker::Worker(const WorkerArg &arg) : _arg(arg) {
+    if (_arg.tun_v6) {}
+}
 
 void Worker::run() {
     // there are only 2 file descriptors to watch
@@ -48,22 +58,137 @@ void Worker::do_tun(epoll_event *ev) {
     }
 }
 
+/*
+ * Parsing logic adapted from wireguard-go:
+ * https://github.com/WireGuard/wireguard-go/blob/12269c2761734b15625017d8565745096325392f/tun/offload_linux.go#L901
+ *
+ * The received tun buffer looks like this:
+ * ┌──────────────────── virtio_net_hdr ────────────────────┬───── iphdr ──────┬───── l4hdr ─────┐
+ * │ flags gso_type hdr_len gso_size csum_start csum_offset │ ... iph_csum ... │ ... l4_csum ... │ giant payload ...
+ *                    ┌──│─────│─────────┘           │      └──────────── == sizeof ─────────────┘
+ *                    │  │  ┌──│─────────────────────┘                        ↑
+ *                    │  │  │  └──────────────┐                               │
+ *                    │  └──│─────────────────│───────────────────────────────┘
+ *                    ├─ + ─┤                 ↓
+ *                    ↓     ↓           ┌─ >= sizeof ──┐
+ * │ ... iph_csum ... │ ... l4_csum ... │ payload_part │
+ * │        ↑         │        ↑                       │
+ * └────────┴─────────┤        │                       │
+ *                    └─(+pseudoheader)────────────────┘
+ * │ ... iph_csum ... │ ... l4_csum ... │ payload_part │
+ * │ ... iph_csum ... │ ... l4_csum ... │ payload_part │
+ *   ...
+ */
 void Worker::do_tun_read(epoll_event *ev) {
-    static std::array<unsigned char, 65536> recvbuf;
-    auto msize = read(_arg.tun->fd(), recvbuf.data(), recvbuf.size());
-    auto rest = msize;
-    // if (msize())
-    fmt::print("{}\n", msize);
-    if (rest < 0)
-        perror("recvmsg");
-
-    if (std::cmp_less(rest, sizeof(virtio_net_hdr)))
+    // don't use directly
+    static std::vector<uint8_t> _recvbuf(65536);
+    auto msize = read(_arg.tun->fd(), _recvbuf.data(), _recvbuf.size());
+    if (msize < 0)
         return;
-    auto hvnet = reinterpret_cast<virtio_net_hdr *>(&recvbuf[0]);
-    rest -= sizeof(virtio_net_hdr);
+    auto rest = std::span(_recvbuf).subspan(0, msize);
 
-    if (std::cmp_less(rest, sizeof(iphdr)))
+    std::vector<std::vector<uint8_t>> out;
+
+    if (rest.size() < sizeof(virtio_net_hdr))
         return;
+    auto vnethdr = reinterpret_cast<virtio_net_hdr *>(rest.data());
+    rest = rest.subspan(sizeof(virtio_net_hdr));
+
+    // clear ipv4 header checksum
+    if (!_arg.tun_v6)
+        reinterpret_cast<iphdr *>(rest.data())->check = 0;
+    // clear tcp/udp checksum
+    auto l4_csum_offset = vnethdr->csum_start + vnethdr->csum_offset;
+    convert_span<uint16_t>(rest.subspan(l4_csum_offset, sizeof(uint16_t)))[0] = 0;
+
+    bool tcp = vnethdr->gso_type == VIRTIO_NET_HDR_GSO_TCPV4 || vnethdr->gso_type == VIRTIO_NET_HDR_GSO_TCPV6;
+    uint32_t first_tcp_seq_num;
+    if (tcp)
+        first_tcp_seq_num = big_to_native(reinterpret_cast<tcphdr *>(&rest[vnethdr->csum_start])->seq);
+
+    auto seghdr = rest.subspan(0, vnethdr->hdr_len);
+    rest = rest.subspan(vnethdr->hdr_len);
+
+    size_t i = 0;
+    size_t overhead = sizeof(udphdr) + sizeof(32);
+    overhead += _arg.srv_v6 ? sizeof(ipv6hdr) : sizeof(iphdr);
+    for (; !rest.empty(); i++) {
+        auto datalen = std::min(rest.size(), static_cast<size_t>(vnethdr->gso_size));
+        auto &_outbuf = out.emplace_back(seghdr.size() + datalen + overhead);
+        std::span outbuf(_outbuf);
+        std::copy(seghdr.begin(), seghdr.end(), outbuf.begin());
+        std::copy(&rest[0], &rest[datalen], &outbuf[seghdr.size()]);
+
+        if (_arg.tun_v6) {
+            // For IPv6 we are responsible for updating the payload length field.
+            auto &payload_len = reinterpret_cast<ipv6hdr *>(outbuf.data())->payload_len;
+            payload_len = outbuf.size() - vnethdr->csum_start;
+            native_to_big_inplace(payload_len);
+        } else {
+            // For IPv4 we are responsible for incrementing the ID field,
+            // updating the total len field, and recalculating the header
+            // checksum.
+            auto ip = reinterpret_cast<iphdr *>(outbuf.data());
+            if (i) {
+                big_to_native_inplace(ip->id);
+                ip->id += i;
+                native_to_big_inplace(ip->id);
+            }
+            ip->tot_len = outbuf.size();
+            native_to_big_inplace(ip->tot_len);
+            ip->check = ~checksum(std::span(outbuf).subspan(0, vnethdr->csum_start), 0);
+            native_to_big_inplace(ip->check);
+        }
+
+        if (tcp) {
+            // set TCP seq and adjust TCP flags
+            auto tcp = reinterpret_cast<tcphdr *>(&outbuf[vnethdr->csum_start]);
+            auto &tcpseq = tcp->seq;
+            tcpseq = first_tcp_seq_num + static_cast<uint32_t>(vnethdr->gso_size) * i;
+            native_to_big_inplace(tcpseq);
+            if (datalen < rest.size())
+                // FIN and PSH should only be set on last segment
+                tcp->fin = tcp->psh = 0;
+        } else {
+            // set UDP header len
+            auto udp = reinterpret_cast<udphdr *>(&outbuf[vnethdr->csum_start]);
+            udp->len = seghdr.size() - vnethdr->csum_start;
+            native_to_big_inplace(udp->len);
+        }
+
+        uint32_t &l4_csum = *reinterpret_cast<uint32_t *>(&outbuf[vnethdr->csum_start + vnethdr->csum_offset]);
+        auto addroff = _arg.tun_v6 ? offsetof(ipv6hdr, saddr) : offsetof(iphdr, saddr);
+        auto addrsize = _arg.tun_v6 ? 16 : 4;
+        auto srcaddr = outbuf.subspan(addroff, addrsize);
+        auto dstaddr = outbuf.subspan(addroff + addrsize, addrsize);
+        l4_csum = pseudo_header_checksum(tcp ? IPPROTO_TCP : IPPROTO_UDP, srcaddr, dstaddr, outbuf.size());
+        l4_csum = ~checksum(outbuf.subspan(vnethdr->csum_start), l4_csum);
+        native_to_big_inplace(l4_csum);
+
+        // to next packet
+        rest = rest.subspan(datalen);
+    }
+
+    ClientAddress addr = Tins::IPv4Address();
+    Client *client = nullptr;
+    bool first = true;
+    std::unique_lock<std::mutex> client_lock;
+
+    // TODO
+    /*
+    if (first) {
+        _clients.visit(addr, [&client](Client &pc) { client = &pc; });
+        if (!client)
+            continue;
+        client_lock = std::unique_lock<std::mutex>(client->mutex);
+    }
+
+    assert(client_lock);
+    auto res = wireguard_write(client->tunnel, rest.data(), pktlen, room.data(), room.size());
+    if (res.op == WRITE_TO_NETWORK) {
+        room = room.subspan(res.size);
+    }
+    */
 }
 
 void Worker::do_server(epoll_event *ev) {}

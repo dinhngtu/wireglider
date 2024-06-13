@@ -4,11 +4,15 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/include",
+                "/lib/modules/6.6.12+/build/usr/include",
                 "${workspaceFolder}/../tdutil/include",
                 "${workspaceFolder}/../liburing/src/include",
+                "${workspaceFolder}/../boost_1_85_0",
                 "${workspaceFolder}/../cxxopts/include",
                 "${workspaceFolder}/../boringtun/boringtun/src",
-                "${workspaceFolder}/../fmt/include"
+                "${workspaceFolder}/../fmt/include",
+                "${workspaceFolder}/../libtins/include",
+                "${workspaceFolder}/../xxHash"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",

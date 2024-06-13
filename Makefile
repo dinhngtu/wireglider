@@ -1,10 +1,12 @@
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
-CPPFLAGS+=-I/lib/modules/$(shell uname -r)/build/usr/include -Iinclude
+CPPFLAGS+=-Iinclude
 CFLAGS+=-Wall -Wextra -Wformat=2 -Wshadow -Werror=return-type -std=c11 -fwrapv
 CXXFLAGS+=-Wall -Wextra -Wformat=2 -Wshadow -Werror=return-type -std=c++20 -fwrapv
 
 CPPFLAGS+=-pthread
 LDLIBS+=-pthread
+
+CPPFLAGS+=-I/lib/modules/$(shell uname -r)/build/usr/include
 
 TDUTIL_ROOT?=$(realpath ../tdutil)
 CPPFLAGS+=-I$(TDUTIL_ROOT)/include
@@ -37,6 +39,15 @@ MIMALLOC_ROOT?=$(realpath ../mimalloc)
 CPPFLAGS+=-I$(MIMALLOC_ROOT)/include
 LDFLAGS+=-L$(MIMALLOC_ROOT)/out/release
 LDLIBS+=-lmimalloc
+
+XXHASH_ROOT?=$(realpath ../xxHash)
+CPPFLAGS+=-I$(XXHASH_ROOT) -DXXH_INLINE_ALL
+
+# build$ cmake .. -DLIBTINS_BUILD_SHARED=0 -DLIBTINS_ENABLE_CXX11=1
+TINS_ROOT?=$(realpath ../libtins)
+CPPFLAGS+=-I$(TINS_ROOT)/include
+LDFLAGS+=-L$(TINS_ROOT)/build/lib
+LDLIBS+=-ltins
 
 ifeq ($(DEBUG), 1)
 	CPPFLAGS+=-DDEBUG=1
