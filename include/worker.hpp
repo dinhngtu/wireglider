@@ -92,19 +92,20 @@ public:
 private:
     void do_tun(epoll_event *ev);
     // returns (size of each segment, number of segments)
-    std::pair<size_t, size_t> do_tun_read(virtio_net_hdr &vnethdr, std::vector<uint8_t> &tunpkts, epoll_event *ev);
-    std::pair<size_t, ClientEndpoint> do_crypt_encap(
-        std::vector<uint8_t> &crypted,
-        const virtio_net_hdr &vnethdr,
-        const std::vector<uint8_t> &tunpkts,
-        size_t segment_size,
-        size_t nr_segments);
+    std::optional<PacketBatch> do_tun_read(epoll_event *ev, std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr);
+    PacketBatch do_tun_gso_split(PacketBatch &pb, std::vector<uint8_t> &outbuf, const virtio_net_hdr &vnethdr);
+    std::optional<std::pair<PacketBatch, ClientEndpoint>> do_tun_encap(PacketBatch &pb, std::vector<uint8_t> &outbuf);
+    void do_tun_send_server(PacketBatch pb, ClientEndpoint ep);
 
     void do_server(epoll_event *ev);
+    std::optional<std::pair<PacketBatch, ClientEndpoint>> do_server_read(epoll_event *ev, std::vector<uint8_t> &outbuf);
+    PacketBatch do_server_decap(PacketBatch pb, ClientEndpoint ep, std::vector<uint8_t> &outbuf);
 
 private:
     WorkerArg _arg;
     std::vector<uint8_t> _recvbuf;
+    // do_tun
+    std::vector<uint8_t> _tunpkts, _crypted;
     tdutil::EpollManager<> _poll;
     size_t _overhead;
 };

@@ -6,6 +6,8 @@
 #include <linux/if.h>
 #include <netinet/in.h>
 
+#include <tdutil/util.hpp>
+
 namespace wgss {
 
 struct Ifr {
@@ -16,7 +18,8 @@ struct Ifr {
         strncpy(&ifr.ifr_name[0], name, IFNAMSIZ - 1);
         ifr.ifr_name[IFNAMSIZ - 1] = 0;
     }
-    Ifr(const std::string &name) : Ifr(name.c_str()) {}
+    Ifr(const std::string &name) : Ifr(name.c_str()) {
+    }
 
     Ifr(const Ifr &other) {
         memcpy(&ifr, &other.ifr, sizeof(ifreq));
@@ -49,5 +52,14 @@ struct Ifr {
 };
 
 std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_sockaddr(const char *str);
+
+struct PacketBatch {
+    std::span<uint8_t> prefix;
+    std::span<uint8_t> data;
+    size_t segment_size;
+    constexpr size_t nr_segments() {
+        return tdutil::round_up(data.size(), segment_size) / segment_size;
+    }
+};
 
 } // namespace wgss
