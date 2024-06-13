@@ -9,7 +9,8 @@ namespace wgss {
 
 namespace checksum_impl {
 
-uint64_t checksum_nofold(std::span<uint8_t, std::dynamic_extent> b, uint64_t initial) {
+#ifndef __x86_64__
+uint64_t checksum_nofold(const std::span<uint8_t, std::dynamic_extent> b, uint64_t initial) {
     uint64_t ac = initial;
     uint64_t carry = 0;
 
@@ -49,6 +50,7 @@ uint64_t checksum_nofold(std::span<uint8_t, std::dynamic_extent> b, uint64_t ini
 
     return ac;
 }
+#endif
 
 } // namespace checksum_impl
 
