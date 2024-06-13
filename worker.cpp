@@ -27,15 +27,15 @@ void Worker::run() {
     _poll.add(_arg.server->fd(), EPOLLIN);
 
     while (1) {
-        auto nevents = _poll.wait(evbuf, 0);
+        auto nevents = _poll.wait(evbuf, -1);
         if (nevents < 0)
             perror("poll error");
-        for (auto it = evbuf.begin(); it != evbuf.end(); it++) {
-            if (it->events) {
-                if (it->data.fd == _arg.tun->fd()) {
-                    do_tun(it);
-                } else if (it->data.fd == _arg.server->fd()) {
-                    do_server(it);
+        for (int i = 0; i < nevents; i++) {
+            if (evbuf[i].events) {
+                if (evbuf[i].data.fd == _arg.tun->fd()) {
+                    do_tun(&evbuf[i]);
+                } else if (evbuf[i].data.fd == _arg.server->fd()) {
+                    do_server(&evbuf[i]);
                 }
             }
         }
@@ -43,8 +43,6 @@ void Worker::run() {
 }
 
 void Worker::do_tun(epoll_event *ev) {
-    auto evt = ev->events;
-    fmt::print("{}\n", evt);
     if (ev->events & EPOLLIN) {
         do_tun_read(ev);
     }
@@ -55,6 +53,7 @@ void Worker::do_tun_read(epoll_event *ev) {
     auto msize = read(_arg.tun->fd(), recvbuf.data(), recvbuf.size());
     auto rest = msize;
     // if (msize())
+    fmt::print("{}\n", msize);
     if (rest < 0)
         perror("recvmsg");
 

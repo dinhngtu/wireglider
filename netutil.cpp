@@ -5,7 +5,7 @@
 
 namespace wgss {
 
-std::variant<sockaddr_in, sockaddr_in6> parse_ip(const char *str) {
+std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_ip(const char *str) {
     sockaddr_in sin{};
     sin.sin_family = AF_INET;
     sockaddr_in6 sin6{};
@@ -15,7 +15,7 @@ std::variant<sockaddr_in, sockaddr_in6> parse_ip(const char *str) {
     } else if (inet_pton(AF_INET6, str, &sin6.sin6_addr)) {
         return sin6;
     } else {
-        throw std::invalid_argument("invalid address");
+        return {};
     }
 }
 

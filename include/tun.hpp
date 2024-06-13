@@ -16,7 +16,7 @@ namespace wgss {
 
 class Tun {
 public:
-    Tun(const char *devname = nullptr) {
+    explicit Tun(const char *devname) {
         _tun = tdutil::FileDescriptor("/dev/net/tun", O_RDWR);
         _tun.check();
 
@@ -24,14 +24,14 @@ public:
         if (ioctl(_tun, TUNGETFEATURES, &avail_feat) < 0)
             avail_feat = IFF_TUN | IFF_TAP | IFF_NO_PI | IFF_ONE_QUEUE;
 
-        if (!devname)
-            devname = "wg%d";
-        Ifr ifr(devname);
-        ifr->ifr_flags = IFF_TUN | IFF_NO_PI | IFF_VNET_HDR;
-        if ((ifr->ifr_flags & avail_feat) != ifr->ifr_flags)
+        _feat = IFF_TUN | IFF_NO_PI | IFF_VNET_HDR;
+        if ((_feat & avail_feat) != _feat)
             throw std::runtime_error("unsupported tunnel features");
         if (avail_feat & IFF_MULTI_QUEUE)
-            ifr->ifr_flags |= IFF_MULTI_QUEUE;
+            _feat |= IFF_MULTI_QUEUE;
+
+        Ifr ifr(devname);
+        ifr->ifr_flags = _feat;
         if (ioctl(_tun, TUNSETIFF, &ifr) < 0)
             throw std::system_error(errno, std::system_category(), "ioctl(TUNSETIFF)");
 
@@ -52,6 +52,10 @@ public:
 
     constexpr const std::string &name() const {
         return _name;
+    }
+
+    constexpr short features() const {
+        return _feat;
     }
 
     void set_address(sockaddr_in sin, uint32_t prefixlen) {
@@ -101,6 +105,12 @@ public:
             throw std::system_error(errno, std::system_category(), "ioctl(SIOCSIFFLAGS)");
     }
 
+    Tun clone() {
+        if (!(_feat & IFF_MULTI_QUEUE))
+            throw std::logic_error("tunnel without IFF_MULTI_QUEUE cannot be cloned");
+        return Tun(_name.c_str());
+    }
+
 private:
     std::string get_name() {
         Ifr ifr;
@@ -117,6 +127,7 @@ private:
     }
 
 private:
+    short _feat;
     tdutil::FileDescriptor _tun;
     std::string _name;
 };
