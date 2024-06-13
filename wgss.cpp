@@ -72,34 +72,34 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    std::vector<UdpServer> server;
+    std::vector<std::unique_ptr<UdpServer>> server;
     bool srv_is_v6;
     if (auto sin = std::get_if<sockaddr_in>(&listen_addr)) {
         sin->sin_port = htons(listen_port);
-        server.emplace_back(*sin);
+        server.push_back(std::make_unique<UdpServer>(*sin));
         srv_is_v6 = false;
     } else if (auto sin6 = std::get_if<sockaddr_in6>(&listen_addr)) {
         sin6->sin6_port = htons(listen_port);
-        server.emplace_back(*sin6);
+        server.push_back(std::make_unique<UdpServer>(*sin6));
         srv_is_v6 = true;
     } else {
         throw std::runtime_error("cannot get server address");
     }
 
-    std::vector<Tun> tun;
+    std::vector<std::unique_ptr<Tun>> tun;
     bool tun_is_v6;
-    tun.emplace_back("wg%d");
-    tun[0].fd().set_nonblock();
+    tun.push_back(std::make_unique<Tun>("wg%d"));
+    tun[0]->fd().set_nonblock();
     if (auto tun_sin = std::get_if<sockaddr_in>(&tun_addr)) {
-        tun[0].set_address(*tun_sin, tun_prefix);
+        tun[0]->set_address(*tun_sin, tun_prefix);
         tun_is_v6 = false;
     } else if (auto tun_sin6 = std::get_if<sockaddr_in6>(&tun_addr)) {
-        tun[0].set_address6(*tun_sin6, tun_prefix);
+        tun[0]->set_address6(*tun_sin6, tun_prefix);
         tun_is_v6 = true;
     } else {
         throw std::runtime_error("cannot get tunnel address");
     }
-    tun[0].set_up(true);
+    tun[0]->set_up(true);
 
     auto clients = std::make_unique<CdsHashtable<ClientEndpoint, Client>>(1024, 8, 128, CDS_LFHT_AUTO_RESIZE, nullptr);
 
@@ -107,36 +107,35 @@ int main(int argc, char **argv) {
 
     auto njobs = argm["jobs"].as<int>();
     std::vector<std::jthread> workers;
-    auto &w0 = workers.emplace_back(
+    workers.emplace_back(
         worker_func,
         WorkerArg{
-            .tun = &tun[0],
-            .server = &server[0],
+            .id = 0,
+            .tun = tun[0].get(),
+            .server = server[0].get(),
             .tun_is_v6 = tun_is_v6,
             .srv_is_v6 = srv_is_v6,
             .clients = clients.get(),
             .allowed_ips = &allowed_ips,
         });
-    pthread_setname_np(w0.native_handle(), "worker0");
-    if (tun[0].features() & IFF_MULTI_QUEUE) {
+    if (tun[0]->features() & IFF_MULTI_QUEUE) {
         for (int i = 1; i < njobs; i++) {
+            tun.push_back(std::make_unique<Tun>(tun[0]->clone()));
             if (auto sin = std::get_if<sockaddr_in>(&listen_addr))
-                server.emplace_back(*sin);
+                server.push_back(std::make_unique<UdpServer>(*sin));
             else if (auto sin6 = std::get_if<sockaddr_in6>(&listen_addr))
-                server.emplace_back(*sin6);
-            tun.push_back(tun[0].clone());
-            auto &w = workers.emplace_back(
+                server.push_back(std::make_unique<UdpServer>(*sin6));
+            workers.emplace_back(
                 worker_func,
                 WorkerArg{
-                    .tun = &tun[i],
-                    .server = &server[i],
+                    .id = i,
+                    .tun = tun[i].get(),
+                    .server = server[i].get(),
                     .tun_is_v6 = tun_is_v6,
                     .srv_is_v6 = srv_is_v6,
                     .clients = clients.get(),
                     .allowed_ips = &allowed_ips,
                 });
-            auto wn = fmt::format("worker{}", i);
-            pthread_setname_np(w.native_handle(), wn.c_str());
         }
     } else {
         fmt::print("IFF_MULTI_QUEUE not supported, not spawning more workers\n");

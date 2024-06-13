@@ -102,6 +102,7 @@ struct Client : public CdsHashtableNode<ClientEndpoint, Client> {
 };
 
 struct WorkerArg {
+    int id;
     Tun *tun;
     UdpServer *server;
     bool tun_is_v6;

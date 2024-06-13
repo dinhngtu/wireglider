@@ -32,13 +32,16 @@ Worker::Worker(const WorkerArg &arg) : _arg(arg) {
 }
 
 void Worker::run() {
+    auto wn = fmt::format("worker{}", _arg.id);
+    pthread_setname_np(pthread_self(), wn.c_str());
+
     rcu_register_thread();
+
+    _poll.add(_arg.tun->fd(), EPOLLIN);
+    _poll.add(_arg.server->fd(), EPOLLIN);
 
     // there are only 2 file descriptors to watch
     std::array<epoll_event, 2> evbuf;
-
-    tun_enable(EPOLLIN);
-    server_enable(EPOLLIN);
 
     while (1) {
         auto nevents = _poll.wait(evbuf, -1);
@@ -126,6 +129,9 @@ std::optional<PacketBatch> Worker::do_tun_recv(std::vector<uint8_t> &outbuf, vir
 }
 
 PacketBatch Worker::do_tun_gso_split(PacketBatch &pb, std::vector<uint8_t> &outbuf, const virtio_net_hdr &vnethdr) {
+    if (vnethdr.gso_type == VIRTIO_NET_HDR_GSO_NONE || !pb.segment_size)
+        pb.segment_size = pb.data.size();
+
     [[maybe_unused]] auto reserve_size = pb.data.size() + pb.nr_segments() * pb.prefix.size();
     // if (outbuf.size() < reserve_size)
     // outbuf.resize(reserve_size);
@@ -146,7 +152,7 @@ PacketBatch Worker::do_tun_gso_split(PacketBatch &pb, std::vector<uint8_t> &outb
 
     size_t i = 0, pbsize = 0;
     for (; !rest.empty(); i++) {
-        auto datalen = std::min(rest.size(), static_cast<size_t>(vnethdr.gso_size));
+        auto datalen = std::min(rest.size(), pb.segment_size);
         auto pktlen = pb.prefix.size() + datalen;
         auto outbuf_begin = pbsize;
         pbsize += pktlen;
@@ -181,7 +187,7 @@ PacketBatch Worker::do_tun_gso_split(PacketBatch &pb, std::vector<uint8_t> &outb
             // set TCP seq and adjust TCP flags
             auto tcp = reinterpret_cast<tcphdr *>(&thispkt[vnethdr.csum_start]);
             auto &tcpseq = tcp->seq;
-            tcpseq = tcpseq0 + static_cast<uint32_t>(vnethdr.gso_size) * i;
+            tcpseq = tcpseq0 + static_cast<uint32_t>(pb.segment_size) * i;
             native_to_big_inplace(tcpseq);
             if (datalen < rest.size())
                 // FIN and PSH should only be set on last segment
@@ -217,7 +223,7 @@ PacketBatch Worker::do_tun_gso_split(PacketBatch &pb, std::vector<uint8_t> &outb
     return PacketBatch{
         .prefix = {},
         .data = std::span(outbuf.begin(), pbsize),
-        .segment_size = pb.prefix.size() + vnethdr.gso_size,
+        .segment_size = pb.prefix.size() + pb.segment_size,
     };
 }
 
