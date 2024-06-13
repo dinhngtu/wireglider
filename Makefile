@@ -1,12 +1,22 @@
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
 CPPFLAGS+=-Iinclude
-CFLAGS+=-Wall -Wextra -Wformat=2 -Wshadow -Werror=return-type -std=c11 -fwrapv -march=x86-64-v3
-CXXFLAGS+=-Wall -Wextra -Wformat=2 -Wshadow -Werror=return-type -std=c++20 -fwrapv -march=x86-64-v3
+CFLAGS+=-Wall -Wextra -Wformat=2 -Wshadow -Werror=return-type -std=c11 -fwrapv
+CXXFLAGS+=-Wall -Wextra -Wformat=2 -Wshadow -Werror=return-type -std=c++20 -fwrapv
 
 CPPFLAGS+=-pthread
 LDLIBS+=-pthread
 
 CPPFLAGS+=-I/lib/modules/$(shell uname -r)/build/usr/include
+
+USE_ADX?=0
+ifeq ($(USE_ADX), 1)
+CPPFLAGS+=-DUSE_ADX
+CFLAGS+=-march=x86-64-v3
+CXXFLAGS+=-march=x86-64-v3
+else
+CFLAGS+=-march=x86-64-v2
+CXXFLAGS+=-march=x86-64-v2
+endif
 
 # make
 TDUTIL_ROOT?=$(realpath ../tdutil)
@@ -121,7 +131,11 @@ all: $(TARGETS)
 $(TARGETS): %: %.cpp $(OBJ_MIMALLOC)
 	$(LINK.cpp) $(OBJ_MIMALLOC) $< $(filter-out $(OBJ_MIMALLOC),$(filter %.o,$^)) $(LOADLIBES) $(LDLIBS) -o $@
 
-wgss: worker.o netutil.o checksum.o checksum-x64.o maple_tree.o xarray.o kernel_compat.o
+wgss: worker.o netutil.o checksum.o maple_tree.o xarray.o kernel_compat.o
+
+ifeq ($(USE_ADX), 1)
+wgss: checksum-x64.o
+endif
 
 xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 

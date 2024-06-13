@@ -9,37 +9,37 @@ namespace wgss {
 
 namespace checksum_impl {
 
-#ifndef __x86_64__
-uint64_t checksum_nofold(const std::span<uint8_t, std::dynamic_extent> b, uint64_t initial) {
+#ifndef USE_ADX
+uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial) {
     uint64_t ac = initial;
     uint64_t carry = 0;
 
     while (b.size() >= 32) {
-        ac = addc(ac, *reinterpret_cast<uint64_t *>(&b[0]), 0, &carry);
-        ac = addc(ac, *reinterpret_cast<uint64_t *>(&b[8]), carry, &carry);
-        ac = addc(ac, *reinterpret_cast<uint64_t *>(&b[16]), carry, &carry);
-        ac = addc(ac, *reinterpret_cast<uint64_t *>(&b[24]), carry, &carry);
+        ac = addc(ac, *reinterpret_cast<const uint64_t *>(&b[0]), 0, &carry);
+        ac = addc(ac, *reinterpret_cast<const uint64_t *>(&b[8]), carry, &carry);
+        ac = addc(ac, *reinterpret_cast<const uint64_t *>(&b[16]), carry, &carry);
+        ac = addc(ac, *reinterpret_cast<const uint64_t *>(&b[24]), carry, &carry);
         ac += carry;
         b = b.subspan(32);
     }
     if (b.size() >= 16) {
-        ac = addc(ac, *reinterpret_cast<uint64_t *>(&b[0]), 0, &carry);
-        ac = addc(ac, *reinterpret_cast<uint64_t *>(&b[8]), carry, &carry);
+        ac = addc(ac, *reinterpret_cast<const uint64_t *>(&b[0]), 0, &carry);
+        ac = addc(ac, *reinterpret_cast<const uint64_t *>(&b[8]), carry, &carry);
         ac += carry;
         b = b.subspan(16);
     }
     if (b.size() >= 8) {
-        ac = addc(ac, *reinterpret_cast<uint64_t *>(&b[0]), 0, &carry);
+        ac = addc(ac, *reinterpret_cast<const uint64_t *>(&b[0]), 0, &carry);
         ac += carry;
         b = b.subspan(8);
     }
     if (b.size() >= 4) {
-        ac = addc(ac, static_cast<uint64_t>(*reinterpret_cast<uint32_t *>(&b[0])), 0, &carry);
+        ac = addc(ac, static_cast<uint64_t>(*reinterpret_cast<const uint32_t *>(&b[0])), 0, &carry);
         ac += carry;
         b = b.subspan(4);
     }
     if (b.size() >= 2) {
-        ac = addc(ac, static_cast<uint64_t>(*reinterpret_cast<uint16_t *>(&b[0])), 0, &carry);
+        ac = addc(ac, static_cast<uint64_t>(*reinterpret_cast<const uint16_t *>(&b[0])), 0, &carry);
         ac += carry;
         b = b.subspan(2);
     }
