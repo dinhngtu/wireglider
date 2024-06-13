@@ -25,13 +25,15 @@ void worker_func(WorkerArg arg) {
 }
 
 Worker::Worker(const WorkerArg &arg) : _arg(arg) {
-    if (_arg.tun_v6) {
+    if (_arg.tun_is_v6) {
         // TODO
     }
     _overhead = calc_overhead();
 }
 
 void Worker::run() {
+    rcu_register_thread();
+
     // there are only 2 file descriptors to watch
     std::array<epoll_event, 2> evbuf;
 
@@ -51,6 +53,7 @@ void Worker::run() {
                 }
             }
         }
+        rcu_quiescent_state();
     }
 }
 
@@ -58,6 +61,7 @@ void Worker::do_tun(epoll_event *ev) {
     if (ev->events & EPOLLIN) {
         std::vector<std::vector<uint8_t>> out;
         auto vnethdr = do_tun_read(out, ev);
+        do_server_write(vnethdr, out);
     }
 }
 
@@ -98,9 +102,10 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll
         return {};
     auto vnethdr = *reinterpret_cast<virtio_net_hdr *>(rest.data());
     rest = rest.subspan(sizeof(virtio_net_hdr));
+    // rest now contains iphdr+l4hdr+giant payload
 
     // clear ipv4 header checksum
-    if (!_arg.tun_v6)
+    if (!_arg.tun_is_v6)
         reinterpret_cast<iphdr *>(rest.data())->check = 0;
     // clear tcp/udp checksum
     auto l4_csum_offset = vnethdr.csum_start + vnethdr.csum_offset;
@@ -113,16 +118,17 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll
 
     auto seghdr = rest.subspan(0, vnethdr.hdr_len);
     rest = rest.subspan(vnethdr.hdr_len);
+    // rest now only contains the giant payload
 
     size_t i = 0;
     for (; !rest.empty(); i++) {
         auto datalen = std::min(rest.size(), static_cast<size_t>(vnethdr.gso_size));
         auto &_outbuf = out.emplace_back(seghdr.size() + datalen + _overhead);
-        std::span outbuf(_outbuf);
+        std::span outbuf(_outbuf.begin(), seghdr.size() + datalen);
         std::copy(seghdr.begin(), seghdr.end(), outbuf.begin());
         std::copy(&rest[0], &rest[datalen], &outbuf[seghdr.size()]);
 
-        if (_arg.tun_v6) {
+        if (_arg.tun_is_v6) {
             // For IPv6 we are responsible for updating the payload length field.
             auto &payload_len = reinterpret_cast<ipv6hdr *>(outbuf.data())->payload_len;
             payload_len = outbuf.size() - vnethdr.csum_start;
@@ -159,14 +165,22 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll
             native_to_big_inplace(udp->len);
         }
 
-        uint32_t &l4_csum = *reinterpret_cast<uint32_t *>(&outbuf[l4_csum_offset]);
-        auto addroff = _arg.tun_v6 ? offsetof(ip6_hdr, ip6_src) : offsetof(iphdr, saddr);
-        auto addrsize = _arg.tun_v6 ? 16 : 4;
-        auto srcaddr = outbuf.subspan(addroff, addrsize);
-        auto dstaddr = outbuf.subspan(addroff + addrsize, addrsize);
-        l4_csum = pseudo_header_checksum(istcp ? IPPROTO_TCP : IPPROTO_UDP, srcaddr, dstaddr, outbuf.size());
-        l4_csum = checksum(outbuf.subspan(vnethdr.csum_start), l4_csum);
-        native_to_big_inplace(l4_csum);
+        uint64_t l4_csum_tmp;
+        if (_arg.tun_is_v6) {
+            const auto addroff = offsetof(ip6_hdr, ip6_src);
+            const auto addrsize = sizeof(in6_addr);
+            auto srcaddr = outbuf.subspan<addroff, addrsize>();
+            auto dstaddr = outbuf.subspan<addroff + addrsize, addrsize>();
+            l4_csum_tmp = pseudo_header_checksum(istcp ? IPPROTO_TCP : IPPROTO_UDP, srcaddr, dstaddr, outbuf.size());
+        } else {
+            const auto addroff = offsetof(ip, ip_src);
+            const auto addrsize = sizeof(in_addr);
+            auto srcaddr = outbuf.subspan<addroff, addrsize>();
+            auto dstaddr = outbuf.subspan<addroff + addrsize, addrsize>();
+            l4_csum_tmp = pseudo_header_checksum(istcp ? IPPROTO_TCP : IPPROTO_UDP, srcaddr, dstaddr, outbuf.size());
+        }
+        auto l4_csum = checksum(outbuf.subspan(vnethdr.csum_start), l4_csum_tmp);
+        store_big_u16(&outbuf[l4_csum_offset], l4_csum);
 
         // to next packet
         rest = rest.subspan(datalen);
@@ -175,12 +189,15 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll
     return vnethdr;
 }
 
-void Worker::do_server_write(virtio_net_hdr vnethdr, std::vector<std::vector<uint8_t>> &out) {
-    // ClientAddress addr = Tins::IPv4Address();
-    ClientAddress addr;
+void Worker::do_server_write(const virtio_net_hdr &vnethdr, std::vector<std::vector<uint8_t>> &out) {
+    sockaddr_in caddr4;
+    sockaddr_in6 caddr6;
     Client *client = nullptr;
     bool first = true;
     std::unique_lock<std::mutex> client_lock;
+
+    if (out.empty())
+        return;
 
     /*
     std::vector<uint8_t> encbuf(vnethdr.hdr_len + vnethdr.gso_size + _overhead);
@@ -190,7 +207,18 @@ void Worker::do_server_write(virtio_net_hdr vnethdr, std::vector<std::vector<uin
             room = room.subspan(res.size);
         }
     }
-    */
+     */
+
+    RundownGuard rcu;
+
+
+    if (_arg.srv_is_v6) {
+        _arg.clients->find(rcu, caddr6);
+    } else {
+        _arg.clients->find(rcu, caddr4);
+    }
+
+    //_arg.clients->find(rcu, )
 
     // TODO
     /*
@@ -209,6 +237,7 @@ void Worker::do_server_write(virtio_net_hdr vnethdr, std::vector<std::vector<uin
     */
 }
 
-void Worker::do_server(epoll_event *ev) {}
+void Worker::do_server(epoll_event *ev) {
+}
 
 } // namespace wgss

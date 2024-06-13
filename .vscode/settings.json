@@ -74,6 +74,7 @@
         "span": "cpp",
         "*.ipp": "cpp",
         "typeindex": "cpp",
-        "set": "cpp"
+        "set": "cpp",
+        "internet": "cpp"
     }
 }

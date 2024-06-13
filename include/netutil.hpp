@@ -48,6 +48,6 @@ struct Ifr {
     ifreq ifr;
 };
 
-std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_ip(const char *str);
+std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_sockaddr(const char *str);
 
 } // namespace wgss

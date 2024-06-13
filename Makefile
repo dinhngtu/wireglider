@@ -46,8 +46,26 @@ CPPFLAGS+=-I$(MIMALLOC_ROOT)/include
 LDFLAGS+=-L$(MIMALLOC_ROOT)/out/release
 LDLIBS+=-Wl,-Bstatic -lmimalloc -Wl,-Bdynamic
 
+USE_MIMALLOC?=1
+USE_MIMALLOC_DYNAMIC?=0
+OBJ_MIMALLOC=
+ifneq ($(SANITIZE), 1)
+ifeq ($(USE_MIMALLOC), 1)
+	ifeq ($(USE_MIMALLOC_DYNAMIC), 1)
+	OBJ_MIMALLOC=util/mimalloc_hijack.o
+	else
+	OBJ_MIMALLOC=$(MIMALLOC_ROOT)/out/release/mimalloc.o
+	endif
+endif
+endif
+
 XXHASH_ROOT?=$(realpath ../xxHash)
 CPPFLAGS+=-I$(XXHASH_ROOT) -DXXH_INLINE_ALL
+
+URCU_ROOT?=$(realpath ../userspace-rcu)
+CPPFLAGS+=-I$(URCU_ROOT)/include -D_LGPL_SOURCE
+LDFLAGS+=-L$(URCU_ROOT)/src
+LDLIBS+=-Wl,-Bstatic -lurcu-qsbr -Wl,-Bdynamic
 
 # mkdir build; cd build; cmake .. -DLIBTINS_BUILD_SHARED=0 -DLIBTINS_ENABLE_CXX11=1; make
 #TINS_ROOT?=$(realpath ../libtins)

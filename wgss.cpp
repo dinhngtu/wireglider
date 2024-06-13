@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
 
         auto listen_ip = argm["listen-address"].as<std::string>();
         listen_port = argm["port"].as<uint16_t>();
-        listen_addr = parse_ip(listen_ip.c_str());
+        listen_addr = parse_sockaddr(listen_ip.c_str());
         if (std::holds_alternative<std::monostate>(listen_addr))
             throw std::invalid_argument("invalid listen address");
 
@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
         if (tun_cidr_parts.size() != 2)
             throw std::invalid_argument("invalid tunnel address");
         tun_prefix = strtoul(tun_cidr_parts[1].c_str(), nullptr, 10);
-        tun_addr = parse_ip(tun_cidr_parts[0].c_str());
+        tun_addr = parse_sockaddr(tun_cidr_parts[0].c_str());
         if (std::holds_alternative<sockaddr_in>(tun_addr)) {
             if (tun_prefix > 32)
                 throw std::invalid_argument("invalid tunnel prefix");
@@ -72,30 +72,36 @@ int main(int argc, char **argv) {
     }
 
     std::unique_ptr<UdpServer> server;
-    bool srv_v6;
+    bool srv_is_v6;
     if (auto sin = std::get_if<sockaddr_in>(&listen_addr)) {
         sin->sin_port = htons(listen_port);
         server = std::make_unique<UdpServer>(*sin);
-        srv_v6 = false;
+        srv_is_v6 = false;
     } else if (auto sin6 = std::get_if<sockaddr_in6>(&listen_addr)) {
         sin6->sin6_port = htons(listen_port);
         server = std::make_unique<UdpServer>(*sin6);
-        srv_v6 = true;
+        srv_is_v6 = true;
+    } else {
+        throw std::runtime_error("cannot get server address");
     }
     server->fd().set_nonblock();
 
     std::vector<Tun> tun;
-    bool tun_v6;
+    bool tun_is_v6;
     tun.emplace_back("wg%d");
     tun[0].fd().set_nonblock();
     if (auto tun_sin = std::get_if<sockaddr_in>(&tun_addr)) {
         tun[0].set_address(*tun_sin, tun_prefix);
-        tun_v6 = false;
+        tun_is_v6 = false;
     } else if (auto tun_sin6 = std::get_if<sockaddr_in6>(&tun_addr)) {
         tun[0].set_address6(*tun_sin6, tun_prefix);
-        tun_v6 = true;
+        tun_is_v6 = true;
+    } else {
+        throw std::runtime_error("cannot get tunnel address");
     }
     tun[0].set_up(true);
+
+    auto clients = std::make_unique<CdsHashtable<ClientAddress, Client>>(1024, 8, 128, CDS_LFHT_AUTO_RESIZE, nullptr);
 
     auto njobs = argm["jobs"].as<int>();
     std::vector<std::jthread> workers;
@@ -104,8 +110,9 @@ int main(int argc, char **argv) {
         WorkerArg{
             .tun = &tun[0],
             .server = server.get(),
-            .tun_v6 = tun_v6,
-            .srv_v6 = srv_v6,
+            .tun_is_v6 = tun_is_v6,
+            .srv_is_v6 = srv_is_v6,
+            .clients = clients.get(),
         });
     if (tun[0].features() & IFF_MULTI_QUEUE) {
         for (int i = 1; i < njobs; i++) {
@@ -115,8 +122,9 @@ int main(int argc, char **argv) {
                 WorkerArg{
                     .tun = &tun[i],
                     .server = server.get(),
-                    .tun_v6 = tun_v6,
-                    .srv_v6 = srv_v6,
+                    .tun_is_v6 = tun_is_v6,
+                    .srv_is_v6 = srv_is_v6,
+                    .clients = clients.get(),
                 });
         }
     } else {

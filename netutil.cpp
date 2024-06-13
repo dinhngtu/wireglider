@@ -5,7 +5,7 @@
 
 namespace wgss {
 
-std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_ip(const char *str) {
+std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_sockaddr(const char *str) {
     sockaddr_in sin{};
     sin.sin_family = AF_INET;
     sockaddr_in6 sin6{};
