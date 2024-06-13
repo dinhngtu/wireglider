@@ -4,6 +4,7 @@
 #include <iterator>
 #include <concepts>
 #include <utility>
+#include <optional>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wvolatile"

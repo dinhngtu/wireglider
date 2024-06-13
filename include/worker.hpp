@@ -10,12 +10,12 @@
 #include <netinet/ip6.h>
 #include <tdutil/epollman.hpp>
 #include <wireguard_ffi.h>
-#include <boost/unordered/concurrent_flat_map.hpp>
 #include <xxhash.h>
 
 #include "tun.hpp"
 #include "udpsock.hpp"
 #include "rundown.hpp"
+#include "maple_tree.hpp"
 
 namespace std {
 
@@ -53,13 +53,19 @@ static inline auto operator<=>(const sockaddr_in6 &a, const sockaddr_in6 &b) noe
 
 namespace wgss {
 
-using ClientAddress = std::variant<sockaddr_in, sockaddr_in6>;
+using ClientEndpoint = std::variant<sockaddr_in, sockaddr_in6>;
 
-struct Client : public CdsHashtableNode<ClientAddress, Client> {
+using IpRange = std::variant<std::pair<in_addr, unsigned int>, std::pair<in6_addr, unsigned int>>;
+
+struct Client : public CdsHashtableNode<ClientEndpoint, Client> {
+    // readonly
     uint32_t index;
+    ClientEndpoint ep;
+
     std::mutex mutex;
     // protected by mutex:
     wireguard_tunnel *tunnel;
+    std::vector<IpRange> allowed_ips;
 };
 
 struct WorkerArg {
@@ -67,7 +73,8 @@ struct WorkerArg {
     UdpServer *server;
     bool tun_is_v6;
     bool srv_is_v6;
-    CdsHashtable<ClientAddress, Client> *clients;
+    CdsHashtable<ClientEndpoint, Client> *clients;
+    maple_tree *client_ips;
 };
 
 class Worker {
@@ -76,18 +83,22 @@ public:
 
     void run();
 
+    static size_t calc_overhead(bool srv_is_v6) {
+        size_t ret = sizeof(udphdr) + 32;
+        ret += srv_is_v6 ? sizeof(ip6_hdr) : sizeof(iphdr);
+        return ret;
+    }
+
 private:
     void do_tun(epoll_event *ev);
     virtio_net_hdr do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll_event *ev);
-    void do_server_write(const virtio_net_hdr &vnethdr, std::vector<std::vector<uint8_t>> &out);
+    Client *do_server_write(
+        RundownGuard &rcu,
+        std::vector<std::vector<uint8_t>> &crypted,
+        const virtio_net_hdr &vnethdr,
+        std::vector<std::vector<uint8_t>> &tunpkts);
 
     void do_server(epoll_event *ev);
-
-    size_t calc_overhead() {
-        size_t ret = sizeof(udphdr) + 32;
-        ret += _arg.srv_is_v6 ? sizeof(ip6_hdr) : sizeof(iphdr);
-        return ret;
-    }
 
 private:
     WorkerArg _arg;

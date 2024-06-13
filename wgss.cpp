@@ -10,6 +10,7 @@
 #include "udpsock.hpp"
 #include "worker.hpp"
 #include "netutil.hpp"
+#include "maple_tree.hpp"
 
 /*
  * schema:
@@ -36,7 +37,7 @@ int main(int argc, char **argv) {
     std::variant<std::monostate, sockaddr_in, sockaddr_in6> listen_addr;
     uint16_t listen_port;
     std::variant<std::monostate, sockaddr_in, sockaddr_in6> tun_addr;
-    unsigned long tun_prefix;
+    unsigned int tun_prefix;
 
     auto opts = make_options();
     cxxopts::ParseResult argm;
@@ -54,7 +55,7 @@ int main(int argc, char **argv) {
         boost::split(tun_cidr_parts, tun_cidr, boost::is_any_of("/"));
         if (tun_cidr_parts.size() != 2)
             throw std::invalid_argument("invalid tunnel address");
-        tun_prefix = strtoul(tun_cidr_parts[1].c_str(), nullptr, 10);
+        tun_prefix = static_cast<unsigned int>(strtoul(tun_cidr_parts[1].c_str(), nullptr, 10));
         tun_addr = parse_sockaddr(tun_cidr_parts[0].c_str());
         if (std::holds_alternative<sockaddr_in>(tun_addr)) {
             if (tun_prefix > 32)
@@ -101,11 +102,13 @@ int main(int argc, char **argv) {
     }
     tun[0].set_up(true);
 
-    auto clients = std::make_unique<CdsHashtable<ClientAddress, Client>>(1024, 8, 128, CDS_LFHT_AUTO_RESIZE, nullptr);
+    auto clients = std::make_unique<CdsHashtable<ClientEndpoint, Client>>(1024, 8, 128, CDS_LFHT_AUTO_RESIZE, nullptr);
+
+    maple_tree client_ips = MTREE_INIT("client_ips", MT_FLAGS_USE_RCU);
 
     auto njobs = argm["jobs"].as<int>();
     std::vector<std::jthread> workers;
-    workers.emplace_back(
+    auto &w0 = workers.emplace_back(
         worker_func,
         WorkerArg{
             .tun = &tun[0],
@@ -113,11 +116,13 @@ int main(int argc, char **argv) {
             .tun_is_v6 = tun_is_v6,
             .srv_is_v6 = srv_is_v6,
             .clients = clients.get(),
+            .client_ips = &client_ips,
         });
+    pthread_setname_np(w0.native_handle(), "worker0");
     if (tun[0].features() & IFF_MULTI_QUEUE) {
         for (int i = 1; i < njobs; i++) {
             tun.push_back(tun[0].clone());
-            workers.emplace_back(
+            auto &w = workers.emplace_back(
                 worker_func,
                 WorkerArg{
                     .tun = &tun[i],
@@ -125,7 +130,10 @@ int main(int argc, char **argv) {
                     .tun_is_v6 = tun_is_v6,
                     .srv_is_v6 = srv_is_v6,
                     .clients = clients.get(),
+                    .client_ips = &client_ips,
                 });
+            auto wn = fmt::format("worker{}", i);
+            pthread_setname_np(w.native_handle(), wn.c_str());
         }
     } else {
         fmt::print("IFF_MULTI_QUEUE not supported, not spawning more workers\n");

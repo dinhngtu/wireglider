@@ -28,7 +28,7 @@ Worker::Worker(const WorkerArg &arg) : _arg(arg) {
     if (_arg.tun_is_v6) {
         // TODO
     }
-    _overhead = calc_overhead();
+    _overhead = calc_overhead(_arg.srv_is_v6);
 }
 
 void Worker::run() {
@@ -59,9 +59,14 @@ void Worker::run() {
 
 void Worker::do_tun(epoll_event *ev) {
     if (ev->events & EPOLLIN) {
-        std::vector<std::vector<uint8_t>> out;
-        auto vnethdr = do_tun_read(out, ev);
-        do_server_write(vnethdr, out);
+        std::vector<std::vector<uint8_t>> tunpkts;
+        auto vnethdr = do_tun_read(tunpkts, ev);
+        RundownGuard rcu;
+        std::vector<std::vector<uint8_t>> crypted;
+        crypted.reserve(tunpkts.size());
+        auto client = do_server_write(rcu, crypted, vnethdr, tunpkts);
+        client->ep;
+        // sendmmsg(_arg.server->fd(), )
     }
 }
 
@@ -90,7 +95,7 @@ void Worker::do_tun(epoll_event *ev) {
  * │ ... iph_csum ... │ ...  l4_csum ... │ payload part │
  *   ...
  */
-virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll_event *ev) {
+virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &tunpkts, epoll_event *ev) {
     // don't use directly
     static std::vector<uint8_t> _recvbuf(65536 + sizeof(virtio_net_hdr));
     auto msize = read(_arg.tun->fd(), _recvbuf.data(), _recvbuf.size());
@@ -123,7 +128,7 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll
     size_t i = 0;
     for (; !rest.empty(); i++) {
         auto datalen = std::min(rest.size(), static_cast<size_t>(vnethdr.gso_size));
-        auto &_outbuf = out.emplace_back(seghdr.size() + datalen + _overhead);
+        auto &_outbuf = tunpkts.emplace_back(seghdr.size() + datalen + _overhead);
         std::span outbuf(_outbuf.begin(), seghdr.size() + datalen);
         std::copy(seghdr.begin(), seghdr.end(), outbuf.begin());
         std::copy(&rest[0], &rest[datalen], &outbuf[seghdr.size()]);
@@ -137,16 +142,16 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll
             // For IPv4 we are responsible for incrementing the ID field,
             // updating the total len field, and recalculating the header
             // checksum.
-            auto ip = reinterpret_cast<iphdr *>(outbuf.data());
+            auto ip = reinterpret_cast<struct ip *>(outbuf.data());
             if (i) {
-                big_to_native_inplace(ip->id);
-                ip->id += i;
-                native_to_big_inplace(ip->id);
+                big_to_native_inplace(ip->ip_id);
+                ip->ip_id += i;
+                native_to_big_inplace(ip->ip_id);
             }
-            ip->tot_len = outbuf.size();
-            native_to_big_inplace(ip->tot_len);
-            ip->check = checksum(std::span(outbuf).subspan(0, vnethdr.csum_start), 0);
-            native_to_big_inplace(ip->check);
+            ip->ip_len = outbuf.size();
+            native_to_big_inplace(ip->ip_len);
+            ip->ip_sum = checksum(std::span(outbuf).subspan(0, vnethdr.csum_start), 0);
+            native_to_big_inplace(ip->ip_sum);
         }
 
         if (istcp) {
@@ -189,15 +194,13 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll
     return vnethdr;
 }
 
-void Worker::do_server_write(const virtio_net_hdr &vnethdr, std::vector<std::vector<uint8_t>> &out) {
-    sockaddr_in caddr4;
-    sockaddr_in6 caddr6;
-    Client *client = nullptr;
-    bool first = true;
-    std::unique_lock<std::mutex> client_lock;
-
-    if (out.empty())
-        return;
+Client *Worker::do_server_write(
+    RundownGuard &rcu,
+    std::vector<std::vector<uint8_t>> &crypted,
+    const virtio_net_hdr &vnethdr,
+    std::vector<std::vector<uint8_t>> &tunpkts) {
+    if (tunpkts.empty())
+        return nullptr;
 
     /*
     std::vector<uint8_t> encbuf(vnethdr.hdr_len + vnethdr.gso_size + _overhead);
@@ -209,32 +212,34 @@ void Worker::do_server_write(const virtio_net_hdr &vnethdr, std::vector<std::vec
     }
      */
 
-    RundownGuard rcu;
-
-
-    if (_arg.srv_is_v6) {
-        _arg.clients->find(rcu, caddr6);
+    in_addr dstip4;
+    in6_addr dstip6;
+    Client *client = nullptr;
+    if (_arg.tun_is_v6) {
+        dstip6 = reinterpret_cast<ip6_hdr *>(tunpkts[0].data())->ip6_dst;
+        throw std::runtime_error("not implemented");
     } else {
-        _arg.clients->find(rcu, caddr4);
+        dstip4 = reinterpret_cast<ip *>(tunpkts[0].data())->ip_dst;
+        unsigned long ipkey = dstip4.s_addr;
+        big_to_native_inplace(ipkey);
+        client = static_cast<Client *>(mtree_load(_arg.client_ips, ipkey));
     }
 
-    //_arg.clients->find(rcu, )
+    if (!client)
+        return nullptr;
+    std::lock_guard<std::mutex> client_lock(client->mutex);
 
-    // TODO
-    /*
-    if (first) {
-        _clients.visit(addr, [&client](Client &pc) { client = &pc; });
-        if (!client)
-            continue;
-        client_lock = std::unique_lock<std::mutex>(client->mutex);
+    std::vector<uint8_t> tmp(vnethdr.hdr_len + vnethdr.gso_size + _overhead);
+    for (auto &in : tunpkts) {
+        auto res = wireguard_write(client->tunnel, in.data(), in.size() - _overhead, tmp.data(), tmp.size());
+        if (res.op == WRITE_TO_NETWORK) {
+            std::copy_n(tmp.begin(), res.size, in.begin());
+            in.resize(res.size);
+            crypted.push_back(std::move(in));
+        }
     }
-
-    assert(client_lock);
-    auto res = wireguard_write(client->tunnel, rest.data(), pktlen, room.data(), room.size());
-    if (res.op == WRITE_TO_NETWORK) {
-        room = room.subspan(res.size);
-    }
-    */
+    tunpkts.clear();
+    return client;
 }
 
 void Worker::do_server(epoll_event *ev) {

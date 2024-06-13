@@ -121,7 +121,11 @@ all: $(TARGETS)
 $(TARGETS): %: %.cpp $(OBJ_MIMALLOC)
 	$(LINK.cpp) $(OBJ_MIMALLOC) $< $(filter-out $(OBJ_MIMALLOC),$(filter %.o,$^)) $(LOADLIBES) $(LDLIBS) -o $@
 
-wgss: worker.o netutil.o checksum.o checksum-x64.o
+wgss: worker.o netutil.o checksum.o checksum-x64.o maple_tree.o xarray.o
+
+xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
+
+maple_tree.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
 clean:
 	$(RM) $(TARGETS)
