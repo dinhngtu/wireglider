@@ -24,7 +24,7 @@ void worker_func(WorkerArg arg) {
     w.run();
 }
 
-Worker::Worker(const WorkerArg &arg) : _arg(arg) {
+Worker::Worker(const WorkerArg &arg) : _arg(arg), _recvbuf(65536 + sizeof(virtio_net_hdr)) {
     if (_arg.tun_is_v6) {
         // TODO
     }
@@ -59,14 +59,43 @@ void Worker::run() {
 
 void Worker::do_tun(epoll_event *ev) {
     if (ev->events & EPOLLIN) {
-        std::vector<std::vector<uint8_t>> tunpkts;
-        auto vnethdr = do_tun_read(tunpkts, ev);
-        RundownGuard rcu;
-        std::vector<std::vector<uint8_t>> crypted;
-        crypted.reserve(tunpkts.size());
-        auto client = do_server_write(rcu, crypted, vnethdr, tunpkts);
-        client->ep;
-        // sendmmsg(_arg.server->fd(), )
+        virtio_net_hdr vnethdr;
+        std::vector<uint8_t> tunpkts;
+        size_t segment_size, nr_segments;
+        std::tie(segment_size, nr_segments) = do_tun_read(vnethdr, tunpkts, ev);
+        if (!nr_segments)
+            return;
+
+        std::vector<uint8_t> crypted;
+        size_t crypted_segment_size;
+        ClientEndpoint ep;
+        std::tie(crypted_segment_size, ep) = do_crypt_encap(crypted, vnethdr, tunpkts, segment_size, nr_segments);
+        if (!crypted_segment_size)
+            return;
+
+        msghdr mh;
+        memset(&mh, 0, sizeof(mh));
+        if (auto sin6 = std::get_if<sockaddr_in6>(&ep)) {
+            mh.msg_name = sin6;
+            mh.msg_namelen = sizeof(sockaddr_in6);
+        } else if (auto sin = std::get_if<sockaddr_in>(&ep)) {
+            mh.msg_name = sin;
+            mh.msg_namelen = sizeof(sockaddr_in);
+        }
+        iovec iov{crypted.data(), crypted.size()};
+        mh.msg_iov = &iov;
+        mh.msg_iovlen = 1;
+        std::array<uint8_t, CMSG_SPACE(sizeof(uint16_t))> _cm;
+        auto cm = std::launder(reinterpret_cast<cmsghdr *>(_cm.data()));
+        cm->cmsg_level = SOL_UDP;
+        cm->cmsg_type = UDP_SEGMENT;
+        cm->cmsg_len = _cm.size();
+        *reinterpret_cast<uint16_t *>(CMSG_DATA(cm)) = crypted_segment_size;
+        mh.msg_control = cm;
+        mh.msg_controllen = _cm.size();
+
+        if (sendmsg(_arg.server->fd(), &mh, 0) < 0)
+            perror("sendmsg");
     }
 }
 
@@ -95,9 +124,8 @@ void Worker::do_tun(epoll_event *ev) {
  * │ ... iph_csum ... │ ...  l4_csum ... │ payload part │
  *   ...
  */
-virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &tunpkts, epoll_event *ev) {
+std::pair<size_t, size_t> Worker::do_tun_read(virtio_net_hdr &vnethdr, std::vector<uint8_t> &tunpkts, epoll_event *ev) {
     // don't use directly
-    static std::vector<uint8_t> _recvbuf(65536 + sizeof(virtio_net_hdr));
     auto msize = read(_arg.tun->fd(), _recvbuf.data(), _recvbuf.size());
     if (msize < 0)
         return {};
@@ -105,7 +133,7 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &tunpkts, e
 
     if (rest.size() < sizeof(virtio_net_hdr))
         return {};
-    auto vnethdr = *reinterpret_cast<virtio_net_hdr *>(rest.data());
+    vnethdr = *reinterpret_cast<virtio_net_hdr *>(rest.data());
     rest = rest.subspan(sizeof(virtio_net_hdr));
     // rest now contains iphdr+l4hdr+giant payload
 
@@ -125,11 +153,15 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &tunpkts, e
     rest = rest.subspan(vnethdr.hdr_len);
     // rest now only contains the giant payload
 
+    size_t nr_segments = round_up(rest.size(), vnethdr.gso_size);
+    size_t segment_size = seghdr.size() + vnethdr.gso_size;
+    tunpkts.resize(rest.size() + nr_segments * seghdr.size());
+
     size_t i = 0;
     for (; !rest.empty(); i++) {
         auto datalen = std::min(rest.size(), static_cast<size_t>(vnethdr.gso_size));
-        auto &_outbuf = tunpkts.emplace_back(seghdr.size() + datalen + _overhead);
-        std::span outbuf(_outbuf.begin(), seghdr.size() + datalen);
+        assert(tunpkts.size() >= i * segment_size + seghdr.size() + datalen);
+        std::span outbuf(&tunpkts[i * segment_size], seghdr.size() + datalen);
         std::copy(seghdr.begin(), seghdr.end(), outbuf.begin());
         std::copy(&rest[0], &rest[datalen], &outbuf[seghdr.size()]);
 
@@ -191,58 +223,107 @@ virtio_net_hdr Worker::do_tun_read(std::vector<std::vector<uint8_t>> &tunpkts, e
         rest = rest.subspan(datalen);
     }
 
-    return vnethdr;
+    return std::make_pair(segment_size, i);
 }
 
-Client *Worker::do_server_write(
-    RundownGuard &rcu,
-    std::vector<std::vector<uint8_t>> &crypted,
+std::pair<size_t, ClientEndpoint> Worker::do_crypt_encap(
+    std::vector<uint8_t> &crypted,
     const virtio_net_hdr &vnethdr,
-    std::vector<std::vector<uint8_t>> &tunpkts) {
+    const std::vector<uint8_t> &tunpkts,
+    size_t segment_size,
+    size_t nr_segments) {
+    Client *client = nullptr;
+    size_t crypted_segment_size = 0;
+
     if (tunpkts.empty())
-        return nullptr;
+        return {crypted_segment_size, {}};
 
-    /*
-    std::vector<uint8_t> encbuf(vnethdr.hdr_len + vnethdr.gso_size + _overhead);
-    for (auto &pkt : out) {
-        auto res = wireguard_write(client->tunnel, pkt.data(), pkt.size() - _overhead, encbuf.data(), encbuf.size());
-        if (res.op == WRITE_TO_NETWORK) {
-            room = room.subspan(res.size);
-        }
-    }
-     */
+    // be conservative
+    crypted.resize(tunpkts.size() + _overhead * nr_segments);
 
+    RundownGuard rcu;
     in_addr dstip4;
     in6_addr dstip6;
-    Client *client = nullptr;
     if (_arg.tun_is_v6) {
-        dstip6 = reinterpret_cast<ip6_hdr *>(tunpkts[0].data())->ip6_dst;
+        dstip6 = reinterpret_cast<const ip6_hdr *>(tunpkts.data())->ip6_dst;
         throw std::runtime_error("not implemented");
     } else {
-        dstip4 = reinterpret_cast<ip *>(tunpkts[0].data())->ip_dst;
-        unsigned long ipkey = dstip4.s_addr;
-        big_to_native_inplace(ipkey);
-        client = static_cast<Client *>(mtree_load(_arg.client_ips, ipkey));
+        dstip4 = reinterpret_cast<const ip *>(tunpkts.data())->ip_dst;
+        unsigned long ipkey = big_to_native(dstip4.s_addr);
+        client = static_cast<Client *>(mtree_load(_arg.allowed_ips, ipkey));
     }
 
     if (!client)
-        return nullptr;
+        return {crypted_segment_size, {}};
     std::lock_guard<std::mutex> client_lock(client->mutex);
 
-    std::vector<uint8_t> tmp(vnethdr.hdr_len + vnethdr.gso_size + _overhead);
-    for (auto &in : tunpkts) {
-        auto res = wireguard_write(client->tunnel, in.data(), in.size() - _overhead, tmp.data(), tmp.size());
+    std::span<const uint8_t> rest(tunpkts);
+    std::span<uint8_t> remain(crypted);
+    while (!rest.empty()) {
+        auto datalen = std::min(rest.size(), segment_size);
+        auto res = wireguard_write(client->tunnel, rest.data(), datalen, remain.data(), remain.size());
         if (res.op == WRITE_TO_NETWORK) {
-            std::copy_n(tmp.begin(), res.size, in.begin());
-            in.resize(res.size);
-            crypted.push_back(std::move(in));
+            rest = rest.subspan(datalen);
+            remain = remain.subspan(res.size);
+            if (!crypted_segment_size)
+                crypted_segment_size = res.size;
+            else
+                assert(rest.empty() || crypted_segment_size == res.size);
         }
     }
-    tunpkts.clear();
-    return client;
+    crypted.resize(crypted.size() - remain.size());
+    return {crypted_segment_size, client->_cds_lfht_key};
 }
 
 void Worker::do_server(epoll_event *ev) {
+    if (ev->events & EPOLLIN) {
+        msghdr mh;
+        memset(&mh, 0, sizeof(mh));
+
+        std::array<uint8_t, sizeof(sockaddr_in6)> _name;
+        mh.msg_name = _name.data();
+        mh.msg_namelen = _name.size();
+        iovec iov{_recvbuf.data(), _recvbuf.size()};
+        mh.msg_iov = &iov;
+        mh.msg_iovlen = 1;
+        std::array<uint8_t, CMSG_LEN(sizeof(uint16_t))> _cm;
+        mh.msg_control = _cm.data();
+        mh.msg_controllen = _cm.size();
+
+        if (recvmsg(_arg.server->fd(), &mh, 0) < 0) {
+            perror("recvmsg");
+            return;
+        }
+
+        size_t gro_size = 0;
+        for (auto cm = std::launder(CMSG_FIRSTHDR(&mh)); cm; cm = CMSG_NXTHDR(&mh, cm)) {
+            if (cm->cmsg_type == UDP_GRO) {
+                gro_size = *reinterpret_cast<const uint16_t *>(CMSG_DATA(cm));
+                break;
+            }
+        }
+
+        if (!gro_size)
+            gro_size = iov.iov_len;
+
+        ClientEndpoint ep;
+        if (std::launder(static_cast<sockaddr *>(mh.msg_name))->sa_family == AF_INET6) {
+            assert(_arg.srv_is_v6);
+            ep = *static_cast<sockaddr_in6 *>(mh.msg_name);
+        } else {
+            assert(!_arg.srv_is_v6);
+            ep = *static_cast<sockaddr_in *>(mh.msg_name);
+        }
+
+        RundownGuard rcu;
+        auto it = _arg.clients->find(rcu, ep);
+        if (it == _arg.clients->end())
+            return;
+
+        std::lock_guard<std::mutex> client_lock(it->mutex);
+
+        // TODO
+    }
 }
 
 } // namespace wgss

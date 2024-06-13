@@ -85,6 +85,9 @@ int main(int argc, char **argv) {
     } else {
         throw std::runtime_error("cannot get server address");
     }
+    int gro = 1;
+    if (setsockopt(server->fd(), SOL_UDP, UDP_GRO, &gro, sizeof(gro)) < 0)
+        throw std::system_error(errno, std::system_category(), "setsockopt(UDP_GRO)");
     server->fd().set_nonblock();
 
     std::vector<Tun> tun;
@@ -104,7 +107,7 @@ int main(int argc, char **argv) {
 
     auto clients = std::make_unique<CdsHashtable<ClientEndpoint, Client>>(1024, 8, 128, CDS_LFHT_AUTO_RESIZE, nullptr);
 
-    maple_tree client_ips = MTREE_INIT("client_ips", MT_FLAGS_USE_RCU);
+    maple_tree allowed_ips = MTREE_INIT("allowed_ips", MT_FLAGS_USE_RCU);
 
     auto njobs = argm["jobs"].as<int>();
     std::vector<std::jthread> workers;
@@ -116,7 +119,7 @@ int main(int argc, char **argv) {
             .tun_is_v6 = tun_is_v6,
             .srv_is_v6 = srv_is_v6,
             .clients = clients.get(),
-            .client_ips = &client_ips,
+            .allowed_ips = &allowed_ips,
         });
     pthread_setname_np(w0.native_handle(), "worker0");
     if (tun[0].features() & IFF_MULTI_QUEUE) {
@@ -130,7 +133,7 @@ int main(int argc, char **argv) {
                     .tun_is_v6 = tun_is_v6,
                     .srv_is_v6 = srv_is_v6,
                     .clients = clients.get(),
-                    .client_ips = &client_ips,
+                    .allowed_ips = &allowed_ips,
                 });
             auto wn = fmt::format("worker{}", i);
             pthread_setname_np(w.native_handle(), wn.c_str());

@@ -74,7 +74,7 @@ struct WorkerArg {
     bool tun_is_v6;
     bool srv_is_v6;
     CdsHashtable<ClientEndpoint, Client> *clients;
-    maple_tree *client_ips;
+    maple_tree *allowed_ips;
 };
 
 class Worker {
@@ -91,17 +91,20 @@ public:
 
 private:
     void do_tun(epoll_event *ev);
-    virtio_net_hdr do_tun_read(std::vector<std::vector<uint8_t>> &out, epoll_event *ev);
-    Client *do_server_write(
-        RundownGuard &rcu,
-        std::vector<std::vector<uint8_t>> &crypted,
+    // returns (size of each segment, number of segments)
+    std::pair<size_t, size_t> do_tun_read(virtio_net_hdr &vnethdr, std::vector<uint8_t> &tunpkts, epoll_event *ev);
+    std::pair<size_t, ClientEndpoint> do_crypt_encap(
+        std::vector<uint8_t> &crypted,
         const virtio_net_hdr &vnethdr,
-        std::vector<std::vector<uint8_t>> &tunpkts);
+        const std::vector<uint8_t> &tunpkts,
+        size_t segment_size,
+        size_t nr_segments);
 
     void do_server(epoll_event *ev);
 
 private:
     WorkerArg _arg;
+    std::vector<uint8_t> _recvbuf;
     tdutil::EpollManager<> _poll;
     size_t _overhead;
 };
