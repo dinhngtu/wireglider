@@ -15,7 +15,7 @@ namespace wgss {
 
 namespace worker_impl {
 
-GROBatch::Outcome GROBatch::push_packet_v4(std::span<uint8_t> ippkt) {
+DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
     if (ippkt.size() < sizeof(struct ip))
         return GRO_DROP;
     auto ip = reinterpret_cast<struct ip *>(ippkt.data());
@@ -62,7 +62,8 @@ GROBatch::Outcome GROBatch::push_packet_v4(std::span<uint8_t> ippkt) {
     fk.datalen = rest.size();
 
     auto it = flow4->upper_bound(fk);
-    if (it != flow4->end() && it->first.is_consecutive_with(fk, 1, istcp ? rest.size() : 0)) {
+    if (it != flow4->end() && it->second.is_appendable(rest.size()) &&
+        it->first.is_consecutive_with(fk, 1, istcp ? rest.size() : 0)) {
         // insert into existing flow
         it->second.append(rest);
     } else {
@@ -71,9 +72,9 @@ GROBatch::Outcome GROBatch::push_packet_v4(std::span<uint8_t> ippkt) {
         newflow = OwnedPacketBatch(4 * fk.datalen);
         newflow.append(rest);
     }
-    // merge with previous flow
+    // merge with previous flow; map is in reverse order
     auto prev = it + 1;
-    if (prev != flow4->end() &&
+    if (prev != flow4->end() && prev->second.is_mergeable(it->second) &&
         prev->first.is_consecutive_with(it->first, prev->second.count, istcp ? prev->second.buf.size() : 0)) {
         prev->second.extend(it->second);
         flow4->erase(it);
@@ -111,7 +112,7 @@ void Worker::do_server(epoll_event *ev) {
         if (!crypt)
             return;
 
-        auto tun_pb = do_server_decap(crypt->first, crypt->second);
+        auto tun_pb = do_server_decap(crypt->first, crypt->second, _pktbuf);
         if (!tun_pb)
             return;
 
@@ -125,7 +126,9 @@ void Worker::do_server(epoll_event *ev) {
         }
          */
 
-        // TODO
+        std::vector<mmsghdr> mh;
+        std::vector<iovec> iovecs;
+        std::vector<std::array<uint8_t, CMSG_SPACE(sizeof(uint16_t))>> cm;
     }
 }
 
@@ -191,40 +194,64 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
  *  - initial IP ID
  *  - initial sequence number (0 for UDP)
  */
-std::optional<GROBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint ep) {
+std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint ep, std::vector<uint8_t> &scratch) {
     RundownGuard rcu;
     auto it = _arg.clients->find(rcu, ep);
     if (it == _arg.clients->end())
         return std::nullopt;
 
-    GROBatch batch;
+    DecapBatch batch;
     std::lock_guard<std::mutex> client_lock(it->mutex);
 
     auto rest = pb.data;
     size_t i = 0;
     for (; !rest.empty(); i++) {
         auto datalen = std::min(rest.size(), pb.segment_size);
-        auto res = wireguard_read_raw(it->tunnel, rest.data(), datalen, _pktbuf.data(), _pktbuf.size());
+        auto result = wireguard_read_raw(it->tunnel, rest.data(), datalen, scratch.data(), scratch.size());
         rest = rest.subspan(datalen);
-        switch (res.op) {
+        switch (result.op) {
         case WRITE_TO_TUNNEL_IPV4: {
-            auto pkt = std::span(&_pktbuf[0], &_pktbuf[res.size]);
-            if (batch.push_packet_v4(pkt) == GROBatch::Outcome::GRO_NOADD) {
-            }
+            auto pkt = std::span(&scratch[0], &scratch[result.size]);
+            if (batch.push_packet_v4(pkt) == DecapBatch::Outcome::GRO_NOADD)
+                batch.unrel.emplace_back(pkt.begin(), pkt.end());
             break;
         }
         case WRITE_TO_TUNNEL_IPV6:
             throw std::runtime_error("not implemented");
             break;
-        case WRITE_TO_NETWORK:
-            // TODO
+        case WRITE_TO_NETWORK: {
+            auto pkt = std::span(&scratch[0], &scratch[result.size]);
+            _serversend2.emplace_back(pkt.begin(), pkt.end());
+            tunnel_flush(rcu, client_lock, it->tunnel, scratch);
             break;
+        }
         case WIREGUARD_ERROR:
             break;
         }
     }
 
     return batch;
+}
+
+void Worker::tunnel_flush(
+    [[maybe_unused]] RundownGuard &rcu,
+    [[maybe_unused]] std::lock_guard<std::mutex> &lock,
+    wireguard_tunnel_raw *tunnel,
+    std::vector<uint8_t> &scratch) {
+    while (1) {
+        auto result = wireguard_read_raw(tunnel, nullptr, 0, scratch.data(), scratch.size());
+        switch (result.op) {
+        case WRITE_TO_NETWORK: {
+            auto pkt = std::span(&scratch[0], &scratch[result.size]);
+            _serversend2.emplace_back(pkt.begin(), pkt.end());
+            break;
+        }
+        case WIREGUARD_DONE:
+            return;
+        default:
+            break;
+        }
+    }
 }
 
 } // namespace wgss

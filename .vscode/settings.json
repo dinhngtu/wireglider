@@ -77,6 +77,7 @@
         "set": "cpp",
         "internet": "cpp",
         "rope": "cpp",
-        "slist": "cpp"
+        "slist": "cpp",
+        "forward_list": "c"
     }
 }
