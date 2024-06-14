@@ -20,7 +20,7 @@ public:
         _tun = tdutil::FileDescriptor("/dev/net/tun", O_RDWR);
         _tun.check();
 
-        short avail_feat;
+        unsigned int avail_feat;
         if (ioctl(_tun, TUNGETFEATURES, &avail_feat) < 0)
             avail_feat = IFF_TUN | IFF_TAP | IFF_NO_PI | IFF_ONE_QUEUE;
 

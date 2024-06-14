@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <variant>
 #include <cstring>
 #include <string>
@@ -52,14 +53,5 @@ struct Ifr {
 };
 
 std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_sockaddr(const char *str);
-
-struct PacketBatch {
-    std::span<uint8_t> prefix;
-    std::span<uint8_t> data;
-    size_t segment_size;
-    constexpr size_t nr_segments() {
-        return tdutil::round_up(data.size(), segment_size) / segment_size;
-    }
-};
 
 } // namespace wgss

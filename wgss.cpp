@@ -101,7 +101,7 @@ int main(int argc, char **argv) {
     }
     tun[0]->set_up(true);
 
-    auto clients = std::make_unique<CdsHashtable<ClientEndpoint, Client>>(1024, 8, 128, CDS_LFHT_AUTO_RESIZE, nullptr);
+    auto clients = std::make_unique<CdsHashtable<worker_impl::ClientEndpoint, worker_impl::Client>>(1024, 1024, 0, CDS_LFHT_AUTO_RESIZE, nullptr);
 
     maple_tree allowed_ips = MTREE_INIT("allowed_ips", MT_FLAGS_USE_RCU);
 
