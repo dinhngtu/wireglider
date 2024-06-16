@@ -12,7 +12,9 @@
                 "${workspaceFolder}/../boringtun/boringtun/src",
                 "${workspaceFolder}/../fmt/include",
                 "${workspaceFolder}/../libtins/include",
-                "${workspaceFolder}/../xxHash"
+                "${workspaceFolder}/../xxHash",
+                "${workspaceFolder}/../Catch2/src",
+                "${workspaceFolder}/../Catch2/build/generated-includes"
             ],
             "defines": [
                 "_GNU_SOURCE",

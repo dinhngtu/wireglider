@@ -92,13 +92,17 @@ static inline uint64_t checksum_nofold(std::span<const uint8_t, 1> b, uint64_t i
     return ac;
 }
 
+uint64_t checksum_nofold_generic(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial);
+
 #ifdef USE_ADX
 static inline uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial) {
     return checksum_raw_nofold_x64(b.data(), b.size(), initial);
 }
 #else
 // use the generic implementation
-uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial);
+static inline uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial) {
+    return checksum_nofold_generic(b, initial);
+}
 #endif
 
 static inline uint16_t fold_complement_checksum(uint64_t initial) {

@@ -3,3 +3,4 @@
 *.d
 .vscode/*.log
 wgss
+tests/checksum
