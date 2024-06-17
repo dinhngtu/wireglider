@@ -78,6 +78,9 @@
         "internet": "cpp",
         "rope": "cpp",
         "slist": "cpp",
-        "forward_list": "c"
+        "forward_list": "c",
+        "buffer": "cpp",
+        "socket": "cpp",
+        "valarray": "cpp"
     }
 }

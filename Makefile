@@ -89,6 +89,12 @@ CATCH_CPPFLAGS+=-I$(CATCH_ROOT)/src -I$(CATCH_ROOT)/build/generated-includes
 CATCH_LDFLAGS+=-L$(CATCH_ROOT)/build/src
 CATCH_LDLIBS+=-lCatch2Main -lCatch2
 
+# make; make check
+FASTCSUM_ROOT?=$(realpath ../fastcsum)
+CPPFLAGS+=-I$(FASTCSUM_ROOT)/include
+LDFLAGS+=-L$(FASTCSUM_ROOT)
+LDLIBS+=-lfastcsum
+
 ifeq ($(DEBUG), 1)
 	CPPFLAGS+=-DDEBUG=1
 	CFLAGS+=-O0 -g3 -fno-omit-frame-pointer
@@ -134,38 +140,43 @@ TESTS=\
 	tests/checksum \
 
 $(TESTS): CPPFLAGS+=$(CATCH_CPPFLAGS)
+$(TESTS): CFLAGS+=-Wno-unused
+$(TESTS): CXXFLAGS+=-Wno-unused
 $(TESTS): LDFLAGS+=$(CATCH_LDFLAGS)
 $(TESTS): LDLIBS+=$(CATCH_LDLIBS)
+
+TESTS_RUN=$(addsuffix .run,$(TESTS))
+
+$(TESTS_RUN): %.run: %
+	$<
 
 DEPS=$(wildcard *.d)
 
 all: $(TARGETS) $(TESTS)
 
+tests: $(TESTS)
+
 $(TARGETS): %: %.cpp $(OBJ_MIMALLOC)
 	$(LINK.cpp) $(OBJ_MIMALLOC) $< $(filter-out $(OBJ_MIMALLOC),$(filter %.o,$^)) $(LOADLIBES) $(LDLIBS) -o $@
 
-wgss: worker.o netutil.o checksum.o maple_tree.o xarray.o kernel_compat.o
-
-tests/checksum: checksum.o
+wgss: worker.o netutil.o maple_tree.o xarray.o kernel_compat.o
 
 ifeq ($(USE_ADX), 1)
 wgss: checksum-x64.o
-tests/checksum: checksum-x64.o
 endif
 
 xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
 maple_tree.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
-check: $(TESTS)
-	$(foreach test,$(TESTS),$(test))
+check: $(TESTS_RUN)
 
 clean:
-	$(RM) $(TARGETS)
+	$(RM) $(TARGETS) $(TESTS)
 	$(RM) $(OBJECTS)
 	$(RM) $(DEPS)
 	find . -name '*.[od]' -print -delete
 
-.PHONY: check clean
+.PHONY: $(TESTS_RUN) check clean
 
 -include $(DEPS)

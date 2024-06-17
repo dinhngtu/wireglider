@@ -14,7 +14,8 @@
                 "${workspaceFolder}/../libtins/include",
                 "${workspaceFolder}/../xxHash",
                 "${workspaceFolder}/../Catch2/src",
-                "${workspaceFolder}/../Catch2/build/generated-includes"
+                "${workspaceFolder}/../Catch2/build/generated-includes",
+                "${workspaceFolder}/../fastcsum/include"
             ],
             "defines": [
                 "_GNU_SOURCE",
