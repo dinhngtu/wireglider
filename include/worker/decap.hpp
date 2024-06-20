@@ -70,7 +70,7 @@ struct FlowKey {
     uint16_t srcport;
     // native order
     uint16_t dstport;
-    uint16_t datalen;
+    uint16_t segment_size;
 
     // native order
     uint16_t ipid;
@@ -118,7 +118,11 @@ struct DecapBatch {
     IP6Flow tcp6;
     IP4Flow udp4;
     IP6Flow udp6;
+    // packets that are not aggregated
     std::deque<std::vector<uint8_t>> unrel;
+
+    // packets that must be returned to the client for protocol reason
+    std::deque<std::vector<uint8_t>> retpkt;
 
     Outcome push_packet_v4(std::span<uint8_t> ippkt);
 };

@@ -63,18 +63,18 @@ inline uint64_t checksum_nofold(std::span<const uint8_t, 1> b, uint64_t initial)
 #ifdef USE_ADX
 template <>
 inline uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial) {
-    return fastcsum::impl::fastcsum_nofold_adx_v2(b.data(), b.size(), initial);
+    return fastcsum::fastcsum_nofold_adx_v2(b.data(), b.size(), initial);
 }
 #elif defined(__x86_64__)
 template <>
 inline uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial) {
-    return fastcsum::impl::fastcsum_nofold_x64_64b(b.data(), b.size(), initial);
+    return fastcsum::fastcsum_nofold_x64_64b(b.data(), b.size(), initial);
 }
 #else
 // use the generic implementation
 template <>
 inline uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial) {
-    return fastcsum::impl::fastcsum_nofold_generic(b.data(), b.size(), initial);
+    return fastcsum::fastcsum_nofold_generic(b.data(), b.size(), initial);
 }
 #endif
 
@@ -100,12 +100,12 @@ static inline uint16_t pseudo_header_checksum(
     std::span<const uint8_t, E2> dstAddr,
     uint16_t totalLen) {
     auto ac = checksum_impl::pseudo_header_checksum_nofold(proto, srcAddr, dstAddr, totalLen);
-    return fastcsum::fold_complement_checksum(ac);
+    return fastcsum::fold_complement_checksum64(ac);
 }
 
 static inline uint16_t checksum(std::span<const uint8_t> b, uint64_t initial) {
     auto ac = checksum_impl::checksum_nofold(b, initial);
-    return fastcsum::fold_complement_checksum(ac);
+    return fastcsum::fold_complement_checksum64(ac);
 }
 
 } // namespace wgss

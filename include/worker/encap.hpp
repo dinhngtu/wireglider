@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <span>
+#include <deque>
 #include <boost/intrusive/list.hpp>
 #include <tdutil/util.hpp>
 
@@ -18,23 +19,47 @@ struct PacketBatch {
     }
 };
 
-struct ServerSendBatch : public boost::intrusive::list_base_hook<> {
-    ServerSendBatch() {
+struct ServerSendTag {
+    using BaseHook = boost::intrusive::list_base_hook<boost::intrusive::tag<ServerSendTag>>;
+};
+
+struct ServerSendBase : public ServerSendTag::BaseHook {
+    virtual ~ServerSendBase() {
     }
-    explicit ServerSendBatch(std::span<uint8_t> data, size_t _segment_size, ClientEndpoint _ep)
-        : ep(_ep), buf(data.begin(), data.end()), segment_size(_segment_size) {
-    }
-    ClientEndpoint ep;
-    std::vector<uint8_t> buf;
-    size_t segment_size;
 
     struct deleter {
-        void operator()(ServerSendBatch *self) {
+        void operator()(ServerSendBase *self) {
             delete self;
         }
     };
 };
 
-using ServerSendList = boost::intrusive::list<worker_impl::ServerSendBatch, boost::intrusive::constant_time_size<true>>;
+struct ServerSendBatch : public ServerSendBase {
+    ServerSendBatch() {
+    }
+    explicit ServerSendBatch(std::span<uint8_t> data, size_t _segment_size, ClientEndpoint _ep)
+        : ep(_ep), buf(data.begin(), data.end()), segment_size(_segment_size) {
+    }
+    virtual ~ServerSendBatch() {
+    }
+
+    ClientEndpoint ep;
+    std::vector<uint8_t> buf;
+    size_t segment_size;
+};
+
+struct ServerSendList : public ServerSendBase {
+    using packet_list = std::deque<std::vector<uint8_t>>;
+    explicit ServerSendList(packet_list &&pkts, ClientEndpoint _ep);
+    virtual ~ServerSendList() {
+    }
+    ClientEndpoint ep;
+    packet_list packets;
+    std::vector<iovec> iovecs;
+    std::vector<mmsghdr> mh;
+    size_t pos;
+};
+
+using ServerSendQueue = boost::intrusive::list<worker_impl::ServerSendBase, boost::intrusive::constant_time_size<true>>;
 
 } // namespace wgss::worker_impl

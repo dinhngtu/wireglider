@@ -66,20 +66,25 @@ private:
     std::optional<std::pair<worker_impl::PacketBatch, worker_impl::ClientEndpoint>> do_tun_encap(
         worker_impl::PacketBatch &pb,
         std::vector<uint8_t> &outbuf);
+
+    void do_server_send();
     // returns -errno
-    int do_server_send(std::span<uint8_t> data, size_t segment_size, worker_impl::ClientEndpoint ep, bool queue_again);
+    int do_server_send(std::span<uint8_t> data, size_t segment_size, worker_impl::ClientEndpoint ep, bool queue_on_eagain);
+    int do_server_send(worker_impl::ServerSendList *list);
+    int do_server_send_step(worker_impl::ServerSendBase *send);
 
     void do_server(epoll_event *ev);
     std::optional<std::pair<worker_impl::PacketBatch, worker_impl::ClientEndpoint>> do_server_recv(
         epoll_event *ev,
         std::vector<uint8_t> &outbuf);
-    std::optional<DecapBatch> do_server_decap(
+    std::optional<worker_impl::DecapBatch> do_server_decap(
         worker_impl::PacketBatch pb,
         worker_impl::ClientEndpoint ep,
         std::vector<uint8_t> &scratch);
     void tunnel_flush(
         [[maybe_unused]] RundownGuard &rcu,
         [[maybe_unused]] std::lock_guard<std::mutex> &lock,
+        std::deque<std::vector<uint8_t>> &serversend,
         wireguard_tunnel_raw *tunnel,
         std::vector<uint8_t> &scratch);
 
@@ -120,8 +125,7 @@ private:
     // fits at least 64 KB
     std::vector<uint8_t> _recvbuf;
     std::vector<uint8_t> _pktbuf, _sendbuf;
-    worker_impl::ServerSendList _serversend;
-    std::deque<std::vector<uint8_t>> _serversend2;
+    worker_impl::ServerSendQueue _serversend;
 };
 
 // this function forces all worker allocations to happen within its own thread

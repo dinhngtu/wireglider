@@ -59,7 +59,7 @@ DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
     default:
         return GRO_NOADD;
     }
-    fk.datalen = rest.size();
+    fk.segment_size = rest.size();
 
     auto it = flow4->upper_bound(fk);
     if (it != flow4->end() && it->second.is_appendable(rest.size()) &&
@@ -69,7 +69,7 @@ DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
     } else {
         // needs new flow
         auto &newflow = (*flow4)[fk];
-        newflow = OwnedPacketBatch(4 * fk.datalen);
+        newflow = OwnedPacketBatch(4 * fk.segment_size);
         newflow.append(rest);
     }
     // merge with previous flow; map is in reverse order
@@ -85,50 +85,28 @@ DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
 } // namespace worker_impl
 
 void Worker::do_server(epoll_event *ev) {
-    if (ev->events & EPOLLOUT) {
-        while (!_serversend.empty()) {
-            auto ret = do_server_send(
-                _serversend.front().buf,
-                _serversend.front().segment_size,
-                _serversend.front().ep,
-                false);
-            if (is_eagain(-ret)) {
-                break;
-            } else {
-                if (ret < 0)
-                    fmt::print("do_server_send: {}\n", strerrordesc_np(ret));
-                _serversend.pop_front_and_dispose(ServerSendBatch::deleter());
-            }
-        }
-        if (_serversend.empty())
-            server_disable(EPOLLOUT);
-        else if (_serversend.size() < 64)
-            tun_enable(EPOLLIN);
-        else
-            tun_disable(EPOLLIN);
-    }
+    if (ev->events & EPOLLOUT)
+        do_server_send();
     if (ev->events & EPOLLIN) {
         auto crypt = do_server_recv(ev, _recvbuf);
         if (!crypt)
             return;
 
-        auto tun_pb = do_server_decap(crypt->first, crypt->second, _pktbuf);
-        if (!tun_pb)
+        auto batch = do_server_decap(crypt->first, crypt->second, _pktbuf);
+        if (!batch)
             return;
 
-        /*
-        for (auto it = tun_pb->begin(); it != tun_pb->end(); it++) {
-            uint16_t segment_size = it->first;
-            while (!it->second.empty()) {
-                auto slice = &it->second.front();
-                it->second.pop_front_and_dispose(OwnedPacketBatch::deleter());
+        {
+            auto sendlist = new ServerSendList(std::move(batch->retpkt), crypt->second);
+            auto ret = do_server_send(sendlist);
+            if (is_eagain(ret)) {
+                _serversend.push_back(*sendlist);
+                server_enable(EPOLLOUT);
+            } else {
+                assert(sendlist->pos == sendlist->mh.size());
+                delete sendlist;
             }
         }
-         */
-
-        std::vector<mmsghdr> mh;
-        std::vector<iovec> iovecs;
-        std::vector<std::array<uint8_t, CMSG_SPACE(sizeof(uint16_t))>> cm;
 
         // TODO
     }
@@ -219,12 +197,11 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
             break;
         }
         case WRITE_TO_TUNNEL_IPV6:
-            throw std::runtime_error("not implemented");
+            // not implemented
             break;
         case WRITE_TO_NETWORK: {
-            auto pkt = std::span(&scratch[0], &scratch[result.size]);
-            _serversend2.emplace_back(pkt.begin(), pkt.end());
-            tunnel_flush(rcu, client_lock, it->tunnel, scratch);
+            batch.retpkt.emplace_back(&scratch[0], &scratch[result.size]);
+            tunnel_flush(rcu, client_lock, batch.retpkt, it->tunnel, scratch);
             break;
         }
         case WIREGUARD_ERROR:
@@ -238,16 +215,15 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
 void Worker::tunnel_flush(
     [[maybe_unused]] RundownGuard &rcu,
     [[maybe_unused]] std::lock_guard<std::mutex> &lock,
+    std::deque<std::vector<uint8_t>> &serversend,
     wireguard_tunnel_raw *tunnel,
     std::vector<uint8_t> &scratch) {
     while (1) {
         auto result = wireguard_read_raw(tunnel, nullptr, 0, scratch.data(), scratch.size());
         switch (result.op) {
-        case WRITE_TO_NETWORK: {
-            auto pkt = std::span(&scratch[0], &scratch[result.size]);
-            _serversend2.emplace_back(pkt.begin(), pkt.end());
+        case WRITE_TO_NETWORK:
+            serversend.emplace_back(&scratch[0], &scratch[result.size]);
             break;
-        }
         case WIREGUARD_DONE:
             return;
         default:

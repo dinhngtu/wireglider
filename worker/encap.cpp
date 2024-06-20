@@ -1,6 +1,7 @@
 #include <array>
 #include <utility>
 #include <span>
+#include <typeinfo>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
@@ -200,7 +201,8 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     in6_addr dstip6;
     if (_arg.tun_is_v6) {
         dstip6 = reinterpret_cast<const ip6_hdr *>(pb.data.data())->ip6_dst;
-        throw std::runtime_error("not implemented");
+        // not implemented
+        return std::nullopt;
     } else {
         dstip4 = reinterpret_cast<const ip *>(pb.data.data())->ip_dst;
         unsigned long ipkey = big_to_native(dstip4.s_addr);
@@ -232,40 +234,6 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
         .segment_size = crypted_segment_size,
     };
     return std::make_pair(newpb, client->_cds_lfht_key);
-}
-
-int Worker::do_server_send(std::span<uint8_t> data, size_t segment_size, ClientEndpoint ep, bool queue_again) {
-    msghdr mh;
-    memset(&mh, 0, sizeof(mh));
-    if (auto sin6 = std::get_if<sockaddr_in6>(&ep)) {
-        mh.msg_name = sin6;
-        mh.msg_namelen = sizeof(sockaddr_in6);
-    } else if (auto sin = std::get_if<sockaddr_in>(&ep)) {
-        mh.msg_name = sin;
-        mh.msg_namelen = sizeof(sockaddr_in);
-    }
-    iovec iov{data.data(), data.size()};
-    mh.msg_iov = &iov;
-    mh.msg_iovlen = 1;
-    std::array<uint8_t, CMSG_SPACE(sizeof(uint16_t))> _cm;
-    auto cm = reinterpret_cast<cmsghdr *>(_cm.data());
-    cm->cmsg_level = SOL_UDP;
-    cm->cmsg_type = UDP_SEGMENT;
-    cm->cmsg_len = _cm.size();
-    *reinterpret_cast<uint16_t *>(CMSG_DATA(cm)) = segment_size;
-    mh.msg_control = cm;
-    mh.msg_controllen = _cm.size();
-
-    if (sendmsg(_arg.server->fd(), &mh, 0) < 0) {
-        if (queue_again && is_eagain()) {
-            auto tosend = new ServerSendBatch(data, segment_size, ep);
-            _serversend.push_back(*tosend);
-            server_enable(EPOLLOUT);
-        }
-        return -errno;
-    } else {
-        return 0;
-    }
 }
 
 } // namespace wgss
