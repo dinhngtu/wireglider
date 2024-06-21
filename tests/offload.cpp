@@ -17,8 +17,7 @@ TEST_CASE("do_tun_gso_split") {
         IP ip("192.0.2.2", "192.0.2.1");
         TCP tcp(1, 1);
         tcp.flags(TCP::ACK | TCP::PSH);
-        std::vector<uint8_t> payload(200);
-        auto pkt = ip / tcp / RawPDU(payload.begin(), payload.end());
+        auto pkt = ip / tcp / RawPDU(std::vector<uint8_t>(200));
         auto pkt_bytes = pkt.serialize();
         virtio_net_hdr vnethdr{
             .flags = VIRTIO_NET_HDR_F_NEEDS_CSUM,
@@ -37,8 +36,7 @@ TEST_CASE("do_tun_gso_split") {
         IPv6 ip("2001:db8::2", "2001:db8::1");
         TCP tcp(1, 1);
         tcp.flags(TCP::ACK | TCP::PSH);
-        std::vector<uint8_t> payload(200);
-        auto pkt = ip / tcp / RawPDU(payload.begin(), payload.end());
+        auto pkt = ip / tcp / RawPDU(std::vector<uint8_t>(200));
         auto pkt_bytes = pkt.serialize();
         virtio_net_hdr vnethdr{
             .flags = VIRTIO_NET_HDR_F_NEEDS_CSUM,

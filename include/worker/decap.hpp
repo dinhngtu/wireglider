@@ -36,33 +36,6 @@ struct OwnedPacketBatch {
     size_t count = 0;
 };
 
-/*
-struct OwnedPacketBatch : public boost::intrusive::list_base_hook<> {
-    explicit OwnedPacketBatch(size_t cap) {
-        buf.reserve(cap);
-    }
-    std::vector<uint8_t> buf;
-
-    struct deleter {
-        void operator()(OwnedPacketBatch *self) {
-            delete self;
-        }
-    };
-};
-
-using DecapBatch = boost::unordered_map<uint16_t, boost::intrusive::list<OwnedPacketBatch>>;
-
-void push_packet(DecapBatch &batch, std::span<uint8_t> buf) {
-    auto it = &batch[buf.size()];
-    auto slice = it->empty() ? nullptr : &it->back();
-    if (!slice || slice->buf.capacity() - slice->buf.size() < buf.size()) {
-        slice = new OwnedPacketBatch(std::min(65536uz, buf.size() * 16));
-        it->push_back(*slice);
-    }
-    std::copy(buf.begin(), buf.end(), std::back_inserter(slice->buf));
-}
- */
-
 template <typename AddressType>
 struct FlowKey {
     // network order
@@ -73,22 +46,21 @@ struct FlowKey {
     uint16_t srcport;
     // native order
     uint16_t dstport;
+    uint32_t segment_size;
     // native order
     uint32_t tcpack;
-    // ordered for packing
-    uint16_t segment_size;
 
-    // native order
-    uint16_t ipid;
+    // variable part
     // native order
     uint32_t tcpseq;
 
     bool matches(const FlowKey &other) const {
-        return !memcmp(this, &other, offsetof(FlowKey, ipid));
+        static_assert(std::has_unique_object_representations_v<FlowKey>);
+        return !memcmp(this, &other, offsetof(FlowKey, tcpseq));
     }
 
-    bool is_consecutive_with(const FlowKey &other, size_t count, size_t size = 0) const {
-        return this->matches(other) && this->ipid + count == other.ipid && this->tcpseq + size == other.tcpseq;
+    bool is_consecutive_with(const FlowKey &other, [[maybe_unused]] size_t count, size_t size = 0) const {
+        return this->matches(other) && this->tcpack == other.tcpack && this->tcpseq + size == other.tcpseq;
     }
 };
 
@@ -100,13 +72,14 @@ static inline bool operator==(const FlowKey<AddressType> &a, const FlowKey<Addre
 
 template <typename AddressType>
 static inline auto operator<=>(const FlowKey<AddressType> &a, const FlowKey<AddressType> &b) noexcept {
-    auto prefix = memcmp(&a, &b, offsetof(FlowKey<AddressType>, ipid));
+    static_assert(std::has_unique_object_representations_v<FlowKey<AddressType>>);
+    auto prefix = memcmp(&a, &b, offsetof(FlowKey<AddressType>, tcpseq));
     if (prefix > 0)
         return std::strong_ordering::greater;
     else if (prefix < 0)
         return std::strong_ordering::less;
     else
-        return std::tie(a.ipid, a.tcpseq) <=> std::tie(b.ipid, b.tcpseq);
+        return std::tie(a.tcpseq, a.tcpseq) <=> std::tie(b.tcpseq, b.tcpseq);
 }
 
 template <typename AddressType>
@@ -128,10 +101,11 @@ struct DecapBatch {
     // packets that are not aggregated
     std::deque<std::vector<uint8_t>> unrel;
 
-    // packets that must be returned to the client for protocol reason
+    // packets that must be returned to the client for protocol reasons
     std::deque<std::vector<uint8_t>> retpkt;
 
     Outcome push_packet_v4(std::span<uint8_t> ippkt);
+    Outcome push_packet_v6(std::span<uint8_t> ippkt);
 };
 
 } // namespace wgss::worker_impl

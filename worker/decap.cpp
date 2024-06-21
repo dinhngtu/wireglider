@@ -1,4 +1,6 @@
 #include <utility>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <boost/endian.hpp>
@@ -15,42 +17,101 @@ namespace wgss {
 
 namespace worker_impl {
 
+template <typename T>
+static void append_flow(FlowMap<T> *flow, const FlowKey<T> &fk, std::span<uint8_t> pkt, bool istcp) {
+    auto it = flow->upper_bound(fk);
+    if (it != flow->end() && it->second.is_appendable(pkt.size()) &&
+        it->first.is_consecutive_with(fk, 1, istcp ? pkt.size() : 0)) {
+        // insert into existing flow
+        it->second.append(pkt);
+    } else {
+        // needs new flow
+        auto &newflow = (*flow)[fk];
+        newflow = OwnedPacketBatch(4 * fk.segment_size);
+        newflow.append(pkt);
+    }
+    // merge with previous flow; map is in reverse order
+    auto prev = it + 1;
+    if (prev != flow->end() && prev->second.is_mergeable(it->second) &&
+        prev->first.is_consecutive_with(it->first, prev->second.count, istcp ? prev->second.buf.size() : 0)) {
+        prev->second.extend(it->second);
+        flow->erase(it);
+    }
+}
+
+static struct ip *fill_fk_ip4(FlowKey<in_addr> &fk, std::span<uint8_t> ippkt) {
+    auto ip = reinterpret_cast<struct ip *>(ippkt.data());
+    // no support for long ipv4 headers yet
+    if (ip->ip_hl * 4u != sizeof(struct ip))
+        return nullptr;
+    if (ippkt.size() != ip->ip_len)
+        return nullptr;
+    fk.srcip = ip->ip_src;
+    fk.dstip = ip->ip_dst;
+    return ip;
+}
+
+static ip6_hdr *fill_fk_ip6(FlowKey<in6_addr> &fk, std::span<uint8_t> ippkt) {
+    auto ip = reinterpret_cast<ip6_hdr *>(ippkt.data());
+    auto rest = ippkt.subspan(sizeof(ip6_hdr));
+    if (rest.size() != ip->ip6_ctlun.ip6_un1.ip6_un1_plen)
+        return nullptr;
+    fk.srcip = ip->ip6_src;
+    fk.dstip = ip->ip6_dst;
+    return ip;
+}
+
+template <typename T>
+static tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<uint8_t> l4pkt) {
+    if (l4pkt.size() < sizeof(tcphdr))
+        return nullptr;
+    auto tcp = reinterpret_cast<tcphdr *>(l4pkt.data());
+    if (tcp->doff != 5)
+        return nullptr;
+    // TODO: check tcp flags
+    fk.srcport = big_to_native(tcp->source);
+    fk.dstport = big_to_native(tcp->dest);
+    fk.tcpack = big_to_native(tcp->ack_seq);
+    fk.tcpseq = big_to_native(tcp->seq);
+    return tcp;
+}
+
+template <typename T>
+static udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<uint8_t> l4pkt) {
+    if (l4pkt.size() < sizeof(udphdr))
+        return nullptr;
+    auto udp = reinterpret_cast<udphdr *>(l4pkt.data());
+    fk.srcport = big_to_native(udp->source);
+    fk.dstport = big_to_native(udp->dest);
+    fk.tcpack = fk.tcpseq = 0;
+    return udp;
+}
+
 DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
     if (ippkt.size() < sizeof(struct ip))
         return GRO_DROP;
-    auto ip = reinterpret_cast<struct ip *>(ippkt.data());
-    auto ihl_bytes = ip->ip_hl * 4u;
-    if (ihl_bytes < 20 || ippkt.size() < ihl_bytes)
-        return GRO_DROP;
-    auto rest = ippkt.subspan(ihl_bytes);
 
     FlowKey<in_addr> fk{};
-    fk.srcip = ip->ip_src;
-    fk.dstip = ip->ip_dst;
-    fk.ipid = big_to_native(ip->ip_id);
-    IP4Flow *flow4;
+    auto ip = fill_fk_ip4(fk, ippkt);
+    if (!ip)
+        return GRO_NOADD;
+    auto rest = ippkt.subspan(sizeof(*ip));
+
+    IP4Flow *flow;
     bool istcp;
     switch (ip->ip_p) {
     case IPPROTO_TCP: {
-        if (ippkt.size() - ihl_bytes < sizeof(tcphdr))
-            return GRO_DROP;
-        auto tcp = reinterpret_cast<tcphdr *>(&ippkt[ihl_bytes]);
-        fk.srcport = big_to_native(tcp->source);
-        fk.dstport = big_to_native(tcp->dest);
-        fk.tcpseq = big_to_native(tcp->seq);
-        flow4 = &tcp4;
+        if (!fill_fk_tcp(fk, rest))
+            return GRO_NOADD;
+        flow = &tcp4;
         istcp = true;
         rest = rest.subspan(sizeof(tcphdr));
         break;
     }
     case IPPROTO_UDP: {
-        if (ippkt.size() - ihl_bytes < sizeof(udphdr))
-            return GRO_DROP;
-        auto udp = reinterpret_cast<udphdr *>(&ippkt[ihl_bytes]);
-        fk.srcport = big_to_native(udp->source);
-        fk.dstport = big_to_native(udp->dest);
-        fk.tcpseq = 0;
-        flow4 = &udp4;
+        if (!fill_fk_udp(fk, rest))
+            return GRO_NOADD;
+        flow = &udp4;
         istcp = false;
         rest = rest.subspan(sizeof(udphdr));
         break;
@@ -60,24 +121,45 @@ DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
     }
     fk.segment_size = rest.size();
 
-    auto it = flow4->upper_bound(fk);
-    if (it != flow4->end() && it->second.is_appendable(rest.size()) &&
-        it->first.is_consecutive_with(fk, 1, istcp ? rest.size() : 0)) {
-        // insert into existing flow
-        it->second.append(rest);
-    } else {
-        // needs new flow
-        auto &newflow = (*flow4)[fk];
-        newflow = OwnedPacketBatch(4 * fk.segment_size);
-        newflow.append(rest);
+    append_flow(flow, fk, rest, istcp);
+    return GRO_ADDED;
+}
+
+DecapBatch::Outcome DecapBatch::push_packet_v6(std::span<uint8_t> ippkt) {
+    if (ippkt.size() < sizeof(ip6_hdr))
+        return GRO_DROP;
+
+    FlowKey<in6_addr> fk{};
+    auto ip = fill_fk_ip6(fk, ippkt);
+    if (!ip)
+        return GRO_NOADD;
+    auto rest = ippkt.subspan(sizeof(*ip));
+
+    IP6Flow *flow;
+    bool istcp;
+    switch (ip->ip6_ctlun.ip6_un1.ip6_un1_nxt) {
+    case IPPROTO_TCP: {
+        if (!fill_fk_tcp(fk, rest))
+            return GRO_NOADD;
+        flow = &tcp6;
+        istcp = true;
+        rest = rest.subspan(sizeof(tcphdr));
+        break;
     }
-    // merge with previous flow; map is in reverse order
-    auto prev = it + 1;
-    if (prev != flow4->end() && prev->second.is_mergeable(it->second) &&
-        prev->first.is_consecutive_with(it->first, prev->second.count, istcp ? prev->second.buf.size() : 0)) {
-        prev->second.extend(it->second);
-        flow4->erase(it);
+    case IPPROTO_UDP: {
+        if (!fill_fk_udp(fk, rest))
+            return GRO_NOADD;
+        flow = &udp6;
+        istcp = false;
+        rest = rest.subspan(sizeof(udphdr));
+        break;
     }
+    default:
+        return GRO_NOADD;
+    }
+    fk.segment_size = rest.size();
+
+    append_flow(flow, fk, rest, istcp);
     return GRO_ADDED;
 }
 

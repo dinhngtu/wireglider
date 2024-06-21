@@ -1,27 +1,34 @@
-#include <boost/endian.hpp>
+#include <vector>
+#include <memory>
 #include <catch2/catch_test_macros.hpp>
+#include <tins/tins.h>
 
-#include "worker/decap.hpp"
-#include "packet_tests.hpp"
+#include "worker.hpp"
 
-using namespace boost::endian;
+using namespace Tins;
+
+std::vector<uint8_t> tcp4_packet(
+    const char *src,
+    uint16_t sport,
+    const char *dst,
+    uint16_t dport,
+    uint16_t tcpflags,
+    uint32_t segment_size,
+    uint32_t seq) {
+    IP ip(dst, src);
+    TCP tcp(dport, sport);
+    tcp.flags(tcpflags);
+    std::vector<uint8_t> payload(segment_size);
+    auto pkt = ip / tcp / RawPDU(payload);
+    return pkt.serialize();
+}
 
 TEST_CASE("flowkey") {
-    auto srcip = makeip(192, 0, 2, 10);
-    auto dstip = makeip(198, 51, 100, 25);
-    tcp4packet pkt{
-        .ip =
-            {
-                .ip_hl = 5,
-                .ip_id = 100,
-                .ip_p = IPPROTO_TCP,
-                .ip_src = srcip,
-                .ip_dst = dstip,
-            },
-        .tcp = {0},
-    };
-    pkt.tcp.th_sport = 1234;
-    pkt.tcp.th_dport = 9876;
-    pkt.tcp.th_ack = 9999999;
-    pkt.tcp.th_seq = 1000;
+    wgss::worker_impl::DecapBatch batch;
+
+    SECTION("multiple protocols and flows") {
+        std::vector<std::vector<uint8_t>> pkts;
+        auto pkt = tcp4_packet("192.0.2.1", 1, "192.0.2.2", 1, TCP::ACK, 100, 1);
+        batch.push_packet_v4(pkt);
+    }
 }
