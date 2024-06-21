@@ -14,16 +14,13 @@ struct PacketBatch {
     std::span<uint8_t> prefix;
     std::span<uint8_t> data;
     size_t segment_size;
+    bool isv6;
     constexpr size_t nr_segments() {
         return tdutil::round_up(data.size(), segment_size) / segment_size;
     }
 };
 
-struct ServerSendTag {
-    using BaseHook = boost::intrusive::list_base_hook<boost::intrusive::tag<ServerSendTag>>;
-};
-
-struct ServerSendBase : public ServerSendTag::BaseHook {
+struct ServerSendBase : public boost::intrusive::list_base_hook<> {
     virtual ~ServerSendBase() {
     }
 

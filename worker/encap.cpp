@@ -31,10 +31,56 @@ void Worker::do_tun(epoll_event *ev) {
         if (!crypt)
             return;
 
-        auto ret = do_server_send(crypt->first.data, crypt->first.segment_size, crypt->second, true);
+        auto ret = server_send(crypt->first.data, crypt->first.segment_size, crypt->second, true);
         if (ret < 0 && !is_eagain(-ret))
             fmt::print("do_server_send: {}\n", strerrordesc_np(ret));
     }
+}
+
+std::optional<std::span<uint8_t>> Worker::do_tun_recv(std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr) {
+    // if (outbuf.size() < 65536 + sizeof(virtio_net_hdr))
+    // outbuf.resize(65536 + sizeof(virtio_net_hdr));
+    assert(outbuf.size() >= 65536 + sizeof(virtio_net_hdr));
+
+    // don't use directly
+    auto msize = read(_arg.tun->fd(), outbuf.data(), outbuf.size());
+    if (msize < 0)
+        return std::nullopt;
+    auto rest = std::span(outbuf.begin(), msize);
+
+    if (rest.size() < sizeof(virtio_net_hdr))
+        return std::nullopt;
+    vnethdr = *reinterpret_cast<virtio_net_hdr *>(rest.data());
+    rest = rest.subspan(sizeof(virtio_net_hdr));
+    // rest now contains iphdr+l4hdr+giant payload
+
+    return rest;
+}
+
+static uint16_t calc_pkt_checksum(std::span<uint8_t> thispkt, bool isv6, bool istcp, uint16_t csum_start) {
+    uint64_t l4_csum_tmp;
+    if (isv6) {
+        const auto addroff = offsetof(ip6_hdr, ip6_src);
+        const auto addrsize = sizeof(in6_addr);
+        std::span<const uint8_t, addrsize> srcaddr = thispkt.subspan<addroff, addrsize>();
+        std::span<const uint8_t, addrsize> dstaddr = thispkt.subspan<addroff + addrsize, addrsize>();
+        l4_csum_tmp = checksum_impl::pseudo_header_checksum_nofold(
+            istcp ? IPPROTO_TCP : IPPROTO_UDP,
+            srcaddr,
+            dstaddr,
+            thispkt.size());
+    } else {
+        const auto addroff = offsetof(ip, ip_src);
+        const auto addrsize = sizeof(in_addr);
+        std::span<const uint8_t, addrsize> srcaddr = thispkt.subspan<addroff, addrsize>();
+        std::span<const uint8_t, addrsize> dstaddr = thispkt.subspan<addroff + addrsize, addrsize>();
+        l4_csum_tmp = checksum_impl::pseudo_header_checksum_nofold(
+            istcp ? IPPROTO_TCP : IPPROTO_UDP,
+            srcaddr,
+            dstaddr,
+            thispkt.size());
+    }
+    return checksum(thispkt.subspan(csum_start), l4_csum_tmp);
 }
 
 /*
@@ -62,46 +108,47 @@ void Worker::do_tun(epoll_event *ev) {
  * │ ... iph_csum ... │ ...  l4_csum ... │ payload part │
  *   ...
  */
-std::optional<PacketBatch> Worker::do_tun_recv(std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr) {
-    // if (outbuf.size() < 65536 + sizeof(virtio_net_hdr))
-    // outbuf.resize(65536 + sizeof(virtio_net_hdr));
-    assert(outbuf.size() >= 65536 + sizeof(virtio_net_hdr));
+PacketBatch worker_impl::do_tun_gso_split(
+    std::span<uint8_t> inbuf,
+    std::vector<uint8_t> &outbuf,
+    const virtio_net_hdr &vnethdr) {
+    auto l4_csum_offset = vnethdr.csum_start + vnethdr.csum_offset;
+    auto isv6 = reinterpret_cast<struct ip *>(inbuf.data())->ip_v == 6;
 
-    // don't use directly
-    auto msize = read(_arg.tun->fd(), outbuf.data(), outbuf.size());
-    if (msize < 0)
-        return std::nullopt;
-    auto rest = std::span(outbuf.begin(), msize);
+    if (vnethdr.gso_type == VIRTIO_NET_HDR_GSO_NONE) {
+        if (vnethdr.flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) {
+            // clear ipv4 header checksum
+            if (!isv6)
+                reinterpret_cast<ip *>(inbuf.data())->ip_sum = 0;
+            // clear tcp/udp checksum
+            store_big_u16(&inbuf[l4_csum_offset], 0);
 
-    if (rest.size() < sizeof(virtio_net_hdr))
-        return std::nullopt;
-    vnethdr = *reinterpret_cast<virtio_net_hdr *>(rest.data());
-    rest = rest.subspan(sizeof(virtio_net_hdr));
-    // rest now contains iphdr+l4hdr+giant payload
+            auto istcp = reinterpret_cast<ip *>(inbuf.data())->ip_p == IPPROTO_TCP;
+            auto l4_csum = calc_pkt_checksum(inbuf, isv6, istcp, vnethdr.csum_start);
+            store_big_u16(&inbuf[l4_csum_offset], l4_csum);
+        }
+        return PacketBatch{
+            .prefix = {},
+            .data = inbuf,
+            .segment_size = inbuf.size(),
+            .isv6 = isv6,
+        };
+    }
 
-    return PacketBatch{
-        .prefix = rest.subspan(0, vnethdr.hdr_len),
-        .data = rest.subspan(vnethdr.hdr_len),
-        .segment_size = vnethdr.gso_size,
-    };
-}
+    auto prefix = inbuf.subspan(0, vnethdr.hdr_len);
+    auto rest = inbuf.subspan(vnethdr.hdr_len);
 
-PacketBatch Worker::do_tun_gso_split(PacketBatch &pb, std::vector<uint8_t> &outbuf, const virtio_net_hdr &vnethdr) {
-    if (vnethdr.gso_type == VIRTIO_NET_HDR_GSO_NONE || !pb.segment_size)
-        pb.segment_size = pb.data.size();
-
-    [[maybe_unused]] auto reserve_size = pb.data.size() + pb.nr_segments() * pb.prefix.size();
+    [[maybe_unused]] auto reserve_size =
+        inbuf.size() + tdutil::round_up(rest.size(), vnethdr.gso_size) / vnethdr.gso_size * prefix.size();
     // if (outbuf.size() < reserve_size)
     // outbuf.resize(reserve_size);
     assert(outbuf.size() >= reserve_size);
-    auto rest = pb.data;
 
     // clear ipv4 header checksum
-    if (!_arg.tun_is_v6)
-        reinterpret_cast<ip *>(pb.prefix.data())->ip_sum = 0;
+    if (!isv6)
+        reinterpret_cast<ip *>(prefix.data())->ip_sum = 0;
     // clear tcp/udp checksum
-    auto l4_csum_offset = vnethdr.csum_start + vnethdr.csum_offset;
-    store_big_u16(&pb.prefix[l4_csum_offset], 0);
+    store_big_u16(&prefix[l4_csum_offset], 0);
 
     bool istcp = vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV4 || vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV6;
     uint32_t tcpseq0 = 0;
@@ -110,17 +157,17 @@ PacketBatch Worker::do_tun_gso_split(PacketBatch &pb, std::vector<uint8_t> &outb
 
     size_t i = 0, pbsize = 0;
     for (; !rest.empty(); i++) {
-        auto datalen = std::min(rest.size(), pb.segment_size);
-        auto pktlen = pb.prefix.size() + datalen;
+        auto datalen = std::min(rest.size(), size_t(vnethdr.gso_size));
+        auto pktlen = prefix.size() + datalen;
         auto outbuf_begin = pbsize;
         pbsize += pktlen;
         assert(outbuf.size() >= pbsize);
         std::span thispkt(&outbuf[outbuf_begin], &outbuf[pbsize]);
 
-        std::copy(pb.prefix.begin(), pb.prefix.end(), thispkt.begin());
-        std::copy(&rest[0], &rest[datalen], &thispkt[pb.prefix.size()]);
+        std::copy(prefix.begin(), prefix.end(), thispkt.begin());
+        std::copy(&rest[0], &rest[datalen], &thispkt[prefix.size()]);
 
-        if (_arg.tun_is_v6) {
+        if (isv6) {
             // For IPv6 we are responsible for updating the payload length field.
             auto &payload_len = reinterpret_cast<ipv6hdr *>(thispkt.data())->payload_len;
             payload_len = thispkt.size() - vnethdr.csum_start;
@@ -144,34 +191,19 @@ PacketBatch Worker::do_tun_gso_split(PacketBatch &pb, std::vector<uint8_t> &outb
         if (istcp) {
             // set TCP seq and adjust TCP flags
             auto tcp = reinterpret_cast<tcphdr *>(&thispkt[vnethdr.csum_start]);
-            auto &tcpseq = tcp->seq;
-            tcpseq = tcpseq0 + static_cast<uint32_t>(pb.segment_size) * i;
-            native_to_big_inplace(tcpseq);
+            tcp->seq = tcpseq0 + vnethdr.gso_size * i;
+            native_to_big_inplace(tcp->seq);
             if (datalen < rest.size())
                 // FIN and PSH should only be set on last segment
                 tcp->fin = tcp->psh = 0;
         } else {
             // set UDP header len
             auto udp = reinterpret_cast<udphdr *>(&thispkt[vnethdr.csum_start]);
-            udp->len = pb.prefix.size() - vnethdr.csum_start;
+            udp->len = prefix.size() - vnethdr.csum_start;
             native_to_big_inplace(udp->len);
         }
 
-        uint64_t l4_csum_tmp;
-        if (_arg.tun_is_v6) {
-            const auto addroff = offsetof(ip6_hdr, ip6_src);
-            const auto addrsize = sizeof(in6_addr);
-            std::span<const uint8_t, addrsize> srcaddr = thispkt.subspan<addroff, addrsize>();
-            std::span<const uint8_t, addrsize> dstaddr = thispkt.subspan<addroff + addrsize, addrsize>();
-            l4_csum_tmp = pseudo_header_checksum(istcp ? IPPROTO_TCP : IPPROTO_UDP, srcaddr, dstaddr, thispkt.size());
-        } else {
-            const auto addroff = offsetof(ip, ip_src);
-            const auto addrsize = sizeof(in_addr);
-            std::span<const uint8_t, addrsize> srcaddr = thispkt.subspan<addroff, addrsize>();
-            std::span<const uint8_t, addrsize> dstaddr = thispkt.subspan<addroff + addrsize, addrsize>();
-            l4_csum_tmp = pseudo_header_checksum(istcp ? IPPROTO_TCP : IPPROTO_UDP, srcaddr, dstaddr, thispkt.size());
-        }
-        auto l4_csum = checksum(thispkt.subspan(vnethdr.csum_start), l4_csum_tmp);
+        auto l4_csum = calc_pkt_checksum(thispkt, isv6, istcp, vnethdr.csum_start);
         store_big_u16(&thispkt[l4_csum_offset], l4_csum);
 
         // to next packet
@@ -181,7 +213,8 @@ PacketBatch Worker::do_tun_gso_split(PacketBatch &pb, std::vector<uint8_t> &outb
     return PacketBatch{
         .prefix = {},
         .data = std::span(outbuf.begin(), pbsize),
-        .segment_size = pb.prefix.size() + pb.segment_size,
+        .segment_size = prefix.size() + vnethdr.gso_size,
+        .isv6 = isv6,
     };
 }
 
@@ -199,7 +232,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     RundownGuard rcu;
     in_addr dstip4;
     in6_addr dstip6;
-    if (_arg.tun_is_v6) {
+    if (pb.isv6) {
         dstip6 = reinterpret_cast<const ip6_hdr *>(pb.data.data())->ip6_dst;
         // not implemented
         return std::nullopt;
@@ -232,6 +265,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
         .prefix = {},
         .data = std::span(outbuf.data(), outbuf.size() - remain.size()),
         .segment_size = crypted_segment_size,
+        .isv6 = pb.isv6,
     };
     return std::make_pair(newpb, client->_cds_lfht_key);
 }

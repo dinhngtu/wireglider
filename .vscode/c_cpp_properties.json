@@ -20,7 +20,8 @@
             "defines": [
                 "_GNU_SOURCE",
                 "_FILE_OFFSET_BITS=64",
-                "_LGPL_SOURCE"
+                "_LGPL_SOURCE",
+                "__AVX__"
             ],
             "compilerPath": "/usr/bin/gcc",
             "intelliSenseMode": "linux-gcc-x64",

@@ -4,11 +4,7 @@
 #include <netinet/in.h>
 #include <linux/if_tun.h>
 #include <linux/ipv6.h>
-// C++-compatible version of linux/virtio_net.h
-#define class cmd_class
-#include <linux/virtio_net.h>
-#undef class
-// #include "virtio_net.hpp"
+#include "virtio_net.hpp"
 #include <tdutil/fildes.hpp>
 #include "netutil.hpp"
 
@@ -127,7 +123,7 @@ private:
     }
 
 private:
-    short _feat;
+    unsigned int _feat;
     tdutil::FileDescriptor _tun;
     std::string _name;
 };

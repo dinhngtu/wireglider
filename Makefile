@@ -8,15 +8,9 @@ LDLIBS+=-pthread
 
 CPPFLAGS+=-I/lib/modules/$(shell uname -r)/build/usr/include
 
-USE_ADX?=0
-ifeq ($(USE_ADX), 1)
-CPPFLAGS+=-DUSE_ADX
-CFLAGS+=-march=x86-64-v3
-CXXFLAGS+=-march=x86-64-v3
-else
-CFLAGS+=-march=x86-64-v2
-CXXFLAGS+=-march=x86-64-v2
-endif
+# TODO: customize processor features as desired
+CFLAGS+=-march=native
+CXXFLAGS+=-march=native
 
 # make
 TDUTIL_ROOT?=$(realpath ../tdutil)
@@ -89,7 +83,7 @@ CATCH_CPPFLAGS+=-I$(CATCH_ROOT)/src -I$(CATCH_ROOT)/build/generated-includes
 CATCH_LDFLAGS+=-L$(CATCH_ROOT)/build/src
 CATCH_LDLIBS+=-lCatch2Main -lCatch2
 
-# make; make check
+# make ENABLE_AVX=1 MARCH=native; make check
 FASTCSUM_ROOT?=$(realpath ../fastcsum)
 CPPFLAGS+=-I$(FASTCSUM_ROOT)/include
 LDFLAGS+=-L$(FASTCSUM_ROOT)
@@ -140,6 +134,7 @@ TARGETS=\
 
 TESTS=\
 	tests/checksum \
+	tests/offload \
 
 $(TESTS): CPPFLAGS+=$(CATCH_CPPFLAGS)
 $(TESTS): CFLAGS+=-Wno-unused
@@ -167,6 +162,8 @@ endif
 xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
 maple_tree.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
+
+tests/offload: worker/encap.o
 
 $(TESTS_RUN): %.run: %
 	$<

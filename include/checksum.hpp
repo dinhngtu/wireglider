@@ -7,6 +7,8 @@
 
 #include <cstdint>
 #include <span>
+#include <array>
+#include <boost/endian.hpp>
 
 #include <fastcsum.hpp>
 
@@ -60,23 +62,21 @@ inline uint64_t checksum_nofold(std::span<const uint8_t, 1> b, uint64_t initial)
     return ret + c;
 }
 
-#ifdef USE_ADX
 template <>
 inline uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial) {
+    // TODO: detect fastcsum compiled features
+#if defined(__AVX2__)
+    return fastcsum::fastcsum_nofold_avx2_v3(b.data(), b.size(), initial);
+#elif defined(__AVX__) || defined(__SSE4_1__)
+    return fastcsum::fastcsum_nofold_vec128(b.data(), b.size(), initial);
+#elif defined(__ADX__)
     return fastcsum::fastcsum_nofold_adx_v2(b.data(), b.size(), initial);
-}
 #elif defined(__x86_64__)
-template <>
-inline uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial) {
     return fastcsum::fastcsum_nofold_x64_64b(b.data(), b.size(), initial);
-}
 #else
-// use the generic implementation
-template <>
-inline uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial) {
-    return fastcsum::fastcsum_nofold_generic(b.data(), b.size(), initial);
-}
+    return fastcsum::fastcsum_nofold_generic64(b.data(), b.size(), initial);
 #endif
+}
 
 template <size_t E1, size_t E2>
 static inline uint64_t pseudo_header_checksum_nofold(
@@ -86,8 +86,12 @@ static inline uint64_t pseudo_header_checksum_nofold(
     uint16_t totalLen) {
     auto sum = checksum_impl::checksum_nofold(srcAddr, 0);
     sum = checksum_impl::checksum_nofold(dstAddr, sum);
-    sum = checksum_impl::checksum_add(proto, sum);
-    sum = checksum_impl::checksum_add(totalLen, sum);
+    std::array<uint16_t, 2> proto_bytes = {
+        boost::endian::native_to_big(static_cast<uint16_t>(proto)),
+        boost::endian::native_to_big(totalLen)};
+    sum = checksum_impl::checksum_nofold(
+        std::span<const uint8_t, 4>(reinterpret_cast<const uint8_t *>(proto_bytes.data()), 4),
+        sum);
     return sum;
 }
 

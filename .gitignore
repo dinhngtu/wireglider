@@ -4,4 +4,4 @@
 .vscode/*.log
 wgss
 tests/checksum
-tests/checksum-adx
+tests/offload

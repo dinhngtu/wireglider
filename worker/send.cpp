@@ -28,7 +28,7 @@ void Worker::do_server_send() {
         tun_disable(EPOLLIN);
 }
 
-int Worker::do_server_send(std::span<uint8_t> data, size_t segment_size, ClientEndpoint ep, bool queue_on_eagain) {
+int Worker::server_send(std::span<uint8_t> data, size_t segment_size, ClientEndpoint ep, bool queue_on_eagain) {
     msghdr mh;
     memset(&mh, 0, sizeof(mh));
     if (auto sin6 = std::get_if<sockaddr_in6>(&ep)) {
@@ -97,7 +97,7 @@ ServerSendList::ServerSendList(ServerSendList::packet_list &&pkts, ClientEndpoin
         });
 }
 
-int Worker::do_server_send(ServerSendList *list) {
+int Worker::server_send(ServerSendList *list) {
     while (list->pos < list->mh.size()) {
         auto ret = sendmmsg(_arg.server->fd(), &list->mh[list->pos], list->mh.size() - list->pos, 0);
         if (ret < 0)
@@ -111,10 +111,11 @@ int Worker::do_server_send(ServerSendList *list) {
 int Worker::do_server_send_step(ServerSendBase *send) {
     if (typeid(*send) == typeid(ServerSendBatch)) {
         auto batch = static_cast<ServerSendBatch *>(send);
-        return do_server_send(batch->buf, batch->segment_size, batch->ep, false);
+        auto ret = server_send(batch->buf, batch->segment_size, batch->ep, false);
+        // TODO: update send position for this batch
     } else if (typeid(*send) == typeid(ServerSendList)) {
         auto list = static_cast<ServerSendList *>(send);
-        return do_server_send(list);
+        return server_send(list);
     }
 }
 

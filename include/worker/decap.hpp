@@ -3,6 +3,7 @@
 #include <vector>
 #include <span>
 #include <deque>
+#include <type_traits>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <boost/container/flat_map.hpp>
@@ -70,6 +71,9 @@ struct FlowKey {
     uint16_t srcport;
     // native order
     uint16_t dstport;
+    // native order
+    uint32_t tcpack;
+    // ordered for packing
     uint16_t segment_size;
 
     // native order
@@ -88,6 +92,7 @@ struct FlowKey {
 
 template <typename AddressType>
 static inline bool operator==(const FlowKey<AddressType> &a, const FlowKey<AddressType> &b) noexcept {
+    static_assert(std::has_unique_object_representations_v<FlowKey<AddressType>>);
     return !memcmp(&a, &b, sizeof(a));
 }
 

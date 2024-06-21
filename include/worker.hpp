@@ -31,6 +31,11 @@ struct Client : public CdsHashtableNode<ClientEndpoint, Client> {
     std::vector<IpRange> allowed_ips;
 };
 
+worker_impl::PacketBatch do_tun_gso_split(
+    std::span<uint8_t> inbuf,
+    std::vector<uint8_t> &outbuf,
+    const virtio_net_hdr &vnethdr);
+
 } // namespace worker_impl
 
 struct WorkerArg {
@@ -58,19 +63,15 @@ public:
 private:
     void do_tun(epoll_event *ev);
     // returns (size of each segment, number of segments)
-    std::optional<worker_impl::PacketBatch> do_tun_recv(std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr);
-    worker_impl::PacketBatch do_tun_gso_split(
-        worker_impl::PacketBatch &pb,
-        std::vector<uint8_t> &outbuf,
-        const virtio_net_hdr &vnethdr);
+    std::optional<std::span<uint8_t>> do_tun_recv(std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr);
     std::optional<std::pair<worker_impl::PacketBatch, worker_impl::ClientEndpoint>> do_tun_encap(
         worker_impl::PacketBatch &pb,
         std::vector<uint8_t> &outbuf);
 
     void do_server_send();
     // returns -errno
-    int do_server_send(std::span<uint8_t> data, size_t segment_size, worker_impl::ClientEndpoint ep, bool queue_on_eagain);
-    int do_server_send(worker_impl::ServerSendList *list);
+    int server_send(std::span<uint8_t> data, size_t segment_size, worker_impl::ClientEndpoint ep, bool queue_on_eagain);
+    int server_send(worker_impl::ServerSendList *list);
     int do_server_send_step(worker_impl::ServerSendBase *send);
 
     void do_server(epoll_event *ev);

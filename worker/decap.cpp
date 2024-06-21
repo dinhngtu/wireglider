@@ -36,8 +36,8 @@ DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
         if (ippkt.size() - ihl_bytes < sizeof(tcphdr))
             return GRO_DROP;
         auto tcp = reinterpret_cast<tcphdr *>(&ippkt[ihl_bytes]);
-        fk.srcport = big_to_native(tcp->th_sport);
-        fk.dstport = big_to_native(tcp->th_dport);
+        fk.srcport = big_to_native(tcp->source);
+        fk.dstport = big_to_native(tcp->dest);
         fk.tcpseq = big_to_native(tcp->seq);
         flow4 = &tcp4;
         istcp = true;
@@ -48,8 +48,8 @@ DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
         if (ippkt.size() - ihl_bytes < sizeof(udphdr))
             return GRO_DROP;
         auto udp = reinterpret_cast<udphdr *>(&ippkt[ihl_bytes]);
-        fk.srcport = big_to_native(udp->uh_sport);
-        fk.dstport = big_to_native(udp->uh_dport);
+        fk.srcport = big_to_native(udp->source);
+        fk.dstport = big_to_native(udp->dest);
         fk.tcpseq = 0;
         flow4 = &udp4;
         istcp = false;
@@ -98,7 +98,7 @@ void Worker::do_server(epoll_event *ev) {
 
         {
             auto sendlist = new ServerSendList(std::move(batch->retpkt), crypt->second);
-            auto ret = do_server_send(sendlist);
+            auto ret = server_send(sendlist);
             if (is_eagain(ret)) {
                 _serversend.push_back(*sendlist);
                 server_enable(EPOLLOUT);
