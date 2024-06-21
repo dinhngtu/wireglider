@@ -11,6 +11,8 @@
 namespace wgss::worker_impl {
 
 struct OwnedPacketBatch {
+    explicit OwnedPacketBatch() {
+    }
     explicit OwnedPacketBatch(size_t cap) {
         buf.reserve(cap);
     }

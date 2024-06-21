@@ -1,6 +1,7 @@
 #include <vector>
 #include <thread>
 #include <memory>
+#include <string>
 #include <stdexcept>
 #include <cxxopts.hpp>
 #include <fmt/format.h>

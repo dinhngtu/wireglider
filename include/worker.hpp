@@ -20,7 +20,10 @@ namespace worker_impl {
 
 using IpRange = std::variant<std::pair<in_addr, unsigned int>, std::pair<in6_addr, unsigned int>>;
 
-struct Client : public CdsHashtableNode<ClientEndpoint, Client> {
+struct Client {
+    cds_lfht_node _cds_lfht_node;
+    ClientEndpoint _cds_lfht_key;
+
     // readonly
     uint32_t index;
     ClientEndpoint ep;

@@ -1,5 +1,6 @@
 #include <boost/endian.hpp>
 #include <tdutil/util.hpp>
+#include <fmt/format.h>
 
 #include "worker.hpp"
 
@@ -64,6 +65,8 @@ int Worker::server_send(std::span<uint8_t> data, size_t segment_size, ClientEndp
             data = data.subspan(ret);
         }
     }
+
+    return 0;
 }
 
 ServerSendList::ServerSendList(ServerSendList::packet_list &&pkts, ClientEndpoint _ep)
@@ -76,6 +79,8 @@ ServerSendList::ServerSendList(ServerSendList::packet_list &&pkts, ClientEndpoin
     } else if (auto sin = std::get_if<sockaddr_in>(&ep)) {
         name = sin;
         namelen = sizeof(sockaddr_in);
+    } else {
+        tdutil::unreachable();
     }
 
     iovecs.reserve(packets.size());
@@ -113,9 +118,12 @@ int Worker::do_server_send_step(ServerSendBase *send) {
         auto batch = static_cast<ServerSendBatch *>(send);
         auto ret = server_send(batch->buf, batch->segment_size, batch->ep, false);
         // TODO: update send position for this batch
+        return ret;
     } else if (typeid(*send) == typeid(ServerSendList)) {
         auto list = static_cast<ServerSendList *>(send);
         return server_send(list);
+    } else {
+        tdutil::unreachable();
     }
 }
 

@@ -224,4 +224,14 @@ private:
     cds_lfht *_tbl = nullptr;
 };
 
+template <std::totally_ordered K, IsCdsHashtableNode<K> V>
+constexpr CdsHashtable<K, V>::iterator begin(CdsHashtable<K, V> &ht) {
+    return ht.begin();
+}
+
+template <std::totally_ordered K, IsCdsHashtableNode<K> V>
+constexpr CdsHashtable<K, V>::iterator end(CdsHashtable<K, V> &ht) {
+    return ht.end();
+}
+
 } // namespace wgss

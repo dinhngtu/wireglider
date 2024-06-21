@@ -19,16 +19,15 @@ DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
     if (ippkt.size() < sizeof(struct ip))
         return GRO_DROP;
     auto ip = reinterpret_cast<struct ip *>(ippkt.data());
-    auto ihl_bytes = ip->ip_hl * 4;
+    auto ihl_bytes = ip->ip_hl * 4u;
     if (ihl_bytes < 20 || ippkt.size() < ihl_bytes)
         return GRO_DROP;
     auto rest = ippkt.subspan(ihl_bytes);
 
-    FlowKey<in_addr> fk{
-        .srcip = ip->ip_src,
-        .dstip = ip->ip_dst,
-        .ipid = big_to_native(ip->ip_id),
-    };
+    FlowKey<in_addr> fk{};
+    fk.srcip = ip->ip_src;
+    fk.dstip = ip->ip_dst;
+    fk.ipid = big_to_native(ip->ip_id);
     IP4Flow *flow4;
     bool istcp;
     switch (ip->ip_p) {
@@ -113,7 +112,7 @@ void Worker::do_server(epoll_event *ev) {
 }
 
 std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
-    epoll_event *ev,
+    [[maybe_unused]] epoll_event *ev,
     std::vector<uint8_t> &buf) {
     if (buf.size() < 65536)
         buf.resize(65536);
@@ -146,18 +145,22 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
     }
 
     ClientEndpoint ep;
+    bool isv6;
     if (static_cast<sockaddr *>(mh.msg_name)->sa_family == AF_INET6) {
         assert(_arg.srv_is_v6);
         ep = *static_cast<sockaddr_in6 *>(mh.msg_name);
+        isv6 = true;
     } else {
         assert(!_arg.srv_is_v6);
         ep = *static_cast<sockaddr_in *>(mh.msg_name);
+        isv6 = false;
     }
 
     PacketBatch pb{
         .prefix = {},
         .data = {buf.data(), iov.iov_len},
         .segment_size = gro_size,
+        .isv6 = isv6,
     };
     return std::make_pair(pb, ep);
 }
@@ -184,16 +187,13 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
     std::lock_guard<std::mutex> client_lock(it->mutex);
 
     auto rest = pb.data;
-    size_t i = 0;
-    for (; !rest.empty(); i++) {
-        auto datalen = std::min(rest.size(), pb.segment_size);
-        auto result = wireguard_read_raw(it->tunnel, rest.data(), datalen, scratch.data(), scratch.size());
-        rest = rest.subspan(datalen);
+    for (auto pkt : pb) {
+        auto result = wireguard_read_raw(it->tunnel, pkt.data(), pkt.size(), scratch.data(), scratch.size());
         switch (result.op) {
         case WRITE_TO_TUNNEL_IPV4: {
-            auto pkt = std::span(&scratch[0], &scratch[result.size]);
-            if (batch.push_packet_v4(pkt) == DecapBatch::Outcome::GRO_NOADD)
-                batch.unrel.emplace_back(pkt.begin(), pkt.end());
+            auto outpkt = std::span(&scratch[0], &scratch[result.size]);
+            if (batch.push_packet_v4(outpkt) == DecapBatch::Outcome::GRO_NOADD)
+                batch.unrel.emplace_back(outpkt.begin(), outpkt.end());
             break;
         }
         case WRITE_TO_TUNNEL_IPV6:
@@ -205,6 +205,7 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
             break;
         }
         case WIREGUARD_ERROR:
+        case WIREGUARD_DONE:
             break;
         }
     }

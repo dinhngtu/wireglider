@@ -21,7 +21,7 @@ LDLIBS+=-ltdutil
 LIBURING_ROOT?=$(realpath ../liburing)
 CPPFLAGS+=-I$(LIBURING_ROOT)/src/include
 LDFLAGS+=-L$(LIBURING_ROOT)/src
-LDLIBS_STATIC+=-luring
+LDLIBS+=-l:liburing.a
 
 # ./b2 variant=release link=static runtime-link=shared stage
 BOOST_ROOT?=$(realpath ../boost_1_85_0)
@@ -36,7 +36,7 @@ CPPFLAGS+=-I$(CXXOPTS_ROOT)/include
 BORINGTUN_ROOT?=$(realpath ../boringtun)
 CPPFLAGS+=-I$(BORINGTUN_ROOT)/boringtun/src
 LDFLAGS+=-L$(BORINGTUN_ROOT)/target/release
-LDLIBS_STATIC+=-lboringtun
+LDLIBS+=-l:libboringtun.a
 
 # mkdir build; cd build; cmake ..; make
 FMT_ROOT?=$(realpath ../fmt)
@@ -48,7 +48,7 @@ LDLIBS+=-lfmt
 MIMALLOC_ROOT?=$(realpath ../mimalloc)
 CPPFLAGS+=-I$(MIMALLOC_ROOT)/include
 LDFLAGS+=-L$(MIMALLOC_ROOT)/out/release
-LDLIBS_STATIC+=-lmimalloc
+LDLIBS+=-l:libmimalloc.a
 
 USE_MIMALLOC?=1
 USE_MIMALLOC_DYNAMIC?=0
@@ -69,13 +69,13 @@ CPPFLAGS+=-I$(XXHASH_ROOT) -DXXH_INLINE_ALL
 URCU_ROOT?=$(realpath ../userspace-rcu)
 CPPFLAGS+=-I$(URCU_ROOT)/include -D_LGPL_SOURCE
 LDFLAGS+=-L$(URCU_ROOT)/src
-LDLIBS_STATIC+=-lurcu-qsbr -lurcu-cds
+LDLIBS+=-l:liburcu-qsbr.a -l:liburcu-cds.a
 
 # mkdir build; cd build; cmake .. -DLIBTINS_BUILD_SHARED=0 -DLIBTINS_ENABLE_CXX11=1; make
-#TINS_ROOT?=$(realpath ../libtins)
-#CPPFLAGS+=-I$(TINS_ROOT)/include
-#LDFLAGS+=-L$(TINS_ROOT)/build/lib
-#LDLIBS+=-ltins
+TINS_ROOT?=$(realpath ../libtins)
+TINS_CPPFLAGS+=-I$(TINS_ROOT)/include
+TINS_LDFLAGS+=-L$(TINS_ROOT)/build/lib
+TINS_LDLIBS+=-ltins
 
 # mkdir build; cd build; cmake ..; make
 CATCH_ROOT?=$(realpath ../Catch2)
@@ -88,8 +88,6 @@ FASTCSUM_ROOT?=$(realpath ../fastcsum)
 CPPFLAGS+=-I$(FASTCSUM_ROOT)/include
 LDFLAGS+=-L$(FASTCSUM_ROOT)
 LDLIBS+=-lfastcsum
-
-LDLIBS+=-Wl,-Bstatic $(LDLIBS_STATIC) -Wl,-Bdynamic
 
 ifeq ($(DEBUG), 1)
 	CPPFLAGS+=-DDEBUG=1
@@ -136,13 +134,23 @@ TESTS=\
 	tests/checksum \
 	tests/offload \
 
-$(TESTS): CPPFLAGS+=$(CATCH_CPPFLAGS)
-$(TESTS): CFLAGS+=-Wno-unused
-$(TESTS): CXXFLAGS+=-Wno-unused
-$(TESTS): LDFLAGS+=$(CATCH_LDFLAGS)
-$(TESTS): LDLIBS+=$(CATCH_LDLIBS)
+$(TESTS): CPPFLAGS+=$(CATCH_CPPFLAGS) $(TINS_CPPFLAGS)
+$(TESTS): CFLAGS+=-Wno-unused -Wno-shadow
+$(TESTS): CXXFLAGS+=-Wno-unused -Wno-shadow
+$(TESTS): LDFLAGS+=$(CATCH_LDFLAGS) $(TINS_LDFLAGS)
+$(TESTS): LDLIBS+=$(CATCH_LDLIBS) $(TINS_LDLIBS)
 
 TESTS_RUN=$(addsuffix .run,$(TESTS))
+
+OBJECTS=\
+	worker/decap.o \
+	worker/encap.o \
+	worker/send.o \
+	worker.o \
+	netutil.o \
+	maple_tree.o \
+	xarray.o \
+	kernel_compat.o \
 
 DEPS=$(wildcard *.d)
 
@@ -150,28 +158,22 @@ all: $(TARGETS) $(TESTS)
 
 tests: $(TESTS)
 
+$(TARGETS) $(TESTS): $(OBJECTS)
+
 $(TARGETS): %: %.cpp $(OBJ_MIMALLOC)
 	$(LINK.cpp) $(OBJ_MIMALLOC) $< $(filter-out $(OBJ_MIMALLOC),$(filter %.o,$^)) $(LOADLIBES) $(LDLIBS) -o $@
-
-wgss: worker.o worker/decap.o worker/encap.o netutil.o maple_tree.o xarray.o kernel_compat.o
-
-ifeq ($(USE_ADX), 1)
-wgss: checksum-x64.o
-endif
 
 xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
 maple_tree.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
-tests/offload: worker/encap.o
-
 $(TESTS_RUN): %.run: %
 	$<
 
-check: $(TESTS_RUN)
+check: tests $(TESTS_RUN)
 
 clean:
-	$(RM) $(TARGETS) $(TESTS)
+	$(RM) $(TARGETS) $(TESTS) libwgss.a
 	$(RM) $(OBJECTS)
 	$(RM) $(DEPS)
 	find . -name '*.[od]' -print -delete

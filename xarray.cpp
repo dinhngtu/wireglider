@@ -6,6 +6,7 @@
  * Author: Matthew Wilcox <willy@infradead.org>
  */
 
+#include <cstdlib>
 #include "xarray.hpp"
 
 void radix_tree_node_rcu_free(struct rcu_head *head) {

@@ -3,6 +3,7 @@
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
 #include <boost/endian.hpp>
+#include <fmt/format.h>
 
 #include "worker.hpp"
 

@@ -1,3 +1,4 @@
+#include <string>
 #include <array>
 #include <utility>
 #include <span>
@@ -8,6 +9,7 @@
 #include <netinet/udp.h>
 #include <boost/endian.hpp>
 #include <tdutil/util.hpp>
+#include <fmt/format.h>
 
 #include "worker.hpp"
 #include "checksum.hpp"
@@ -135,6 +137,16 @@ PacketBatch worker_impl::do_tun_gso_split(
         };
     }
 
+    if (inbuf.size() < vnethdr.hdr_len) {
+        // shouldn't happen but this was a possible crash
+        return PacketBatch{
+            .prefix = {},
+            .data = inbuf,
+            .segment_size = inbuf.size(),
+            .isv6 = isv6,
+        };
+    }
+
     auto prefix = inbuf.subspan(0, vnethdr.hdr_len);
     auto rest = inbuf.subspan(vnethdr.hdr_len);
 
@@ -248,11 +260,9 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
 
     std::span<const uint8_t> rest(pb.data);
     std::span<uint8_t> remain(outbuf);
-    size_t i = 0, crypted_segment_size = 0;
-    for (; !rest.empty(); i++) {
-        auto datalen = std::min(rest.size(), pb.segment_size);
-        auto res = wireguard_write_raw(client->tunnel, rest.data(), datalen, remain.data(), remain.size());
-        rest = rest.subspan(datalen);
+    size_t crypted_segment_size = 0;
+    for (auto pkt : pb) {
+        auto res = wireguard_write_raw(client->tunnel, pkt.data(), pkt.size(), remain.data(), remain.size());
         if (res.op == WRITE_TO_NETWORK) {
             remain = remain.subspan(res.size);
             if (!crypted_segment_size)

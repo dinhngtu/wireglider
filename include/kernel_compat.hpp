@@ -2,7 +2,6 @@
 
 #include <cassert>
 #include <algorithm>
-#include <fmt/format.h>
 
 using gfp_t = unsigned int;
 

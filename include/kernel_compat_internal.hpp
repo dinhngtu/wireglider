@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstring>
+#include <atomic>
 #include "kernel_compat.hpp"
 
 #define __force
