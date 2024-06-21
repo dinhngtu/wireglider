@@ -152,7 +152,7 @@ OBJECTS=\
 	xarray.o \
 	kernel_compat.o \
 
-DEPS=$(wildcard *.d)
+DEPS=$(patsubst %.o,%.d,$(OBJECTS))
 
 all: $(TARGETS) $(TESTS)
 
