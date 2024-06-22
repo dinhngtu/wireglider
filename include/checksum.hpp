@@ -6,6 +6,7 @@
 // https://github.com/snabbco/snabb/commit/0068df61213d030ac6064f0d5db8705373e7e3c7
 
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <array>
 #include <boost/endian.hpp>
@@ -29,29 +30,39 @@ static inline uint64_t checksum_nofold(std::span<const uint8_t, N> b, uint64_t i
 template <>
 inline uint64_t checksum_nofold(std::span<const uint8_t, 16> b, uint64_t initial) {
     uint64_t ret = initial;
-    bool c1 = __builtin_add_overflow(ret, *reinterpret_cast<const uint64_t *>(&b[0]), &ret);
+    uint64_t tmp;
+    memcpy(&tmp, &b[0], sizeof(tmp));
+    bool c1 = __builtin_add_overflow(ret, tmp, &ret);
     ret += c1;
-    bool c2 = __builtin_add_overflow(ret, *reinterpret_cast<const uint64_t *>(&b[8]), &ret);
+    memcpy(&tmp, &b[8], sizeof(tmp));
+    bool c2 = __builtin_add_overflow(ret, tmp, &ret);
     return ret + c2;
 }
 
 template <>
 inline uint64_t checksum_nofold(std::span<const uint8_t, 8> b, uint64_t initial) {
     uint64_t ret = initial;
-    bool c = __builtin_add_overflow(ret, *reinterpret_cast<const uint64_t *>(&b[0]), &ret);
+    uint64_t tmp;
+    memcpy(&tmp, &b[0], sizeof(tmp));
+    bool c = __builtin_add_overflow(ret, tmp, &ret);
     return ret + c;
 }
 
 template <>
-uint64_t checksum_nofold(std::span<const uint8_t, 4> b, uint64_t initial) {
+inline uint64_t checksum_nofold(std::span<const uint8_t, 4> b, uint64_t initial) {
     uint64_t ret = initial;
-    bool c = __builtin_add_overflow(ret, static_cast<uint64_t>(*reinterpret_cast<const uint32_t *>(&b[0])), &ret);
+    uint32_t tmp;
+    memcpy(&tmp, &b[0], sizeof(tmp));
+    bool c = __builtin_add_overflow(ret, static_cast<uint64_t>(tmp), &ret);
     return ret + c;
 }
 
+template <>
 inline uint64_t checksum_nofold(std::span<const uint8_t, 2> b, uint64_t initial) {
     uint64_t ret = initial;
-    bool c = __builtin_add_overflow(ret, static_cast<uint64_t>(*reinterpret_cast<const uint16_t *>(&b[0])), &ret);
+    uint16_t tmp;
+    memcpy(&tmp, &b[0], sizeof(tmp));
+    bool c = __builtin_add_overflow(ret, static_cast<uint64_t>(tmp), &ret);
     return ret + c;
 }
 
@@ -86,12 +97,10 @@ static inline uint64_t pseudo_header_checksum_nofold(
     uint16_t totalLen) {
     auto sum = checksum_impl::checksum_nofold(srcAddr, 0);
     sum = checksum_impl::checksum_nofold(dstAddr, sum);
-    std::array<uint16_t, 2> proto_bytes = {
-        boost::endian::native_to_big(static_cast<uint16_t>(proto)),
-        boost::endian::native_to_big(totalLen)};
-    sum = checksum_impl::checksum_nofold(
-        std::span<const uint8_t, 4>(reinterpret_cast<const uint8_t *>(proto_bytes.data()), 4),
-        sum);
+    std::array<uint8_t, 4> proto_bytes;
+    boost::endian::store_big_u16(&proto_bytes[0], proto);
+    boost::endian::store_big_u16(&proto_bytes[2], totalLen);
+    sum = checksum_impl::checksum_nofold(std::span<const uint8_t, 4>(proto_bytes), sum);
     return sum;
 }
 
