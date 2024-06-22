@@ -38,6 +38,8 @@ struct OwnedPacketBatch {
 
 template <typename AddressType>
 struct FlowKey {
+    using address_type = AddressType;
+
     // network order
     AddressType srcip;
     // network order

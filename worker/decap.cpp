@@ -6,12 +6,14 @@
 #include <boost/endian.hpp>
 #include <boost/intrusive/list.hpp>
 #include <boost/unordered_map.hpp>
+#include <tdutil/function_traits.hpp>
 
 #include "worker.hpp"
 
 using namespace boost::endian;
 using namespace tdutil;
 using namespace wgss::worker_impl;
+using enum DecapBatch::Outcome;
 
 namespace wgss {
 
@@ -39,26 +41,26 @@ static void append_flow(FlowMap<T> *flow, const FlowKey<T> &fk, std::span<uint8_
     }
 }
 
-static struct ip *fill_fk_ip4(FlowKey<in_addr> &fk, std::span<uint8_t> ippkt) {
+static std::pair<struct ip *, uint8_t> fill_fk_ip4(FlowKey<in_addr> &fk, std::span<uint8_t> ippkt) {
     auto ip = reinterpret_cast<struct ip *>(ippkt.data());
     // no support for long ipv4 headers yet
     if (ip->ip_hl * 4u != sizeof(struct ip))
-        return nullptr;
+        return {nullptr, IPPROTO_RAW};
     if (ippkt.size() != ip->ip_len)
-        return nullptr;
+        return {nullptr, IPPROTO_RAW};
     fk.srcip = ip->ip_src;
     fk.dstip = ip->ip_dst;
-    return ip;
+    return std::make_pair(ip, ip->ip_p);
 }
 
-static ip6_hdr *fill_fk_ip6(FlowKey<in6_addr> &fk, std::span<uint8_t> ippkt) {
+static std::pair<ip6_hdr *, uint8_t> fill_fk_ip6(FlowKey<in6_addr> &fk, std::span<uint8_t> ippkt) {
     auto ip = reinterpret_cast<ip6_hdr *>(ippkt.data());
     auto rest = ippkt.subspan(sizeof(ip6_hdr));
     if (rest.size() != ip->ip6_ctlun.ip6_un1.ip6_un1_plen)
-        return nullptr;
+        return {nullptr, IPPROTO_RAW};
     fk.srcip = ip->ip6_src;
     fk.dstip = ip->ip6_dst;
-    return ip;
+    return std::make_pair(ip, ip->ip6_ctlun.ip6_un1.ip6_un1_nxt);
 }
 
 template <typename T>
@@ -87,23 +89,29 @@ static udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<uint8_t> l4pkt) {
     return udp;
 }
 
-DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
-    if (ippkt.size() < sizeof(struct ip))
+template <typename address_type, auto fill_ip>
+static DecapBatch::Outcome push_packet(
+    FlowMap<address_type> *tcpflow,
+    FlowMap<address_type> *udpflow,
+    std::span<uint8_t> ippkt) {
+    using ip_header_type = tdutil::result_type_t<decltype(fill_ip)>;
+
+    if (ippkt.size() < sizeof(ip_header_type))
         return GRO_DROP;
 
-    FlowKey<in_addr> fk{};
-    auto ip = fill_fk_ip4(fk, ippkt);
+    FlowKey<address_type> fk{};
+    auto [ip, proto] = fill_ip(fk, ippkt);
     if (!ip)
         return GRO_NOADD;
     auto rest = ippkt.subspan(sizeof(*ip));
 
-    IP4Flow *flow;
+    FlowMap<address_type> *flow;
     bool istcp;
-    switch (ip->ip_p) {
+    switch (proto) {
     case IPPROTO_TCP: {
         if (!fill_fk_tcp(fk, rest))
             return GRO_NOADD;
-        flow = &tcp4;
+        flow = tcpflow;
         istcp = true;
         rest = rest.subspan(sizeof(tcphdr));
         break;
@@ -111,7 +119,7 @@ DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
     case IPPROTO_UDP: {
         if (!fill_fk_udp(fk, rest))
             return GRO_NOADD;
-        flow = &udp4;
+        flow = udpflow;
         istcp = false;
         rest = rest.subspan(sizeof(udphdr));
         break;
@@ -125,42 +133,12 @@ DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
     return GRO_ADDED;
 }
 
+DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
+    return push_packet<in_addr, fill_fk_ip4>(&tcp4, &udp4, ippkt);
+}
+
 DecapBatch::Outcome DecapBatch::push_packet_v6(std::span<uint8_t> ippkt) {
-    if (ippkt.size() < sizeof(ip6_hdr))
-        return GRO_DROP;
-
-    FlowKey<in6_addr> fk{};
-    auto ip = fill_fk_ip6(fk, ippkt);
-    if (!ip)
-        return GRO_NOADD;
-    auto rest = ippkt.subspan(sizeof(*ip));
-
-    IP6Flow *flow;
-    bool istcp;
-    switch (ip->ip6_ctlun.ip6_un1.ip6_un1_nxt) {
-    case IPPROTO_TCP: {
-        if (!fill_fk_tcp(fk, rest))
-            return GRO_NOADD;
-        flow = &tcp6;
-        istcp = true;
-        rest = rest.subspan(sizeof(tcphdr));
-        break;
-    }
-    case IPPROTO_UDP: {
-        if (!fill_fk_udp(fk, rest))
-            return GRO_NOADD;
-        flow = &udp6;
-        istcp = false;
-        rest = rest.subspan(sizeof(udphdr));
-        break;
-    }
-    default:
-        return GRO_NOADD;
-    }
-    fk.segment_size = rest.size();
-
-    append_flow(flow, fk, rest, istcp);
-    return GRO_ADDED;
+    return push_packet<in6_addr, fill_fk_ip6>(&tcp6, &udp6, ippkt);
 }
 
 } // namespace worker_impl
@@ -274,13 +252,16 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
         switch (result.op) {
         case WRITE_TO_TUNNEL_IPV4: {
             auto outpkt = std::span(&scratch[0], &scratch[result.size]);
-            if (batch.push_packet_v4(outpkt) == DecapBatch::Outcome::GRO_NOADD)
+            if (batch.push_packet_v4(outpkt) == GRO_NOADD)
                 batch.unrel.emplace_back(outpkt.begin(), outpkt.end());
             break;
         }
-        case WRITE_TO_TUNNEL_IPV6:
-            // not implemented
+        case WRITE_TO_TUNNEL_IPV6: {
+            auto outpkt = std::span(&scratch[0], &scratch[result.size]);
+            if (batch.push_packet_v6(outpkt) == GRO_NOADD)
+                batch.unrel.emplace_back(outpkt.begin(), outpkt.end());
             break;
+        }
         case WRITE_TO_NETWORK: {
             batch.retpkt.emplace_back(&scratch[0], &scratch[result.size]);
             tunnel_flush(rcu, client_lock, batch.retpkt, it->tunnel, scratch);
