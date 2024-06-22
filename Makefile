@@ -141,8 +141,6 @@ $(TESTS): CXXFLAGS+=-Wno-unused -Wno-shadow
 $(TESTS): LDFLAGS+=$(CATCH_LDFLAGS) $(TINS_LDFLAGS)
 $(TESTS): LDLIBS+=$(CATCH_LDLIBS) $(TINS_LDLIBS)
 
-TESTS_RUN=$(addsuffix .run,$(TESTS))
-
 OBJECTS=\
 	worker/decap.o \
 	worker/encap.o \
@@ -168,10 +166,8 @@ xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initi
 
 maple_tree.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
-$(TESTS_RUN): %.run: %
-	$<
-
-check: tests $(TESTS_RUN)
+check: tests
+	for test in $(TESTS); do echo $$test; $$test; done
 
 clean:
 	$(RM) $(TARGETS) $(TESTS) libwgss.a
