@@ -47,7 +47,7 @@ struct PacketBatch {
 
         PacketBatchIterator &operator++() {
             assert(!_span.empty());
-            _span = _span.subspan(_segment_size);
+            _span = _span.subspan(std::min(_span.size(), _segment_size));
             return *this;
         }
         PacketBatchIterator operator++(int) {
