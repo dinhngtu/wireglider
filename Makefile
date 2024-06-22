@@ -133,6 +133,7 @@ TARGETS=\
 TESTS=\
 	tests/checksum \
 	tests/offload \
+	tests/endian \
 
 $(TESTS): CPPFLAGS+=$(CATCH_CPPFLAGS) $(TINS_CPPFLAGS)
 $(TESTS): CFLAGS+=-Wno-unused -Wno-shadow

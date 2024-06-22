@@ -13,6 +13,7 @@
 
 #include "worker.hpp"
 #include "checksum.hpp"
+#include "endian.hpp"
 
 using namespace boost::endian;
 using namespace tdutil;
@@ -181,9 +182,9 @@ PacketBatch worker_impl::do_tun_gso_split(
 
         if (isv6) {
             // For IPv6 we are responsible for updating the payload length field.
-            auto &payload_len = reinterpret_cast<ipv6hdr *>(thispkt.data())->payload_len;
-            payload_len = thispkt.size() - vnethdr.csum_start;
-            native_to_big_inplace(payload_len);
+            assign_big_from_native(
+                reinterpret_cast<ipv6hdr *>(thispkt.data())->payload_len,
+                thispkt.size() - vnethdr.csum_start);
         } else {
             // For IPv4 we are responsible for incrementing the ID field,
             // updating the total len field, and recalculating the header
@@ -194,25 +195,21 @@ PacketBatch worker_impl::do_tun_gso_split(
                 ip->ip_id += i;
                 native_to_big_inplace(ip->ip_id);
             }
-            ip->ip_len = thispkt.size();
-            native_to_big_inplace(ip->ip_len);
-            ip->ip_sum = checksum(thispkt.subspan(0, vnethdr.csum_start), 0);
-            native_to_big_inplace(ip->ip_sum);
+            assign_big_from_native(ip->ip_len, thispkt.size());
+            assign_big_from_native(ip->ip_sum, checksum(thispkt.subspan(0, vnethdr.csum_start), 0));
         }
 
         if (istcp) {
             // set TCP seq and adjust TCP flags
             auto tcp = reinterpret_cast<tcphdr *>(&thispkt[vnethdr.csum_start]);
-            tcp->seq = tcpseq0 + vnethdr.gso_size * i;
-            native_to_big_inplace(tcp->seq);
+            assign_big_from_native(tcp->seq, tcpseq0 + vnethdr.gso_size * i);
             if (datalen < rest.size())
                 // FIN and PSH should only be set on last segment
                 tcp->fin = tcp->psh = 0;
         } else {
             // set UDP header len
             auto udp = reinterpret_cast<udphdr *>(&thispkt[vnethdr.csum_start]);
-            udp->len = prefix.size() - vnethdr.csum_start;
-            native_to_big_inplace(udp->len);
+            assign_big_from_native(udp->len, prefix.size() - vnethdr.csum_start);
         }
 
         auto l4_csum = calc_pkt_checksum(thispkt, isv6, istcp, vnethdr.csum_start);
