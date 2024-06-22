@@ -6,6 +6,7 @@ CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -std=c++20
 CPPFLAGS+=-pthread
 LDLIBS+=-pthread
 
+# TODO: customize kernel header include paths if needed
 CPPFLAGS+=-I/lib/modules/$(shell uname -r)/build/usr/include
 
 # TODO: customize processor features as desired
@@ -83,6 +84,7 @@ CATCH_CPPFLAGS+=-I$(CATCH_ROOT)/src -I$(CATCH_ROOT)/build/generated-includes
 CATCH_LDFLAGS+=-L$(CATCH_ROOT)/build/src
 CATCH_LDLIBS+=-lCatch2Main -lCatch2
 
+# TODO: customize processor features as desired
 # make ENABLE_AVX=1 MARCH=native; make check
 FASTCSUM_ROOT?=$(realpath ../fastcsum)
 CPPFLAGS+=-I$(FASTCSUM_ROOT)/include
@@ -147,9 +149,9 @@ OBJECTS=\
 	worker/send.o \
 	worker.o \
 	netutil.o \
-	maple_tree.o \
-	xarray.o \
-	kernel_compat.o \
+	liblinux/maple_tree.o \
+	liblinux/xarray.o \
+	liblinux/kernel_compat.o \
 
 DEPS=$(patsubst %.o,%.d,$(OBJECTS))
 
@@ -170,7 +172,7 @@ check: tests
 	for test in $(TESTS); do echo $$test; $$test; done
 
 clean:
-	$(RM) $(TARGETS) $(TESTS) libwgss.a
+	$(RM) $(TARGETS) $(TESTS)
 	$(RM) $(OBJECTS)
 	$(RM) $(DEPS)
 	find . -name '*.[od]' -print -delete
