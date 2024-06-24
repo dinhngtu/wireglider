@@ -6,3 +6,4 @@ wgss
 tests/checksum
 tests/offload
 tests/endian
+tests/flowkey

@@ -136,6 +136,7 @@ TESTS=\
 	tests/checksum \
 	tests/offload \
 	tests/endian \
+	tests/flowkey \
 
 $(TESTS): CPPFLAGS+=$(CATCH_CPPFLAGS) $(TINS_CPPFLAGS)
 $(TESTS): CFLAGS+=-Wno-unused -Wno-shadow

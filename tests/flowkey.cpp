@@ -1,34 +1,209 @@
-#include <vector>
-#include <memory>
 #include <catch2/catch_test_macros.hpp>
-#include <tins/tins.h>
 
 #include "worker.hpp"
+#include "packet_tests.hpp"
 
+using namespace wgss;
 using namespace Tins;
 
-std::vector<uint8_t> tcp4_packet(
-    const char *src,
-    uint16_t sport,
-    const char *dst,
-    uint16_t dport,
-    uint16_t tcpflags,
-    uint32_t segment_size,
-    uint32_t seq) {
-    IP ip(dst, src);
-    TCP tcp(dport, sport);
-    tcp.flags(tcpflags);
-    std::vector<uint8_t> payload(segment_size);
-    auto pkt = ip / tcp / RawPDU(payload);
-    return pkt.serialize();
+static const IPv4Address ip4a("192.0.2.1"), ip4b("192.0.2.2"), ip4c("192.0.2.3");
+static const IPv6Address ip6a("2001:db8::1"), ip6b("2001:db8::2"), ip6c("2001:db8::3");
+
+static void push_one(worker_impl::DecapBatch &batch, std::vector<uint8_t> pkt) {
+    auto res = batch.push_packet(std::span<const uint8_t>(pkt));
+    REQUIRE(res == worker_impl::DecapBatch::Outcome::GRO_ADDED);
 }
 
-TEST_CASE("flowkey") {
-    wgss::worker_impl::DecapBatch batch;
+TEST_CASE("DecapBatch") {
+    worker_impl::DecapBatch batch;
 
     SECTION("multiple protocols and flows") {
-        std::vector<std::vector<uint8_t>> pkts;
-        auto pkt = tcp4_packet("192.0.2.1", 1, "192.0.2.2", 1, TCP::ACK, 100, 1);
-        batch.push_packet_v4(pkt);
+        push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));     // tcp4 flow 1
+        push_one(batch, make_udp<IP>(ip4a, 1, ip4b, 1, 100));                  // udp4 flow 1
+        push_one(batch, make_udp<IP>(ip4a, 1, ip4c, 1, 100));                  // udp4 flow 2
+        push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 101));   // tcp4 flow 1
+        push_one(batch, make_tcp<IP>(ip4a, 1, ip4c, 1, TCP::ACK, 100, 201));   // tcp4 flow 2
+        push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 1));   // tcp6 flow 1
+        push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 101)); // tcp6 flow 1
+        push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6c, 1, TCP::ACK, 100, 201)); // tcp6 flow 2
+        push_one(batch, make_udp<IP>(ip4a, 1, ip4b, 1, 100));                  // udp4 flow 1
+        push_one(batch, make_udp<IPv6>(ip6a, 1, ip6b, 1, 100));                // udp6 flow 1
+        push_one(batch, make_udp<IPv6>(ip6a, 1, ip6b, 1, 100));                // udp6 flow 1
+
+        REQUIRE(batch.tcp4.size() == 2);
+        {
+            worker_impl::FlowKey<in_addr> fk{
+                to_addr(ip4a),
+                to_addr(ip4b),
+                1,
+                1,
+                100,
+                0,
+                1,
+            };
+            auto it = batch.tcp4.lower_bound(fk);
+            REQUIRE(it != batch.tcp4.end());
+            REQUIRE(it->first.segment_size == 100);
+            REQUIRE(it->first.tcpseq == 1);
+            REQUIRE(it->second.buf.size() == 200);
+            REQUIRE(it->second.count == 2);
+
+            it--;
+            REQUIRE(it != batch.tcp4.end());
+            REQUIRE(it->first.dstip == to_addr(ip4c));
+            REQUIRE(it->first.segment_size == 100);
+            REQUIRE(it->first.tcpseq == 201);
+            REQUIRE(it->second.buf.size() == 100);
+            REQUIRE(it->second.count == 1);
+        }
+
+        REQUIRE(batch.udp4.size() == 2);
+        {
+            worker_impl::FlowKey<in_addr> fk{
+                to_addr(ip4a),
+                to_addr(ip4b),
+                1,
+                1,
+                100,
+                0,
+                0,
+            };
+            auto it = batch.udp4.lower_bound(fk);
+            REQUIRE(it != batch.udp4.end());
+            REQUIRE(it->first.segment_size == 100);
+            REQUIRE(it->second.buf.size() == 200);
+            REQUIRE(it->second.count == 2);
+
+            it--;
+            REQUIRE(it != batch.udp4.end());
+            REQUIRE(it->first.dstip == to_addr(ip4c));
+            REQUIRE(it->first.segment_size == 100);
+            REQUIRE(it->second.buf.size() == 100);
+            REQUIRE(it->second.count == 1);
+        }
+
+        REQUIRE(batch.tcp6.size() == 2);
+        {
+            worker_impl::FlowKey<in6_addr> fk{
+                to_addr(ip6a),
+                to_addr(ip6b),
+                1,
+                1,
+                100,
+                0,
+                1,
+            };
+            auto it = batch.tcp6.lower_bound(fk);
+            REQUIRE(it != batch.tcp6.end());
+            REQUIRE(it->first.segment_size == 100);
+            REQUIRE(it->first.tcpseq == 1);
+            REQUIRE(it->second.buf.size() == 200);
+            REQUIRE(it->second.count == 2);
+
+            it--;
+            REQUIRE(it != batch.tcp6.end());
+            REQUIRE(it->first.dstip == to_addr(ip6c));
+            REQUIRE(it->first.segment_size == 100);
+            REQUIRE(it->first.tcpseq == 201);
+            REQUIRE(it->second.buf.size() == 100);
+            REQUIRE(it->second.count == 1);
+        }
+
+        REQUIRE(batch.udp6.size() == 1);
+        {
+            worker_impl::FlowKey<in6_addr> fk{
+                to_addr(ip6a),
+                to_addr(ip6b),
+                1,
+                1,
+                100,
+                0,
+                0,
+            };
+            auto it = batch.udp6.lower_bound(fk);
+            REQUIRE(it != batch.udp6.end());
+            REQUIRE(it->first.segment_size == 100);
+            REQUIRE(it->second.buf.size() == 200);
+            REQUIRE(it->second.count == 2);
+        }
+    }
+
+    SECTION("PSH interleaved") {
+        push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));                // v4 flow 1
+        push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK | TCP::PSH, 100, 101));   // v4 flow 1
+        push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 201));              // v4 flow 1
+        push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 301));              // v4 flow 1
+        push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 1));              // v6 flow 1
+        push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK | TCP::PSH, 100, 101)); // v6 flow 1
+        push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 201));            // v6 flow 1
+        push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 301));            // v6 flow 1
+
+        REQUIRE(batch.tcp4.size() == 2);
+        {
+            worker_impl::FlowKey<in_addr> fk{
+                to_addr(ip4a),
+                to_addr(ip4b),
+                1,
+                1,
+                100,
+                0,
+                1,
+            };
+            auto it = batch.tcp4.lower_bound(fk);
+            REQUIRE(it != batch.tcp4.end());
+            REQUIRE(it->first.segment_size == 100);
+            REQUIRE(it->second.buf.size() == 200);
+            REQUIRE(it->second.count == 2);
+        }
+        {
+            worker_impl::FlowKey<in_addr> fk{
+                to_addr(ip4a),
+                to_addr(ip4b),
+                1,
+                1,
+                100,
+                0,
+                201,
+            };
+            auto it = batch.tcp4.lower_bound(fk);
+            REQUIRE(it != batch.tcp4.end());
+            REQUIRE(it->first.segment_size == 100);
+            REQUIRE(it->second.buf.size() == 200);
+            REQUIRE(it->second.count == 2);
+        }
+
+        REQUIRE(batch.tcp6.size() == 2);
+        {
+            worker_impl::FlowKey<in6_addr> fk{
+                to_addr(ip6a),
+                to_addr(ip6b),
+                1,
+                1,
+                100,
+                0,
+                1,
+            };
+            auto it = batch.tcp6.lower_bound(fk);
+            REQUIRE(it != batch.tcp6.end());
+            REQUIRE(it->first.segment_size == 100);
+            REQUIRE(it->second.buf.size() == 200);
+            REQUIRE(it->second.count == 2);
+        }
+        {
+            worker_impl::FlowKey<in6_addr> fk{
+                to_addr(ip6a),
+                to_addr(ip6b),
+                1,
+                1,
+                100,
+                0,
+                201,
+            };
+            auto it = batch.tcp6.lower_bound(fk);
+            REQUIRE(it != batch.tcp6.end());
+            REQUIRE(it->first.segment_size == 100);
+            REQUIRE(it->second.buf.size() == 200);
+            REQUIRE(it->second.count == 2);
+        }
     }
 }
