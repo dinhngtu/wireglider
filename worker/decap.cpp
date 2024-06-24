@@ -19,58 +19,97 @@ namespace wgss {
 
 namespace worker_impl {
 
+struct PacketFlags {
+    bool isv6{};
+    bool istcp{};
+    bool ispsh{};
+};
+
 template <typename T>
-static void append_flow(FlowMap<T> *flow, const FlowKey<T> &fk, std::span<uint8_t> pkt, bool istcp) {
-    auto it = flow->upper_bound(fk);
-    if (it != flow->end() && it->second.is_appendable(pkt.size()) &&
-        it->first.is_consecutive_with(fk, 1, istcp ? pkt.size() : 0)) {
-        // insert into existing flow
-        it->second.append(pkt);
-    } else {
-        // needs new flow
-        auto &newflow = (*flow)[fk];
-        newflow = OwnedPacketBatch(4 * fk.segment_size);
-        newflow.append(pkt);
-    }
+static void append_flow(
+    FlowMap<T> &flow,
+    const FlowKey<T> &fk,
+    std::span<const uint8_t> pkthdr,
+    std::span<const uint8_t> pktdata,
+    const PacketFlags &flags) {
+    auto it = flow.lower_bound(fk);
+    bool created;
+    if (it == flow.end())
+        goto newflow;
+    if (!it->second.is_appendable(pktdata.size()))
+        goto newflow;
+    if (!it->first.is_consecutive_with(fk, 1, flags.istcp ? pktdata.size() : 0))
+        goto newflow;
+    if (flags.istcp && it->second.tcphdr(flags.isv6)->psh)
+        goto newflow;
+    goto existingflow;
+newflow:
+    std::tie(it, created) = flow.emplace(fk, OwnedPacketBatch(pkthdr, 4 * fk.segment_size));
+    assert(created);
+existingflow:
+    it->second.append(pktdata);
+    if (flags.istcp)
+        it->second.tcphdr(flags.isv6)->psh |= !!flags.ispsh;
+
     // merge with previous flow; map is in reverse order
     auto prev = it + 1;
-    if (prev != flow->end() && prev->second.is_mergeable(it->second) &&
-        prev->first.is_consecutive_with(it->first, prev->second.count, istcp ? prev->second.buf.size() : 0)) {
-        prev->second.extend(it->second);
-        flow->erase(it);
-    }
+    if (prev == flow.end())
+        return;
+    if (!prev->second.is_mergeable(it->second))
+        return;
+    if (!prev->first.is_consecutive_with(it->first, prev->second.count, flags.istcp ? prev->second.buf.size() : 0))
+        return;
+    if (prev->second.tcphdr(flags.isv6)->psh)
+        return;
+    prev->second.extend(it->second);
+    flow.erase(it);
 }
 
-static std::pair<struct ip *, uint8_t> fill_fk_ip4(FlowKey<in_addr> &fk, std::span<uint8_t> ippkt) {
-    auto ip = reinterpret_cast<struct ip *>(ippkt.data());
+static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
+    FlowKey<in_addr> &fk,
+    std::span<const uint8_t> ippkt,
+    PacketFlags &flags) {
+    auto ip = reinterpret_cast<const struct ip *>(ippkt.data());
     // no support for long ipv4 headers yet
     if (ip->ip_hl * 4u != sizeof(struct ip))
         return {nullptr, IPPROTO_RAW};
-    if (ippkt.size() != ip->ip_len)
+    if (ippkt.size() != big_to_native(ip->ip_len))
         return {nullptr, IPPROTO_RAW};
+    flags.isv6 = false;
     fk.srcip = ip->ip_src;
     fk.dstip = ip->ip_dst;
     return std::make_pair(ip, ip->ip_p);
 }
 
-static std::pair<ip6_hdr *, uint8_t> fill_fk_ip6(FlowKey<in6_addr> &fk, std::span<uint8_t> ippkt) {
-    auto ip = reinterpret_cast<ip6_hdr *>(ippkt.data());
+static std::pair<const ip6_hdr *, uint8_t> fill_fk_ip6(
+    FlowKey<in6_addr> &fk,
+    std::span<const uint8_t> ippkt,
+    PacketFlags &flags) {
+    auto ip = reinterpret_cast<const ip6_hdr *>(ippkt.data());
     auto rest = ippkt.subspan(sizeof(ip6_hdr));
-    if (rest.size() != ip->ip6_ctlun.ip6_un1.ip6_un1_plen)
+    if (rest.size() != big_to_native(ip->ip6_ctlun.ip6_un1.ip6_un1_plen))
         return {nullptr, IPPROTO_RAW};
+    flags.isv6 = true;
     fk.srcip = ip->ip6_src;
     fk.dstip = ip->ip6_dst;
     return std::make_pair(ip, ip->ip6_ctlun.ip6_un1.ip6_un1_nxt);
 }
 
+template <auto F>
+using ip_header_of_t = std::remove_pointer_t<typename tdutil::result_type_t<decltype(F)>::first_type>;
+template <auto F>
+using address_type_of_t = std::remove_cvref_t<tdutil::first_argument_t<decltype(F)>>::address_type;
+
 template <typename T>
-static tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<uint8_t> l4pkt) {
+static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> l4pkt, PacketFlags &flags) {
     if (l4pkt.size() < sizeof(tcphdr))
         return nullptr;
-    auto tcp = reinterpret_cast<tcphdr *>(l4pkt.data());
+    auto tcp = reinterpret_cast<const tcphdr *>(l4pkt.data());
     if (tcp->doff != 5)
         return nullptr;
     // TODO: check tcp flags
+    flags.istcp = true;
+    flags.ispsh = !!tcp->psh;
     fk.srcport = big_to_native(tcp->source);
     fk.dstport = big_to_native(tcp->dest);
     fk.tcpack = big_to_native(tcp->ack_seq);
@@ -79,66 +118,95 @@ static tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<uint8_t> l4pkt) {
 }
 
 template <typename T>
-static udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<uint8_t> l4pkt) {
+static const udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<const uint8_t> l4pkt, PacketFlags &flags) {
     if (l4pkt.size() < sizeof(udphdr))
         return nullptr;
-    auto udp = reinterpret_cast<udphdr *>(l4pkt.data());
+    auto udp = reinterpret_cast<const udphdr *>(l4pkt.data());
+    flags.istcp = flags.ispsh = false;
     fk.srcport = big_to_native(udp->source);
     fk.dstport = big_to_native(udp->dest);
     fk.tcpack = fk.tcpseq = 0;
     return udp;
 }
 
-template <typename address_type, auto fill_ip>
-static DecapBatch::Outcome push_packet(
-    FlowMap<address_type> *tcpflow,
-    FlowMap<address_type> *udpflow,
-    std::span<uint8_t> ippkt) {
-    using ip_header_type = tdutil::result_type_t<decltype(fill_ip)>;
+template <auto fill_ip>
+static DecapBatch::Outcome evaluate_packet(
+    std::span<const uint8_t> ippkt,
+    FlowKey<address_type_of_t<fill_ip>> &fk,
+    PacketFlags &flags) {
+    using ip_header_type = ip_header_of_t<fill_ip>;
 
     if (ippkt.size() < sizeof(ip_header_type))
         return GRO_DROP;
 
-    FlowKey<address_type> fk{};
-    auto [ip, proto] = fill_ip(fk, ippkt);
+    auto [ip, proto] = fill_ip(fk, ippkt, flags);
     if (!ip)
         return GRO_NOADD;
-    auto rest = ippkt.subspan(sizeof(*ip));
+    auto l4pkt = ippkt.subspan(sizeof(*ip));
 
-    FlowMap<address_type> *flow;
     bool istcp;
     switch (proto) {
     case IPPROTO_TCP: {
-        if (!fill_fk_tcp(fk, rest))
+        if (!fill_fk_tcp(fk, l4pkt, flags))
             return GRO_NOADD;
-        flow = tcpflow;
-        istcp = true;
-        rest = rest.subspan(sizeof(tcphdr));
         break;
     }
     case IPPROTO_UDP: {
-        if (!fill_fk_udp(fk, rest))
+        if (!fill_fk_udp(fk, l4pkt, flags))
             return GRO_NOADD;
-        flow = udpflow;
-        istcp = false;
-        rest = rest.subspan(sizeof(udphdr));
         break;
     }
     default:
         return GRO_NOADD;
     }
-    fk.segment_size = rest.size();
+    fk.segment_size = l4pkt.size() - (flags.istcp ? sizeof(tcphdr) : sizeof(udphdr));
 
-    append_flow(flow, fk, rest, istcp);
     return GRO_ADDED;
 }
 
-DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<uint8_t> ippkt) {
-    return push_packet<in_addr, fill_fk_ip4>(&tcp4, &udp4, ippkt);
+template <auto fill_ip>
+static DecapBatch::Outcome do_push_packet(
+    std::span<const uint8_t> ippkt,
+    FlowMap<address_type_of_t<fill_ip>> &tcpflow,
+    FlowMap<address_type_of_t<fill_ip>> &udpflow,
+    std::deque<std::vector<uint8_t>> &unrel) {
+    using ip_header_type = ip_header_of_t<fill_ip>;
+    FlowKey<address_type_of_t<fill_ip>> fk{};
+    PacketFlags flags;
+    auto res = evaluate_packet<fill_ip>(ippkt, fk, flags);
+    switch (res) {
+    case GRO_ADDED: {
+        auto hsize = sizeof(ip_header_type) + (flags.istcp ? sizeof(tcphdr) : sizeof(udphdr));
+        auto pkthdr = ippkt.subspan(0, hsize);
+        auto pktdata = ippkt.subspan(hsize);
+        append_flow(flags.istcp ? tcpflow : udpflow, fk, pkthdr, pktdata, flags);
+        break;
+    }
+    case GRO_NOADD:
+        unrel.emplace_back(ippkt.begin(), ippkt.end());
+        break;
+    case GRO_DROP:
+        break;
+    }
+    return res;
 }
 
-DecapBatch::Outcome DecapBatch::push_packet_v6(std::span<uint8_t> ippkt) {
-    return push_packet<in6_addr, fill_fk_ip6>(&tcp6, &udp6, ippkt);
+DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<const uint8_t> ippkt) {
+    return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel);
+}
+
+DecapBatch::Outcome DecapBatch::push_packet_v6(std::span<const uint8_t> ippkt) {
+    return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel);
+}
+
+DecapBatch::Outcome DecapBatch::push_packet(std::span<const uint8_t> ippkt) {
+    if (ippkt.size() < sizeof(struct ip))
+        return GRO_DROP;
+    auto ip = reinterpret_cast<const struct ip *>(ippkt.data());
+    if (ip->ip_v == 4)
+        return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel);
+    else
+        return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel);
 }
 
 } // namespace worker_impl
@@ -252,14 +320,12 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
         switch (result.op) {
         case WRITE_TO_TUNNEL_IPV4: {
             auto outpkt = std::span(&scratch[0], &scratch[result.size]);
-            if (batch.push_packet_v4(outpkt) == GRO_NOADD)
-                batch.unrel.emplace_back(outpkt.begin(), outpkt.end());
+            batch.push_packet_v4(outpkt);
             break;
         }
         case WRITE_TO_TUNNEL_IPV6: {
             auto outpkt = std::span(&scratch[0], &scratch[result.size]);
-            if (batch.push_packet_v6(outpkt) == GRO_NOADD)
-                batch.unrel.emplace_back(outpkt.begin(), outpkt.end());
+            batch.push_packet_v6(outpkt);
             break;
         }
         case WRITE_TO_NETWORK: {

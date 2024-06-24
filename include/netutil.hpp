@@ -6,6 +6,8 @@
 #include <string>
 #include <linux/if.h>
 #include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
 
 #include <tdutil/util.hpp>
 
@@ -55,3 +57,27 @@ struct Ifr {
 std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_sockaddr(const char *str);
 
 } // namespace wgss
+
+static inline bool operator==(const sockaddr_in &a, const sockaddr_in &b) noexcept {
+    return !memcmp(&a, &b, offsetof(sockaddr_in, sin_zero));
+}
+
+static inline auto operator<=>(const sockaddr_in &a, const sockaddr_in &b) noexcept {
+    return memcmp(&a, &b, offsetof(sockaddr_in, sin_zero)) <=> 0;
+}
+
+static inline bool operator==(const sockaddr_in6 &a, const sockaddr_in6 &b) noexcept {
+    return !memcmp(&a, &b, sizeof(a));
+}
+
+static inline auto operator<=>(const sockaddr_in6 &a, const sockaddr_in6 &b) noexcept {
+    return memcmp(&a, &b, sizeof(a)) <=> 0;
+}
+
+static inline bool operator==(const in_addr &a, const in_addr &b) noexcept {
+    return a.s_addr == b.s_addr;
+}
+
+static inline bool operator==(const in6_addr &a, const in6_addr &b) noexcept {
+    return !memcmp(&a, &b, sizeof(a));
+}

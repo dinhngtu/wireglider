@@ -6,6 +6,8 @@
 #include <type_traits>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
 #include <boost/container/flat_map.hpp>
 
 namespace wgss::worker_impl {
@@ -13,10 +15,10 @@ namespace wgss::worker_impl {
 struct OwnedPacketBatch {
     explicit OwnedPacketBatch() {
     }
-    explicit OwnedPacketBatch(size_t cap) {
+    explicit OwnedPacketBatch(std::span<const uint8_t> hdr, size_t cap) : hdrbuf(hdr.begin(), hdr.end()) {
         buf.reserve(cap);
     }
-    void append(std::span<uint8_t> data) {
+    void append(std::span<const uint8_t> data) {
         buf.insert(buf.end(), data.begin(), data.end());
         count++;
     }
@@ -32,6 +34,19 @@ struct OwnedPacketBatch {
     bool is_mergeable(const OwnedPacketBatch &other) const {
         return count + other.count < 64 && buf.size() + other.buf.size() < 65536;
     }
+    struct ip *ip4hdr() {
+        return reinterpret_cast<struct ip *>(hdrbuf.data());
+    }
+    struct ip6_hdr *ip6hdr() {
+        return reinterpret_cast<struct ip6_hdr *>(hdrbuf.data());
+    }
+    struct tcphdr *tcphdr(bool isv6) {
+        return reinterpret_cast<struct tcphdr *>(&hdrbuf[isv6 ? sizeof(ip6_hdr) : sizeof(struct ip)]);
+    }
+    struct udphdr *udphdr(bool isv6) {
+        return reinterpret_cast<struct udphdr *>(&hdrbuf[isv6 ? sizeof(ip6_hdr) : sizeof(struct ip)]);
+    }
+    std::vector<uint8_t> hdrbuf;
     std::vector<uint8_t> buf;
     size_t count = 0;
 };
@@ -62,7 +77,7 @@ struct FlowKey {
     }
 
     bool is_consecutive_with(const FlowKey &other, [[maybe_unused]] size_t count, size_t size = 0) const {
-        return this->matches(other) && this->tcpack == other.tcpack && this->tcpseq + size == other.tcpseq;
+        return this->matches(other) && this->tcpseq + size == other.tcpseq;
     }
 };
 
@@ -81,7 +96,7 @@ static inline auto operator<=>(const FlowKey<AddressType> &a, const FlowKey<Addr
     else if (prefix < 0)
         return std::strong_ordering::less;
     else
-        return std::tie(a.tcpseq, a.tcpseq) <=> std::tie(b.tcpseq, b.tcpseq);
+        return a.tcpseq <=> b.tcpseq;
 }
 
 template <typename AddressType>
@@ -106,8 +121,9 @@ struct DecapBatch {
     // packets that must be returned to the client for protocol reasons
     std::deque<std::vector<uint8_t>> retpkt;
 
-    Outcome push_packet_v4(std::span<uint8_t> ippkt);
-    Outcome push_packet_v6(std::span<uint8_t> ippkt);
+    Outcome push_packet_v4(std::span<const uint8_t> ippkt);
+    Outcome push_packet_v6(std::span<const uint8_t> ippkt);
+    Outcome push_packet(std::span<const uint8_t> ippkt);
 };
 
 } // namespace wgss::worker_impl

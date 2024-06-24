@@ -164,12 +164,17 @@ $(TARGETS) $(TESTS): $(OBJECTS)
 $(TARGETS): %: %.cpp $(OBJ_MIMALLOC)
 	$(LINK.cpp) $(OBJ_MIMALLOC) $< $(filter-out $(OBJ_MIMALLOC),$(filter %.o,$^)) $(LOADLIBES) $(LDLIBS) -o $@
 
-xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
+liblinux/xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
-maple_tree.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
+liblinux/maple_tree.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
 check: tests
-	for test in $(TESTS); do echo $$test; $$test; done
+	@if (for test in $(TESTS); do echo $$test; $$test || exit; done); then \
+		echo "All tests succeeded"; \
+	else \
+		echo "Some tests failed"; \
+		false; \
+	fi
 
 clean:
 	$(RM) $(TARGETS) $(TESTS)

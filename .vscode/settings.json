@@ -81,6 +81,7 @@
         "forward_list": "c",
         "buffer": "cpp",
         "socket": "cpp",
-        "valarray": "cpp"
+        "valarray": "cpp",
+        "netfwd": "cpp"
     }
 }

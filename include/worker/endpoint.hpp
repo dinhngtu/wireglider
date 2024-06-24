@@ -57,19 +57,3 @@ struct hash<wgss::worker_impl::ClientEndpoint> {
     }
 };
 } // namespace std
-
-static inline bool operator==(const sockaddr_in &a, const sockaddr_in &b) noexcept {
-    return !memcmp(&a, &b, offsetof(sockaddr_in, sin_zero));
-}
-
-static inline auto operator<=>(const sockaddr_in &a, const sockaddr_in &b) noexcept {
-    return memcmp(&a, &b, offsetof(sockaddr_in, sin_zero)) <=> 0;
-}
-
-static inline bool operator==(const sockaddr_in6 &a, const sockaddr_in6 &b) noexcept {
-    return !memcmp(&a, &b, sizeof(a));
-}
-
-static inline auto operator<=>(const sockaddr_in6 &a, const sockaddr_in6 &b) noexcept {
-    return memcmp(&a, &b, sizeof(a)) <=> 0;
-}
