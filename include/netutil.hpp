@@ -78,6 +78,14 @@ static inline bool operator==(const in_addr &a, const in_addr &b) noexcept {
     return a.s_addr == b.s_addr;
 }
 
+static inline auto operator<=>(const in_addr &a, const in_addr &b) noexcept {
+    return memcmp(&a, &b, sizeof(a)) <=> 0;
+}
+
 static inline bool operator==(const in6_addr &a, const in6_addr &b) noexcept {
     return !memcmp(&a, &b, sizeof(a));
+}
+
+static inline auto operator<=>(const in6_addr &a, const in6_addr &b) noexcept {
+    return memcmp(&a, &b, sizeof(a)) <=> 0;
 }

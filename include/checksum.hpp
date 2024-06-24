@@ -75,7 +75,6 @@ inline uint64_t checksum_nofold(std::span<const uint8_t, 1> b, uint64_t initial)
 
 template <>
 inline uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial) {
-    // TODO: detect fastcsum compiled features
 #if defined(__AVX2__)
     return fastcsum::fastcsum_nofold_avx2_v3(b.data(), b.size(), initial);
 #elif defined(__AVX__) || defined(__SSE4_1__)

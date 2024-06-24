@@ -42,6 +42,7 @@ static void append_flow(
         goto newflow;
     if (flags.istcp && it->second.tcphdr(flags.isv6)->psh)
         goto newflow;
+    // TODO: accounting of udp flow sequence numbers in case the current flow is full
     goto existingflow;
 newflow:
     std::tie(it, created) = flow.emplace(fk, OwnedPacketBatch(pkthdr, 4 * fk.segment_size));
