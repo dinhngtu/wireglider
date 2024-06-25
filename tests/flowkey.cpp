@@ -253,3 +253,27 @@ TEST_CASE("DecapBatch coalesceItemInvalidCSum") {
 
     REQUIRE(batch.unrel.size() == 2);
 }
+
+TEST_CASE("DecapBatch out of order") {
+    worker_impl::DecapBatch batch;
+
+    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 101)); // v4 flow 1 seq 101 len 100
+    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));   // v4 flow 1 seq 1 len 100
+    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 201)); // v4 flow 1 seq 201 len 100
+
+    REQUIRE(batch.tcp4.size() == 1);
+    {
+        worker_impl::FlowKey<in_addr> fk{
+            to_addr(ip4a),
+            to_addr(ip4b),
+            1,
+            1,
+            100,
+            0,
+            1,
+        };
+        auto it = batch.tcp4.lower_bound(fk);
+        REQUIRE(it != batch.tcp4.end());
+        check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 1, 3);
+    }
+}
