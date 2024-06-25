@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cassert>
+#include <bitset>
 #include <vector>
 #include <span>
 #include <deque>
@@ -12,10 +14,34 @@
 
 namespace wgss::worker_impl {
 
+struct PacketFlags {
+    using type = std::bitset<3>;
+    type storage;
+    constexpr bool isv6() const {
+        return storage[0];
+    }
+    type::reference isv6() {
+        return storage[0];
+    }
+    constexpr bool istcp() const {
+        return storage[1];
+    }
+    type::reference istcp() {
+        return storage[1];
+    }
+    constexpr bool ispsh() const {
+        return storage[2];
+    }
+    type::reference ispsh() {
+        return storage[2];
+    }
+};
+
 struct OwnedPacketBatch {
     explicit OwnedPacketBatch() {
     }
-    explicit OwnedPacketBatch(std::span<const uint8_t> hdr, size_t cap) : hdrbuf(hdr.begin(), hdr.end()) {
+    explicit OwnedPacketBatch(std::span<const uint8_t> hdr, size_t cap, const PacketFlags &_flags)
+        : hdrbuf(hdr.begin(), hdr.end()), flags(_flags) {
         buf.reserve(cap);
     }
     void append(std::span<const uint8_t> data) {
@@ -35,19 +61,24 @@ struct OwnedPacketBatch {
         return count + other.count < 64 && buf.size() + other.buf.size() < 65536;
     }
     struct ip *ip4hdr() {
+        assert(!flags.isv6());
         return reinterpret_cast<struct ip *>(hdrbuf.data());
     }
     struct ip6_hdr *ip6hdr() {
+        assert(flags.isv6());
         return reinterpret_cast<struct ip6_hdr *>(hdrbuf.data());
     }
-    struct tcphdr *tcphdr(bool isv6) {
-        return reinterpret_cast<struct tcphdr *>(&hdrbuf[isv6 ? sizeof(ip6_hdr) : sizeof(struct ip)]);
+    struct tcphdr *tcphdr() {
+        assert(flags.istcp());
+        return reinterpret_cast<struct tcphdr *>(&hdrbuf[flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip)]);
     }
-    struct udphdr *udphdr(bool isv6) {
-        return reinterpret_cast<struct udphdr *>(&hdrbuf[isv6 ? sizeof(ip6_hdr) : sizeof(struct ip)]);
+    struct udphdr *udphdr() {
+        assert(!flags.istcp());
+        return reinterpret_cast<struct udphdr *>(&hdrbuf[flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip)]);
     }
     std::vector<uint8_t> hdrbuf;
     std::vector<uint8_t> buf;
+    PacketFlags flags;
     size_t count = 0;
 };
 
@@ -69,15 +100,15 @@ struct FlowKey {
 
     // variable part
     // native order
-    uint32_t tcpseq;
+    uint32_t seq;
 
     bool matches(const FlowKey &other) const {
         static_assert(std::has_unique_object_representations_v<FlowKey>);
-        return !memcmp(this, &other, offsetof(FlowKey, tcpseq));
+        return !memcmp(this, &other, offsetof(FlowKey, seq));
     }
 
-    bool is_consecutive_with(const FlowKey &other, [[maybe_unused]] size_t count, size_t size = 0) const {
-        return this->matches(other) && this->tcpseq + size == other.tcpseq;
+    bool is_consecutive_with(const FlowKey &other, [[maybe_unused]] size_t count, size_t size) const {
+        return this->matches(other) && this->seq + size == other.seq;
     }
 };
 
@@ -90,13 +121,13 @@ static inline bool operator==(const FlowKey<AddressType> &a, const FlowKey<Addre
 template <typename AddressType>
 static inline auto operator<=>(const FlowKey<AddressType> &a, const FlowKey<AddressType> &b) noexcept {
     static_assert(std::has_unique_object_representations_v<FlowKey<AddressType>>);
-    auto prefix = memcmp(&a, &b, offsetof(FlowKey<AddressType>, tcpseq));
+    auto prefix = memcmp(&a, &b, offsetof(FlowKey<AddressType>, seq));
     if (prefix > 0)
         return std::strong_ordering::greater;
     else if (prefix < 0)
         return std::strong_ordering::less;
     else
-        return a.tcpseq <=> b.tcpseq;
+        return a.seq <=> b.seq;
 }
 
 template <typename AddressType>

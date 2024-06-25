@@ -9,6 +9,7 @@
 #include <tdutil/function_traits.hpp>
 
 #include "worker.hpp"
+#include "checksum.hpp"
 
 using namespace boost::endian;
 using namespace tdutil;
@@ -19,38 +20,45 @@ namespace wgss {
 
 namespace worker_impl {
 
-struct PacketFlags {
-    bool isv6{};
-    bool istcp{};
-    bool ispsh{};
-};
+template <typename T>
+static std::pair<typename FlowMap<T>::iterator, bool> find_flow(
+    FlowMap<T> &flow,
+    const FlowKey<T> &fk,
+    std::span<const uint8_t> pktdata,
+    const PacketFlags &flags) {
+    auto it = flow.lower_bound(fk);
+    if (it == flow.end())
+        return {it, false};
+    if (!it->second.is_appendable(pktdata.size()))
+        return {it, false};
+    if (flags.istcp() ? !it->first.is_consecutive_with(fk, 1, pktdata.size()) : !it->first.matches(fk))
+        return {it, false};
+    if (flags.istcp() && it->second.flags.ispsh())
+        return {it, false};
+    return {it, true};
+}
 
 template <typename T>
 static void append_flow(
     FlowMap<T> &flow,
-    const FlowKey<T> &fk,
+    FlowKey<T> &fk,
     std::span<const uint8_t> pkthdr,
     std::span<const uint8_t> pktdata,
     const PacketFlags &flags) {
-    auto it = flow.lower_bound(fk);
+    auto [it, usable] = find_flow(flow, fk, pktdata, flags);
     bool created;
-    if (it == flow.end())
-        goto newflow;
-    if (!it->second.is_appendable(pktdata.size()))
-        goto newflow;
-    if (!it->first.is_consecutive_with(fk, 1, flags.istcp ? pktdata.size() : 0))
-        goto newflow;
-    if (flags.istcp && it->second.tcphdr(flags.isv6)->psh)
-        goto newflow;
-    // TODO: accounting of udp flow sequence numbers in case the current flow is full
-    goto existingflow;
-newflow:
-    std::tie(it, created) = flow.emplace(fk, OwnedPacketBatch(pkthdr, 4 * fk.segment_size));
-    assert(created);
-existingflow:
+    if (!usable) {
+        // udp: continue from last flow
+        if (!flags.istcp())
+            fk.seq = (it != flow.end()) ? (it->first.seq + 1) : 0;
+        std::tie(it, created) = flow.emplace(fk, OwnedPacketBatch(pkthdr, 4 * fk.segment_size, flags));
+        assert(created);
+    }
     it->second.append(pktdata);
-    if (flags.istcp)
-        it->second.tcphdr(flags.isv6)->psh |= !!flags.ispsh;
+    if (flags.istcp() && flags.ispsh()) {
+        it->second.tcphdr()->psh |= 1;
+        it->second.flags.ispsh() = true;
+    }
 
     // merge with previous flow; map is in reverse order
     auto prev = it + 1;
@@ -58,9 +66,10 @@ existingflow:
         return;
     if (!prev->second.is_mergeable(it->second))
         return;
-    if (!prev->first.is_consecutive_with(it->first, prev->second.count, flags.istcp ? prev->second.buf.size() : 0))
+    if (flags.istcp() ? !prev->first.is_consecutive_with(it->first, prev->second.count, prev->second.buf.size())
+                      : !prev->first.matches(it->first))
         return;
-    if (prev->second.tcphdr(flags.isv6)->psh)
+    if (prev->second.flags.ispsh())
         return;
     prev->second.extend(it->second);
     flow.erase(it);
@@ -76,7 +85,14 @@ static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
         return {nullptr, IPPROTO_RAW};
     if (ippkt.size() != big_to_native(ip->ip_len))
         return {nullptr, IPPROTO_RAW};
-    flags.isv6 = false;
+    auto off = big_to_native(ip->ip_off);
+    // no fragmenting
+    if ((off & IP_MF) || (off & IP_OFFMASK))
+        return {nullptr, IPPROTO_RAW};
+    // iph checksum
+    if (checksum(ippkt.subspan(0, sizeof(struct ip)), 0))
+        return {nullptr, IPPROTO_RAW};
+    flags.isv6() = false;
     fk.srcip = ip->ip_src;
     fk.dstip = ip->ip_dst;
     return std::make_pair(ip, ip->ip_p);
@@ -90,7 +106,7 @@ static std::pair<const ip6_hdr *, uint8_t> fill_fk_ip6(
     auto rest = ippkt.subspan(sizeof(ip6_hdr));
     if (rest.size() != big_to_native(ip->ip6_ctlun.ip6_un1.ip6_un1_plen))
         return {nullptr, IPPROTO_RAW};
-    flags.isv6 = true;
+    flags.isv6() = true;
     fk.srcip = ip->ip6_src;
     fk.dstip = ip->ip6_dst;
     return std::make_pair(ip, ip->ip6_ctlun.ip6_un1.ip6_un1_nxt);
@@ -102,31 +118,39 @@ template <auto F>
 using address_type_of_t = std::remove_cvref_t<tdutil::first_argument_t<decltype(F)>>::address_type;
 
 template <typename T>
-static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> l4pkt, PacketFlags &flags) {
-    if (l4pkt.size() < sizeof(tcphdr))
+static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> ippkt, PacketFlags &flags) {
+    auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
+    if (ippkt.size() - iphsize < sizeof(tcphdr))
         return nullptr;
-    auto tcp = reinterpret_cast<const tcphdr *>(l4pkt.data());
+    if (calc_l4_checksum(ippkt, flags.isv6(), true, iphsize))
+        return nullptr;
+    auto tcp = reinterpret_cast<const tcphdr *>(&ippkt[iphsize]);
     if (tcp->doff != 5)
         return nullptr;
     // TODO: check tcp flags
-    flags.istcp = true;
-    flags.ispsh = !!tcp->psh;
+    flags.istcp() = true;
+    flags.ispsh() = !!tcp->psh;
     fk.srcport = big_to_native(tcp->source);
     fk.dstport = big_to_native(tcp->dest);
     fk.tcpack = big_to_native(tcp->ack_seq);
-    fk.tcpseq = big_to_native(tcp->seq);
+    fk.seq = big_to_native(tcp->seq);
     return tcp;
 }
 
 template <typename T>
-static const udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<const uint8_t> l4pkt, PacketFlags &flags) {
-    if (l4pkt.size() < sizeof(udphdr))
+static const udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<const uint8_t> ippkt, PacketFlags &flags) {
+    auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
+    if (ippkt.size() - iphsize < sizeof(tcphdr))
         return nullptr;
-    auto udp = reinterpret_cast<const udphdr *>(l4pkt.data());
-    flags.istcp = flags.ispsh = false;
+    if (calc_l4_checksum(ippkt, flags.isv6(), false, iphsize))
+        return nullptr;
+    auto udp = reinterpret_cast<const udphdr *>(&ippkt[iphsize]);
+    flags.istcp() = false;
+    flags.ispsh() = false;
     fk.srcport = big_to_native(udp->source);
     fk.dstport = big_to_native(udp->dest);
-    fk.tcpack = fk.tcpseq = 0;
+    fk.tcpack = 0;
+    fk.seq = UINT32_MAX;
     return udp;
 }
 
@@ -143,24 +167,23 @@ static DecapBatch::Outcome evaluate_packet(
     auto [ip, proto] = fill_ip(fk, ippkt, flags);
     if (!ip)
         return GRO_NOADD;
-    auto l4pkt = ippkt.subspan(sizeof(*ip));
 
     bool istcp;
     switch (proto) {
     case IPPROTO_TCP: {
-        if (!fill_fk_tcp(fk, l4pkt, flags))
+        if (!fill_fk_tcp(fk, ippkt, flags))
             return GRO_NOADD;
         break;
     }
     case IPPROTO_UDP: {
-        if (!fill_fk_udp(fk, l4pkt, flags))
+        if (!fill_fk_udp(fk, ippkt, flags))
             return GRO_NOADD;
         break;
     }
     default:
         return GRO_NOADD;
     }
-    fk.segment_size = l4pkt.size() - (flags.istcp ? sizeof(tcphdr) : sizeof(udphdr));
+    fk.segment_size = ippkt.size() - sizeof(*ip) - (flags.istcp() ? sizeof(tcphdr) : sizeof(udphdr));
 
     return GRO_ADDED;
 }
@@ -177,10 +200,10 @@ static DecapBatch::Outcome do_push_packet(
     auto res = evaluate_packet<fill_ip>(ippkt, fk, flags);
     switch (res) {
     case GRO_ADDED: {
-        auto hsize = sizeof(ip_header_type) + (flags.istcp ? sizeof(tcphdr) : sizeof(udphdr));
+        auto hsize = sizeof(ip_header_type) + (flags.istcp() ? sizeof(tcphdr) : sizeof(udphdr));
         auto pkthdr = ippkt.subspan(0, hsize);
         auto pktdata = ippkt.subspan(hsize);
-        append_flow(flags.istcp ? tcpflow : udpflow, fk, pkthdr, pktdata, flags);
+        append_flow(flags.istcp() ? tcpflow : udpflow, fk, pkthdr, pktdata, flags);
         break;
     }
     case GRO_NOADD:
