@@ -150,6 +150,7 @@ OBJECTS=\
 	worker/send.o \
 	worker.o \
 	netutil.o \
+	checksum.o \
 	liblinux/maple_tree.o \
 	liblinux/xarray.o \
 	liblinux/kernel_compat.o \

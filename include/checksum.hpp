@@ -93,12 +93,12 @@ static inline uint64_t pseudo_header_checksum_nofold(
     uint8_t proto,
     std::span<const uint8_t, E1> srcAddr,
     std::span<const uint8_t, E2> dstAddr,
-    uint16_t totalLen) {
+    uint16_t l4Len) {
     auto sum = checksum_impl::checksum_nofold(srcAddr, 0);
     sum = checksum_impl::checksum_nofold(dstAddr, sum);
     std::array<uint8_t, 4> proto_bytes;
     boost::endian::store_big_u16(&proto_bytes[0], proto);
-    boost::endian::store_big_u16(&proto_bytes[2], totalLen);
+    boost::endian::store_big_u16(&proto_bytes[2], l4Len);
     sum = checksum_impl::checksum_nofold(std::span<const uint8_t, 4>(proto_bytes), sum);
     return sum;
 }
@@ -110,8 +110,8 @@ static inline uint16_t pseudo_header_checksum(
     uint8_t proto,
     std::span<const uint8_t, E1> srcAddr,
     std::span<const uint8_t, E2> dstAddr,
-    uint16_t totalLen) {
-    auto ac = checksum_impl::pseudo_header_checksum_nofold(proto, srcAddr, dstAddr, totalLen);
+    uint16_t l4Len) {
+    auto ac = checksum_impl::pseudo_header_checksum_nofold(proto, srcAddr, dstAddr, l4Len);
     return fastcsum::fold_complement_checksum64(ac);
 }
 
@@ -119,5 +119,7 @@ static inline uint16_t checksum(std::span<const uint8_t> b, uint64_t initial) {
     auto ac = checksum_impl::checksum_nofold(b, initial);
     return fastcsum::fold_complement_checksum64(ac);
 }
+
+uint16_t calc_l4_checksum(std::span<const uint8_t> thispkt, bool isv6, bool istcp, uint16_t csum_start);
 
 } // namespace wgss

@@ -60,32 +60,6 @@ std::optional<std::span<uint8_t>> Worker::do_tun_recv(std::vector<uint8_t> &outb
     return rest;
 }
 
-static uint16_t calc_pkt_checksum(std::span<uint8_t> thispkt, bool isv6, bool istcp, uint16_t csum_start) {
-    uint64_t l4_csum_tmp;
-    if (isv6) {
-        const auto addroff = offsetof(ip6_hdr, ip6_src);
-        const auto addrsize = sizeof(in6_addr);
-        std::span<const uint8_t, addrsize> srcaddr = thispkt.subspan<addroff, addrsize>();
-        std::span<const uint8_t, addrsize> dstaddr = thispkt.subspan<addroff + addrsize, addrsize>();
-        l4_csum_tmp = checksum_impl::pseudo_header_checksum_nofold(
-            istcp ? IPPROTO_TCP : IPPROTO_UDP,
-            srcaddr,
-            dstaddr,
-            thispkt.size());
-    } else {
-        const auto addroff = offsetof(ip, ip_src);
-        const auto addrsize = sizeof(in_addr);
-        std::span<const uint8_t, addrsize> srcaddr = thispkt.subspan<addroff, addrsize>();
-        std::span<const uint8_t, addrsize> dstaddr = thispkt.subspan<addroff + addrsize, addrsize>();
-        l4_csum_tmp = checksum_impl::pseudo_header_checksum_nofold(
-            istcp ? IPPROTO_TCP : IPPROTO_UDP,
-            srcaddr,
-            dstaddr,
-            thispkt.size());
-    }
-    return checksum(thispkt.subspan(csum_start), l4_csum_tmp);
-}
-
 /*
  * Parsing logic adapted from wireguard-go:
  * https://github.com/WireGuard/wireguard-go/blob/12269c2761734b15625017d8565745096325392f/tun/offload_linux.go#L901
@@ -127,7 +101,7 @@ PacketBatch worker_impl::do_tun_gso_split(
             store_big_u16(&inbuf[l4_csum_offset], 0);
 
             auto istcp = reinterpret_cast<ip *>(inbuf.data())->ip_p == IPPROTO_TCP;
-            auto l4_csum = calc_pkt_checksum(inbuf, isv6, istcp, vnethdr.csum_start);
+            auto l4_csum = calc_l4_checksum(inbuf, isv6, istcp, vnethdr.csum_start);
             store_big_u16(&inbuf[l4_csum_offset], l4_csum);
         }
         return PacketBatch{
@@ -212,7 +186,7 @@ PacketBatch worker_impl::do_tun_gso_split(
             assign_big_from_native(udp->len, prefix.size() - vnethdr.csum_start);
         }
 
-        auto l4_csum = calc_pkt_checksum(thispkt, isv6, istcp, vnethdr.csum_start);
+        auto l4_csum = calc_l4_checksum(thispkt, isv6, istcp, vnethdr.csum_start);
         store_big_u16(&thispkt[l4_csum_offset], l4_csum);
 
         // to next packet

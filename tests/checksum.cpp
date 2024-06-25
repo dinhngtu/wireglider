@@ -1,7 +1,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/generators/catch_generators_range.hpp>
+#include <tins/tins.h>
+
+#include "checksum.hpp"
 #include "checksum_tests.hpp"
+
+using namespace Tins;
 
 TEST_CASE("checksum") {
     auto size = GENERATE(Catch::Generators::range(1, 1501));
@@ -49,4 +54,35 @@ TEST_CASE("checksum_sizes_carry") {
     csum_test_sized<12, 4>(pkt);
     csum_test_sized<8, 8>(pkt);
     csum_test_sized<0, 16>(pkt);
+}
+
+template <bool isv6, bool istcp>
+void csum_test_l4() {
+    using ip_type = std::conditional_t<isv6, IPv6, IP>;
+    using l4_type = std::conditional_t<istcp, TCP, UDP>;
+    ip_type ip;
+    if constexpr (isv6)
+        ip = ip_type("2001:db8::2", "2001:db8::1");
+    else
+        ip = ip_type("192.0.2.2", "192.0.2.1");
+    l4_type l4(1, 1);
+    RawPDU payload(create_packet(100));
+    auto pkt = ip / l4 / payload;
+    auto pkt_bytes = pkt.serialize();
+    REQUIRE(wgss::calc_l4_checksum(pkt_bytes, isv6, istcp, ip.header_size()) == 0);
+}
+
+TEST_CASE("l4 checksum") {
+    SECTION("ipv4 tcp") {
+        csum_test_l4<false, true>();
+    }
+    SECTION("ipv4 udp") {
+        csum_test_l4<false, false>();
+    }
+    SECTION("ipv6 tcp") {
+        csum_test_l4<true, true>();
+    }
+    SECTION("ipv6 udp") {
+        csum_test_l4<true, false>();
+    }
 }
