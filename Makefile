@@ -93,8 +93,8 @@ LDLIBS+=-lfastcsum
 
 ifeq ($(DEBUG), 1)
 	CPPFLAGS+=-DDEBUG=1
-	CFLAGS+=-O0 -g3 -fno-omit-frame-pointer
-	CXXFLAGS+=-O0 -g3 -fno-omit-frame-pointer
+	CFLAGS+=-O0 -g3
+	CXXFLAGS+=-O0 -g3
 else ifeq ($(SANITIZE), 1)
 	CPPFLAGS+=-DNDEBUG
 	CFLAGS+=-Og -g3 -fsanitize=undefined -fsanitize=address -fno-omit-frame-pointer
@@ -142,7 +142,7 @@ $(TESTS): CPPFLAGS+=$(CATCH_CPPFLAGS) $(TINS_CPPFLAGS)
 $(TESTS): CFLAGS+=-Wno-unused -Wno-shadow
 $(TESTS): CXXFLAGS+=-Wno-unused -Wno-shadow
 $(TESTS): LDFLAGS+=$(CATCH_LDFLAGS) $(TINS_LDFLAGS)
-$(TESTS): LDLIBS+=$(CATCH_LDLIBS) $(TINS_LDLIBS)
+$(TESTS): LDLIBS=-ltdutil -lfmt -lfastcsum $(CATCH_LDLIBS) $(TINS_LDLIBS)
 
 OBJECTS=\
 	worker.o \
@@ -163,10 +163,16 @@ all: $(TARGETS) $(TESTS)
 
 tests: $(TESTS)
 
-$(TARGETS) $(TESTS): $(OBJECTS)
+$(TARGETS): $(OBJECTS)
 
 $(TARGETS): %: %.cpp $(OBJ_MIMALLOC)
 	$(LINK.cpp) $(OBJ_MIMALLOC) $< $(filter-out $(OBJ_MIMALLOC),$(filter %.o,$^)) $(LOADLIBES) $(LDLIBS) -o $@
+
+tests/checksum: checksum.o
+
+tests/offload: worker/offload.o checksum.o
+
+tests/flowkey: worker/flowkey.o checksum.o
 
 liblinux/xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
