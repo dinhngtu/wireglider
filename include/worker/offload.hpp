@@ -3,11 +3,6 @@
 #include <iterator>
 #include <vector>
 #include <span>
-#include <deque>
-#include <boost/intrusive/list.hpp>
-#include <tdutil/util.hpp>
-
-#include "worker/endpoint.hpp"
 
 namespace wgss::worker_impl {
 
@@ -91,43 +86,6 @@ constexpr PacketBatch::iterator end(const PacketBatch &pb) {
     return PacketBatch::iterator(pb.segment_size, pb.data.end(), pb.data.end());
 }
 
-struct ServerSendBase : public boost::intrusive::list_base_hook<> {
-    virtual ~ServerSendBase() {
-    }
-
-    struct deleter {
-        void operator()(ServerSendBase *self) {
-            delete self;
-        }
-    };
-};
-
-struct ServerSendBatch : public ServerSendBase {
-    ServerSendBatch() {
-    }
-    explicit ServerSendBatch(std::span<uint8_t> data, size_t _segment_size, ClientEndpoint _ep)
-        : ep(_ep), buf(data.begin(), data.end()), segment_size(_segment_size) {
-    }
-    virtual ~ServerSendBatch() {
-    }
-
-    ClientEndpoint ep;
-    std::vector<uint8_t> buf;
-    size_t segment_size;
-};
-
-struct ServerSendList : public ServerSendBase {
-    using packet_list = std::deque<std::vector<uint8_t>>;
-    explicit ServerSendList(packet_list &&pkts, ClientEndpoint _ep);
-    virtual ~ServerSendList() {
-    }
-    packet_list packets;
-    ClientEndpoint ep;
-    std::vector<iovec> iovecs;
-    std::vector<mmsghdr> mh;
-    size_t pos;
-};
-
-using ServerSendQueue = boost::intrusive::list<worker_impl::ServerSendBase, boost::intrusive::constant_time_size<true>>;
+PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &outbuf, const virtio_net_hdr &vnethdr);
 
 } // namespace wgss::worker_impl

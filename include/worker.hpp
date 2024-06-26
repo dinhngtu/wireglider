@@ -11,8 +11,10 @@
 #include "udpsock.hpp"
 #include "rundown.hpp"
 #include "maple_tree.hpp"
-#include "worker/encap.hpp"
-#include "worker/decap.hpp"
+#include "worker/endpoint.hpp"
+#include "worker/offload.hpp"
+#include "worker/flowkey.hpp"
+#include "worker/send.hpp"
 
 namespace wgss {
 
@@ -33,11 +35,6 @@ struct Client {
     wireguard_tunnel_raw *tunnel;
     std::vector<IpRange> allowed_ips;
 };
-
-worker_impl::PacketBatch do_tun_gso_split(
-    std::span<uint8_t> inbuf,
-    std::vector<uint8_t> &outbuf,
-    const virtio_net_hdr &vnethdr);
 
 } // namespace worker_impl
 

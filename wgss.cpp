@@ -21,7 +21,6 @@
  * - read udp -> decap -> write tun
  */
 
-using namespace tdutil;
 using namespace wgss;
 
 static cxxopts::Options make_options() {

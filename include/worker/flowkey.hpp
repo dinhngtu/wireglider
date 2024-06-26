@@ -157,6 +157,7 @@ struct DecapBatch {
     Outcome push_packet_v4(std::span<const uint8_t> ippkt);
     Outcome push_packet_v6(std::span<const uint8_t> ippkt);
     Outcome push_packet(std::span<const uint8_t> ippkt);
+    void aggregate_udp();
 };
 
 } // namespace wgss::worker_impl

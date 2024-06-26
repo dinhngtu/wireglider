@@ -1,7 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "worker.hpp"
+#include "worker/flowkey.hpp"
 #include "packet_tests.hpp"
+#include "netutil.hpp"
 
 using namespace wgss;
 using namespace Tins;

@@ -145,10 +145,12 @@ $(TESTS): LDFLAGS+=$(CATCH_LDFLAGS) $(TINS_LDFLAGS)
 $(TESTS): LDLIBS+=$(CATCH_LDLIBS) $(TINS_LDLIBS)
 
 OBJECTS=\
+	worker.o \
 	worker/decap.o \
 	worker/encap.o \
+	worker/offload.o \
+	worker/flowkey.o \
 	worker/send.o \
-	worker.o \
 	netutil.o \
 	checksum.o \
 	liblinux/maple_tree.o \

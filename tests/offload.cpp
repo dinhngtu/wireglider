@@ -1,10 +1,13 @@
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+#include "virtio_net.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <tins/tins.h>
+#include <tdutil/util.hpp>
 
-#include "worker.hpp"
+#include "worker/offload.hpp"
 #include "packet_tests.hpp"
+#include "netutil.hpp"
 
 using namespace wgss;
 using namespace Tins;

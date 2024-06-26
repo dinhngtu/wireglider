@@ -5,7 +5,6 @@
 #include "worker.hpp"
 
 using namespace boost::endian;
-using namespace tdutil;
 using namespace wgss::worker_impl;
 
 namespace wgss {
