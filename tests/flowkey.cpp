@@ -18,18 +18,33 @@ static void push_one(
     REQUIRE(res == outcome);
 }
 
-template <typename AddressType>
+template <typename FlowIteratorType, typename AddressType>
 static void check_flow(
-    typename worker_impl::FlowMap<AddressType>::iterator it,
+    FlowIteratorType it,
     AddressType src,
     AddressType dst,
-    uint32_t segment_size,
     uint32_t seq,
-    size_t count) {
-    REQUIRE(it->first.srcip == src);
-    REQUIRE(it->first.dstip == dst);
+    size_t count,
+    uint16_t segment_size = 100) {
+    REQUIRE(it->first.srcip == to_addr(src));
+    REQUIRE(it->first.dstip == to_addr(dst));
     REQUIRE(it->first.segment_size == segment_size);
     REQUIRE(it->first.seq == seq);
+    REQUIRE(it->second.count == count);
+    REQUIRE(it->second.buf.size() == count * segment_size);
+}
+
+// for use when the two flows are otherwise equivalent
+template <typename FlowIteratorType, typename AddressType>
+static void check_flow_udp(
+    FlowIteratorType it,
+    AddressType src,
+    AddressType dst,
+    size_t count,
+    uint16_t segment_size = 100) {
+    REQUIRE(it->first.srcip == to_addr(src));
+    REQUIRE(it->first.dstip == to_addr(dst));
+    REQUIRE(it->first.segment_size == segment_size);
     REQUIRE(it->second.count == count);
     REQUIRE(it->second.buf.size() == count * segment_size);
 }
@@ -39,6 +54,42 @@ static std::vector<uint8_t> flip_l4_csum(std::vector<uint8_t> pkt) {
     auto l4hdr = reinterpret_cast<L4Type *>(&pkt[sizeof(IPType)]);
     l4hdr->check = ~l4hdr->check;
     return pkt;
+}
+
+static inline wgss::worker_impl::FlowKey<in_addr> make_fk(
+    Tins::IPv4Address ipsrc,
+    Tins::IPv4Address ipdst,
+    uint32_t seq = 0,
+    uint16_t segment_size = 100) {
+    return {
+        to_addr(ipsrc),
+        to_addr(ipdst),
+        1,
+        1,
+        segment_size,
+        0,
+        64,
+        0,
+        seq,
+    };
+}
+
+static inline wgss::worker_impl::FlowKey<in6_addr> make_fk(
+    Tins::IPv6Address ipsrc,
+    Tins::IPv6Address ipdst,
+    uint32_t seq = 0,
+    uint16_t segment_size = 100) {
+    return {
+        to_addr(ipsrc),
+        to_addr(ipdst),
+        1,
+        1,
+        segment_size,
+        0,
+        64,
+        0,
+        seq,
+    };
 }
 
 TEST_CASE("DecapBatch multiple protocols and flows") {
@@ -58,78 +109,46 @@ TEST_CASE("DecapBatch multiple protocols and flows") {
 
     REQUIRE(batch.tcp4.size() == 2);
     {
-        worker_impl::FlowKey<in_addr> fk{
-            to_addr(ip4a),
-            to_addr(ip4b),
-            1,
-            1,
-            100,
-            0,
-            1,
-        };
+        auto fk = make_fk(ip4a, ip4b, 1);
         auto it = batch.tcp4.lower_bound(fk);
         REQUIRE(it != batch.tcp4.end());
-        check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 1, 2);
+        check_flow(it, ip4a, ip4b, 1, 2);
 
         REQUIRE(it != batch.tcp4.begin());
         it--;
-        check_flow(it, to_addr(ip4a), to_addr(ip4c), 100, 201, 1);
+        check_flow(it, ip4a, ip4c, 201, 1);
     }
 
     REQUIRE(batch.udp4.size() == 2);
     {
-        worker_impl::FlowKey<in_addr> fk{
-            to_addr(ip4a),
-            to_addr(ip4b),
-            1,
-            1,
-            100,
-            0,
-            0,
-        };
+        auto fk = make_fk(ip4a, ip4b, 0);
         auto it = batch.udp4.lower_bound(fk);
         REQUIRE(it != batch.udp4.end());
-        check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 0, 2);
+        check_flow(it, ip4a, ip4b, 0, 2);
 
         REQUIRE(it != batch.udp4.begin());
         it--;
-        check_flow(it, to_addr(ip4a), to_addr(ip4c), 100, 1, 1);
+        check_flow(it, ip4a, ip4c, 1, 1);
     }
 
     REQUIRE(batch.tcp6.size() == 2);
     {
-        worker_impl::FlowKey<in6_addr> fk{
-            to_addr(ip6a),
-            to_addr(ip6b),
-            1,
-            1,
-            100,
-            0,
-            1,
-        };
+        auto fk = make_fk(ip6a, ip6b, 1);
         auto it = batch.tcp6.lower_bound(fk);
         REQUIRE(it != batch.tcp6.end());
-        check_flow(it, to_addr(ip6a), to_addr(ip6b), 100, 1, 2);
+        check_flow(it, ip6a, ip6b, 1, 2);
 
         REQUIRE(it != batch.tcp6.begin());
         it--;
-        check_flow(it, to_addr(ip6a), to_addr(ip6c), 100, 201, 1);
+        check_flow(it, ip6a, ip6c, 201, 1);
     }
 
     REQUIRE(batch.udp6.size() == 1);
     {
-        worker_impl::FlowKey<in6_addr> fk{
-            to_addr(ip6a),
-            to_addr(ip6b),
-            1,
-            1,
-            100,
-            0,
-            0,
-        };
+        auto fk = make_fk(ip6a, ip6b, 0);
         auto it = batch.udp6.lower_bound(fk);
         REQUIRE(it != batch.udp6.end());
-        check_flow(it, to_addr(ip6a), to_addr(ip6b), 100, 0, 2);
+        check_flow(it, ip6a, ip6b, 0, 2);
     }
 }
 
@@ -147,62 +166,30 @@ TEST_CASE("DecapBatch PSH interleaved") {
 
     REQUIRE(batch.tcp4.size() == 2);
     {
-        worker_impl::FlowKey<in_addr> fk{
-            to_addr(ip4a),
-            to_addr(ip4b),
-            1,
-            1,
-            100,
-            0,
-            1,
-        };
+        auto fk = make_fk(ip4a, ip4b, 1);
         auto it = batch.tcp4.lower_bound(fk);
         REQUIRE(it != batch.tcp4.end());
-        check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 1, 2);
+        check_flow(it, ip4a, ip4b, 1, 2);
     }
     {
-        worker_impl::FlowKey<in_addr> fk{
-            to_addr(ip4a),
-            to_addr(ip4b),
-            1,
-            1,
-            100,
-            0,
-            201,
-        };
+        auto fk = make_fk(ip4a, ip4b, 201);
         auto it = batch.tcp4.lower_bound(fk);
         REQUIRE(it != batch.tcp4.end());
-        check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 201, 2);
+        check_flow(it, ip4a, ip4b, 201, 2);
     }
 
     REQUIRE(batch.tcp6.size() == 2);
     {
-        worker_impl::FlowKey<in6_addr> fk{
-            to_addr(ip6a),
-            to_addr(ip6b),
-            1,
-            1,
-            100,
-            0,
-            1,
-        };
+        auto fk = make_fk(ip6a, ip6b, 1);
         auto it = batch.tcp6.lower_bound(fk);
         REQUIRE(it != batch.tcp6.end());
-        check_flow(it, to_addr(ip6a), to_addr(ip6b), 100, 1, 2);
+        check_flow(it, ip6a, ip6b, 1, 2);
     }
     {
-        worker_impl::FlowKey<in6_addr> fk{
-            to_addr(ip6a),
-            to_addr(ip6b),
-            1,
-            1,
-            100,
-            0,
-            201,
-        };
+        auto fk = make_fk(ip6a, ip6b, 201);
         auto it = batch.tcp6.lower_bound(fk);
         REQUIRE(it != batch.tcp6.end());
-        check_flow(it, to_addr(ip6a), to_addr(ip6b), 100, 201, 2);
+        check_flow(it, ip6a, ip6b, 201, 2);
     }
 }
 
@@ -221,34 +208,18 @@ TEST_CASE("DecapBatch coalesceItemInvalidCSum") {
 
     REQUIRE(batch.tcp4.size() == 1);
     {
-        worker_impl::FlowKey<in_addr> fk{
-            to_addr(ip4a),
-            to_addr(ip4b),
-            1,
-            1,
-            100,
-            0,
-            UINT32_MAX,
-        };
+        auto fk = make_fk(ip4a, ip4b, UINT32_MAX);
         auto it = batch.tcp4.lower_bound(fk);
         REQUIRE(it != batch.tcp4.end());
-        check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 101, 2);
+        check_flow(it, ip4a, ip4b, 101, 2);
     }
 
     REQUIRE(batch.udp4.size() == 1);
     {
-        worker_impl::FlowKey<in_addr> fk{
-            to_addr(ip4a),
-            to_addr(ip4b),
-            1,
-            1,
-            100,
-            0,
-            UINT32_MAX,
-        };
+        auto fk = make_fk(ip4a, ip4b, UINT32_MAX);
         auto it = batch.udp4.lower_bound(fk);
         REQUIRE(it != batch.udp4.end());
-        check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 0, 2);
+        check_flow(it, ip4a, ip4b, 0, 2);
     }
 
     REQUIRE(batch.unrel.size() == 2);
@@ -263,18 +234,10 @@ TEST_CASE("DecapBatch out of order") {
 
     REQUIRE(batch.tcp4.size() == 1);
     {
-        worker_impl::FlowKey<in_addr> fk{
-            to_addr(ip4a),
-            to_addr(ip4b),
-            1,
-            1,
-            100,
-            0,
-            1,
-        };
+        auto fk = make_fk(ip4a, ip4b, 1);
         auto it = batch.tcp4.lower_bound(fk);
         REQUIRE(it != batch.tcp4.end());
-        check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 1, 3);
+        check_flow(it, ip4a, ip4b, 1, 3);
     }
 }
 
@@ -287,17 +250,201 @@ TEST_CASE("DecapBatch out of order 2") {
 
     REQUIRE(batch.tcp4.size() == 1);
     {
-        worker_impl::FlowKey<in_addr> fk{
-            to_addr(ip4a),
-            to_addr(ip4b),
-            1,
-            1,
-            100,
-            0,
-            1,
-        };
+        auto fk = make_fk(ip4a, ip4b, 1);
         auto it = batch.tcp4.lower_bound(fk);
         REQUIRE(it != batch.tcp4.end());
-        check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 1, 3);
+        check_flow(it, ip4a, ip4b, 1, 3);
+    }
+}
+
+TEST_CASE("DecapBatch unequal TTL") {
+    worker_impl::DecapBatch batch;
+
+    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));
+    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 101, [](IP &ip, TCP &tcp) { ip.ttl(65); }));
+    push_one(batch, make_udp<IP>(ip4a, 1, ip4b, 1, 100));
+    push_one(batch, make_udp<IP>(ip4a, 1, ip4b, 1, 100, [](IP &ip, UDP &udp) { ip.ttl(65); }));
+
+    REQUIRE(batch.tcp4.size() == 2);
+    {
+        auto fk = make_fk(ip4a, ip4b, 1);
+        auto it = batch.tcp4.lower_bound(fk);
+        REQUIRE(it != batch.tcp4.end());
+        check_flow(it, ip4a, ip4b, 1, 1);
+
+        REQUIRE(it != batch.tcp4.begin());
+        it--;
+        check_flow(it, ip4a, ip4b, 101, 1);
+    }
+
+    REQUIRE(batch.udp4.size() == 2);
+    {
+        auto fk = make_fk(ip4a, ip4b, 0);
+        auto it = batch.udp4.lower_bound(fk);
+        REQUIRE(it != batch.udp4.end());
+        check_flow_udp(it, ip4a, ip4b, 1);
+
+        REQUIRE(it != batch.udp4.begin());
+        it--;
+        check_flow_udp(it, ip4a, ip4b, 1);
+    }
+}
+
+TEST_CASE("DecapBatch unequal ToS") {
+    worker_impl::DecapBatch batch;
+
+    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));
+    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 101, [](IP &ip, TCP &tcp) { ip.tos(1); }));
+    push_one(batch, make_udp<IP>(ip4a, 1, ip4b, 1, 100));
+    push_one(batch, make_udp<IP>(ip4a, 1, ip4b, 1, 100, [](IP &ip, UDP &udp) { ip.tos(1); }));
+
+    REQUIRE(batch.tcp4.size() == 2);
+    {
+        auto fk = make_fk(ip4a, ip4b, 1);
+        auto it = batch.tcp4.lower_bound(fk);
+        REQUIRE(it != batch.tcp4.end());
+        check_flow(it, ip4a, ip4b, 1, 1);
+
+        REQUIRE(it != batch.tcp4.begin());
+        it--;
+        check_flow(it, ip4a, ip4b, 101, 1);
+    }
+
+    REQUIRE(batch.udp4.size() == 2);
+    {
+        auto fk = make_fk(ip4a, ip4b, 0);
+        auto it = batch.udp4.lower_bound(fk);
+        REQUIRE(it != batch.udp4.end());
+        check_flow_udp(it, ip4a, ip4b, 1);
+
+        REQUIRE(it != batch.udp4.begin());
+        it--;
+        check_flow_udp(it, ip4a, ip4b, 1);
+    }
+}
+
+TEST_CASE("DecapBatch unequal flags more fragments set") {
+    worker_impl::DecapBatch batch;
+
+    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));
+    push_one(
+        batch,
+        make_tcp<IP>(
+            ip4a,
+            1,
+            ip4b,
+            1,
+            TCP::ACK,
+            100,
+            101,
+            [](IP &ip, TCP &tcp) { ip.flags(static_cast<IP::Flags>(ip.flags() | IP::MORE_FRAGMENTS)); }),
+        GRO_NOADD);
+    push_one(batch, make_udp<IP>(ip4a, 1, ip4b, 1, 100));
+    push_one(
+        batch,
+        make_udp<IP>(
+            ip4a,
+            1,
+            ip4b,
+            1,
+            100,
+            [](IP &ip, UDP &udp) { ip.flags(static_cast<IP::Flags>(ip.flags() | IP::MORE_FRAGMENTS)); }),
+        GRO_NOADD);
+}
+
+TEST_CASE("DecapBatch unequal flags DF set") {
+    worker_impl::DecapBatch batch;
+
+    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));
+    push_one(
+        batch,
+        make_tcp<IP>(
+            ip4a,
+            1,
+            ip4b,
+            1,
+            TCP::ACK,
+            100,
+            101,
+            [](IP &ip, TCP &tcp) { ip.flags(static_cast<IP::Flags>(ip.flags() | IP::DONT_FRAGMENT)); }),
+        GRO_NOADD);
+    push_one(batch, make_udp<IP>(ip4a, 1, ip4b, 1, 100));
+    push_one(
+        batch,
+        make_udp<IP>(
+            ip4a,
+            1,
+            ip4b,
+            1,
+            100,
+            [](IP &ip, UDP &udp) { ip.flags(static_cast<IP::Flags>(ip.flags() | IP::DONT_FRAGMENT)); }),
+        GRO_NOADD);
+}
+
+TEST_CASE("ipv6 unequal hop limit") {
+    worker_impl::DecapBatch batch;
+
+    push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 1));
+    push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 101, [](IPv6 &ip, TCP &tcp) { ip.hop_limit(65); }));
+    push_one(batch, make_udp<IPv6>(ip6a, 1, ip6b, 1, 100));
+    push_one(batch, make_udp<IPv6>(ip6a, 1, ip6b, 1, 100, [](IPv6 &ip, UDP &udp) { ip.hop_limit(65); }));
+
+    REQUIRE(batch.tcp6.size() == 2);
+    {
+        auto fk = make_fk(ip6a, ip6b, 1);
+        auto it = batch.tcp6.lower_bound(fk);
+        REQUIRE(it != batch.tcp6.end());
+        check_flow(it, ip6a, ip6b, 1, 1);
+
+        REQUIRE(it != batch.tcp6.begin());
+        it--;
+        check_flow(it, ip6a, ip6b, 101, 1);
+    }
+
+    REQUIRE(batch.udp6.size() == 2);
+    {
+        auto fk = make_fk(ip6a, ip6b, 0);
+        auto it = batch.udp6.lower_bound(fk);
+        REQUIRE(it != batch.udp6.end());
+        check_flow_udp(it, ip6a, ip6b, 1);
+
+        REQUIRE(it != batch.udp6.begin());
+        it--;
+        check_flow_udp(it, ip6a, ip6b, 1);
+    }
+}
+
+TEST_CASE("DecapBatch ipv6 unequal traffic class") {
+    worker_impl::DecapBatch batch;
+
+    push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 1));
+    push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 101, [](IPv6 &ip, TCP &tcp) {
+                 ip.traffic_class(1);
+             }));
+    push_one(batch, make_udp<IPv6>(ip6a, 1, ip6b, 1, 100));
+    push_one(batch, make_udp<IPv6>(ip6a, 1, ip6b, 1, 100, [](IPv6 &ip, UDP &udp) { ip.traffic_class(1); }));
+
+    REQUIRE(batch.tcp6.size() == 2);
+    {
+        auto fk = make_fk(ip6a, ip6b, 1);
+        auto it = batch.tcp6.lower_bound(fk);
+        REQUIRE(it != batch.tcp6.end());
+        check_flow(it, ip6a, ip6b, 1, 1);
+
+        REQUIRE(it != batch.tcp6.begin());
+        it--;
+        check_flow(it, ip6a, ip6b, 101, 1);
+    }
+
+    REQUIRE(batch.udp6.size() == 2);
+    {
+        auto fk = make_fk(ip6a, ip6b, 0);
+        auto it = batch.udp6.lower_bound(fk);
+        REQUIRE(it != batch.udp6.end());
+        check_flow_udp(it, ip6a, ip6b, 1);
+
+        REQUIRE(it != batch.udp6.begin());
+        it--;
+        check_flow_udp(it, ip6a, ip6b, 1);
     }
 }
