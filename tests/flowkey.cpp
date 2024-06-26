@@ -71,8 +71,8 @@ TEST_CASE("DecapBatch multiple protocols and flows") {
         REQUIRE(it != batch.tcp4.end());
         check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 1, 2);
 
+        REQUIRE(it != batch.tcp4.begin());
         it--;
-        REQUIRE(it != batch.tcp4.end());
         check_flow(it, to_addr(ip4a), to_addr(ip4c), 100, 201, 1);
     }
 
@@ -91,8 +91,8 @@ TEST_CASE("DecapBatch multiple protocols and flows") {
         REQUIRE(it != batch.udp4.end());
         check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 0, 2);
 
+        REQUIRE(it != batch.udp4.begin());
         it--;
-        REQUIRE(it != batch.udp4.end());
         check_flow(it, to_addr(ip4a), to_addr(ip4c), 100, 1, 1);
     }
 
@@ -111,8 +111,8 @@ TEST_CASE("DecapBatch multiple protocols and flows") {
         REQUIRE(it != batch.tcp6.end());
         check_flow(it, to_addr(ip6a), to_addr(ip6b), 100, 1, 2);
 
+        REQUIRE(it != batch.tcp6.begin());
         it--;
-        REQUIRE(it != batch.tcp6.end());
         check_flow(it, to_addr(ip6a), to_addr(ip6c), 100, 201, 1);
     }
 
