@@ -489,7 +489,7 @@ TEST_CASE("DecapBatch invalid packets") {
     }
     SECTION("ip6 invalid protocol") {
         std::vector<uint8_t> pkt(tcp6);
-        reinterpret_cast<ip6_hdr*>(pkt.data())->ip6_nxt = IPPROTO_GRE;
+        reinterpret_cast<ip6_hdr *>(pkt.data())->ip6_nxt = IPPROTO_GRE;
         push_one(batch, pkt, GRO_NOADD);
     }
 }
