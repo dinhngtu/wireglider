@@ -203,7 +203,7 @@ static DecapBatch::Outcome evaluate_packet(
     using ip_header_type = ip_header_of_t<fill_ip>;
 
     if (ippkt.size() < sizeof(ip_header_type))
-        return GRO_DROP;
+        return GRO_NOADD;
     else if (ippkt.size() > UINT16_MAX)
         return GRO_NOADD;
 
@@ -268,7 +268,7 @@ DecapBatch::Outcome DecapBatch::push_packet_v6(std::span<const uint8_t> ippkt) {
 
 DecapBatch::Outcome DecapBatch::push_packet(std::span<const uint8_t> ippkt) {
     if (ippkt.size() < sizeof(struct ip))
-        return GRO_DROP;
+        return GRO_NOADD;
     auto ip = reinterpret_cast<const struct ip *>(ippkt.data());
     if (ip->ip_v == 4)
         return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel);

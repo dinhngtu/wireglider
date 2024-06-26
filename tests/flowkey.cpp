@@ -381,7 +381,7 @@ TEST_CASE("DecapBatch unequal flags DF set") {
         GRO_NOADD);
 }
 
-TEST_CASE("ipv6 unequal hop limit") {
+TEST_CASE("DecapBatch ipv6 unequal hop limit") {
     worker_impl::DecapBatch batch;
 
     push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 1));
@@ -446,5 +446,50 @@ TEST_CASE("DecapBatch ipv6 unequal traffic class") {
         REQUIRE(it != batch.udp6.begin());
         it--;
         check_flow_udp(it, ip6a, ip6b, 1);
+    }
+}
+
+TEST_CASE("DecapBatch invalid packets") {
+    auto tcp4 = make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1);
+    auto udp4 = make_udp<IP>(ip4a, 1, ip4b, 1, 100);
+    auto tcp6 = make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 1);
+    auto udp6 = make_udp<IPv6>(ip6a, 1, ip6b, 1, 100);
+
+    worker_impl::DecapBatch batch;
+
+    SECTION("tcp4 too short") {
+        std::vector<uint8_t> pkt(&tcp4[0], &tcp4[40]);
+        push_one(batch, pkt, GRO_NOADD);
+    }
+    SECTION("udp4 too short") {
+        std::vector<uint8_t> pkt(&udp4[0], &udp4[28]);
+        push_one(batch, pkt, GRO_NOADD);
+    }
+    SECTION("tcp6 too short") {
+        std::vector<uint8_t> pkt(&tcp6[0], &tcp6[60]);
+        push_one(batch, pkt, GRO_NOADD);
+    }
+    SECTION("udp6 too short") {
+        std::vector<uint8_t> pkt(&udp6[0], &udp6[48]);
+        push_one(batch, pkt, GRO_NOADD);
+    }
+    SECTION("invalid IP version") {
+        std::vector<uint8_t> pkt(1, 0);
+        push_one(batch, pkt, GRO_NOADD);
+    }
+    SECTION("invalid IP header len") {
+        std::vector<uint8_t> pkt(tcp4);
+        reinterpret_cast<struct ip *>(pkt.data())->ip_hl = 6;
+        push_one(batch, pkt, GRO_NOADD);
+    }
+    SECTION("ip4 invalid protocol") {
+        std::vector<uint8_t> pkt(tcp4);
+        reinterpret_cast<struct ip *>(pkt.data())->ip_p = IPPROTO_GRE;
+        push_one(batch, pkt, GRO_NOADD);
+    }
+    SECTION("ip6 invalid protocol") {
+        std::vector<uint8_t> pkt(tcp6);
+        reinterpret_cast<ip6_hdr*>(pkt.data())->ip6_nxt = IPPROTO_GRE;
+        push_one(batch, pkt, GRO_NOADD);
     }
 }
