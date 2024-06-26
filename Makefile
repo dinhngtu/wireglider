@@ -168,6 +168,9 @@ $(TARGETS): $(OBJECTS)
 $(TARGETS): %: %.cpp $(OBJ_MIMALLOC)
 	$(LINK.cpp) $(OBJ_MIMALLOC) $< $(filter-out $(OBJ_MIMALLOC),$(filter %.o,$^)) $(LOADLIBES) $(LDLIBS) -o $@
 
+$(TESTS): %: %.cpp
+	$(LINK.cpp) $< $(filter %.o,$^) $(LOADLIBES) $(LDLIBS) -o $@
+
 tests/checksum: checksum.o
 
 tests/offload: worker/offload.o checksum.o
@@ -194,4 +197,4 @@ clean:
 
 .PHONY: $(TESTS_RUN) check clean
 
--include $(DEPS)
+-include $(DEPS) $(wildcard tests/*.d)
