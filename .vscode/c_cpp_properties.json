@@ -26,7 +26,10 @@
             "compilerPath": "/usr/bin/gcc",
             "intelliSenseMode": "linux-gcc-x64",
             "cppStandard": "c++20",
-            "cStandard": "c11"
+            "cStandard": "c11",
+            "forcedInclude": [
+                "${workspaceFolder}/vscode_compat_dont_include/vscode_compat.h"
+            ]
         }
     ],
     "version": 4

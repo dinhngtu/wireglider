@@ -71,11 +71,13 @@ struct OwnedPacketBatch {
     }
     struct tcphdr *tcphdr() {
         assert(flags.istcp());
-        return reinterpret_cast<struct tcphdr *>(&hdrbuf[flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip)]);
+        auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
+        return reinterpret_cast<struct tcphdr *>(&hdrbuf[iphsize]);
     }
     struct udphdr *udphdr() {
         assert(!flags.istcp());
-        return reinterpret_cast<struct udphdr *>(&hdrbuf[flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip)]);
+        auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
+        return reinterpret_cast<struct udphdr *>(&hdrbuf[iphsize]);
     }
     std::vector<uint8_t> hdrbuf;
     std::vector<uint8_t> buf;
