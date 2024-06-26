@@ -159,14 +159,16 @@ using address_type_of_t = std::remove_cvref_t<tdutil::first_argument_t<decltype(
 template <typename T>
 static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> ippkt, PacketFlags &flags) {
     auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
-    if (ippkt.size() - iphsize < sizeof(tcphdr))
+    if (ippkt.size() - iphsize <= sizeof(tcphdr))
+        // exclude empty packets as well
         return nullptr;
     if (calc_l4_checksum(ippkt, flags.isv6(), true, iphsize))
         return nullptr;
     auto tcp = reinterpret_cast<const tcphdr *>(&ippkt[iphsize]);
     if (tcp->doff != 5)
         return nullptr;
-    // TODO: check tcp flags
+    if (tcp->fin || tcp->syn || tcp->rst || tcp->urg || tcp->res2)
+        return nullptr;
     flags.istcp() = true;
     flags.ispsh() = !!tcp->psh;
     fk.srcport = big_to_native(tcp->source);
