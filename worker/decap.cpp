@@ -38,6 +38,43 @@ static std::pair<typename FlowMap<T>::iterator, bool> find_flow(
     return {it, true};
 }
 
+// returns true if the next flow was merged and erased
+template <typename T>
+static bool merge_next_flow(FlowMap<T> &flow, const typename FlowMap<T>::iterator &it) {
+    if (it == flow.begin())
+        return false;
+    if (it->second.flags.ispsh())
+        return false;
+    auto next = it - 1;
+    if (!it->second.is_mergeable(next->second))
+        return false;
+    if (it->second.flags.istcp() ? !it->first.is_consecutive_with(next->first, it->second.count, it->second.buf.size())
+                                 : !it->first.matches(next->first))
+        return false;
+    it->second.extend(next->second);
+    flow.erase(next);
+    return true;
+}
+
+// returns true if this flow was merged with the previous flow and erased
+template <typename T>
+static bool merge_prev_flow(FlowMap<T> &flow, const typename FlowMap<T>::iterator &it) {
+    auto prev = it + 1;
+    if (prev == flow.end())
+        return false;
+    if (!prev->second.is_mergeable(it->second))
+        return false;
+    if (it->second.flags.istcp()
+            ? !prev->first.is_consecutive_with(it->first, prev->second.count, prev->second.buf.size())
+            : !prev->first.matches(it->first))
+        return false;
+    if (prev->second.flags.ispsh())
+        return false;
+    prev->second.extend(it->second);
+    flow.erase(it);
+    return true;
+}
+
 template <typename T>
 static void append_flow(
     FlowMap<T> &flow,
@@ -48,8 +85,9 @@ static void append_flow(
     auto [it, usable] = find_flow(flow, fk, pktdata, flags);
     bool created;
     if (!usable) {
-        // udp: continue from last flow
+        // create a new flow
         if (!flags.istcp())
+            // udp: continue from last flow
             fk.seq = (it != flow.end()) ? (it->first.seq + 1) : 0;
         std::tie(it, created) = flow.emplace(fk, OwnedPacketBatch(pkthdr, 4 * fk.segment_size, flags));
         assert(created);
@@ -60,19 +98,17 @@ static void append_flow(
         it->second.flags.ispsh() = true;
     }
 
-    // merge with previous flow; map is in reverse order
-    auto prev = it + 1;
-    if (prev == flow.end())
-        return;
-    if (!prev->second.is_mergeable(it->second))
-        return;
-    if (flags.istcp() ? !prev->first.is_consecutive_with(it->first, prev->second.count, prev->second.buf.size())
-                      : !prev->first.matches(it->first))
-        return;
-    if (prev->second.flags.ispsh())
-        return;
-    prev->second.extend(it->second);
-    flow.erase(it);
+    /*
+     * There are only two possibilities:
+     * - Appending to an existing flow, bridging a gap (flow1-newdata->flow2)
+     * - Creating a new flow, bridging with next flow (newdata->flow)
+     * with `-` being a simple flow append and `->` being a flow merge.
+     * IOW, merge_next_flow and merge_prev_flow can't happen at the same time.
+     * Therefore there's no need to worry about iterator invalidation.
+     */
+    bool next_merged = merge_next_flow(flow, it);
+    bool prev_merged = merge_prev_flow(flow, it);
+    assert(!(next_merged && prev_merged));
 }
 
 static std::pair<const struct ip *, uint8_t> fill_fk_ip4(

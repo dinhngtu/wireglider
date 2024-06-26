@@ -277,3 +277,27 @@ TEST_CASE("DecapBatch out of order") {
         check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 1, 3);
     }
 }
+
+TEST_CASE("DecapBatch out of order 2") {
+    worker_impl::DecapBatch batch;
+
+    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));
+    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 201));
+    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 101));
+
+    REQUIRE(batch.tcp4.size() == 1);
+    {
+        worker_impl::FlowKey<in_addr> fk{
+            to_addr(ip4a),
+            to_addr(ip4b),
+            1,
+            1,
+            100,
+            0,
+            1,
+        };
+        auto it = batch.tcp4.lower_bound(fk);
+        REQUIRE(it != batch.tcp4.end());
+        check_flow(it, to_addr(ip4a), to_addr(ip4b), 100, 1, 3);
+    }
+}
