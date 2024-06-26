@@ -10,6 +10,7 @@
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+#include <boost/endian.hpp>
 #include <boost/container/flat_map.hpp>
 
 namespace wgss::worker_impl {
@@ -86,27 +87,24 @@ template <typename AddressType>
 struct FlowKey {
     using address_type = AddressType;
 
-    // network order
     AddressType srcip;
-    // network order
     AddressType dstip;
-    // native order
+    // all below are native order unless otherwise specified
     uint16_t srcport;
-    // native order
     uint16_t dstport;
     uint16_t segment_size;
     uint8_t tos;
     uint8_t ttl;
-    // native order
     uint32_t tcpack;
 
     // variable part
-    // native order
     uint32_t seq;
+
+    static constexpr size_t variable_offset = offsetof(FlowKey, seq);
 
     bool matches(const FlowKey &other) const {
         static_assert(std::has_unique_object_representations_v<FlowKey>);
-        return !memcmp(this, &other, offsetof(FlowKey, seq));
+        return !memcmp(this, &other, variable_offset);
     }
 
     bool is_consecutive_with(const FlowKey &other, [[maybe_unused]] size_t count, size_t size) const {
@@ -123,7 +121,7 @@ static inline bool operator==(const FlowKey<AddressType> &a, const FlowKey<Addre
 template <typename AddressType>
 static inline auto operator<=>(const FlowKey<AddressType> &a, const FlowKey<AddressType> &b) noexcept {
     static_assert(std::has_unique_object_representations_v<FlowKey<AddressType>>);
-    auto prefix = memcmp(&a, &b, offsetof(FlowKey<AddressType>, seq));
+    auto prefix = memcmp(&a, &b, FlowKey<AddressType>::variable_offset);
     if (prefix > 0)
         return std::strong_ordering::greater;
     else if (prefix < 0)

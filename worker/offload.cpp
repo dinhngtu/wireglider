@@ -7,11 +7,12 @@
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+#include "virtio_net.hpp"
 #include <boost/endian.hpp>
 #include <tdutil/util.hpp>
 #include <fmt/format.h>
 
-#include "worker.hpp"
+#include "worker/offload.hpp"
 #include "checksum.hpp"
 #include "endian.hpp"
 
@@ -114,7 +115,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
         if (isv6) {
             // For IPv6 we are responsible for updating the payload length field.
             assign_big_from_native(
-                reinterpret_cast<ipv6hdr *>(thispkt.data())->payload_len,
+                reinterpret_cast<ip6_hdr *>(thispkt.data())->ip6_plen,
                 thispkt.size() - vnethdr.csum_start);
         } else {
             // For IPv4 we are responsible for incrementing the ID field,
