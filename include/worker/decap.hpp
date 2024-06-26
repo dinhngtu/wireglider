@@ -94,7 +94,9 @@ struct FlowKey {
     uint16_t srcport;
     // native order
     uint16_t dstport;
-    uint32_t segment_size;
+    uint16_t segment_size;
+    uint8_t tos;
+    uint8_t ttl;
     // native order
     uint32_t tcpack;
 

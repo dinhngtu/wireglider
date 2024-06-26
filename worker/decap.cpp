@@ -89,7 +89,7 @@ static void append_flow(
         if (!flags.istcp())
             // udp: continue from last flow
             fk.seq = (it != flow.end()) ? (it->first.seq + 1) : 0;
-        std::tie(it, created) = flow.emplace(fk, OwnedPacketBatch(pkthdr, 4 * fk.segment_size, flags));
+        std::tie(it, created) = flow.emplace(fk, OwnedPacketBatch(pkthdr, size_t(4) * fk.segment_size, flags));
         assert(created);
     }
     it->second.append(pktdata);
@@ -121,9 +121,8 @@ static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
         return {nullptr, IPPROTO_RAW};
     if (ippkt.size() != big_to_native(ip->ip_len))
         return {nullptr, IPPROTO_RAW};
-    auto off = big_to_native(ip->ip_off);
-    // no fragmenting
-    if ((off & IP_MF) || (off & IP_OFFMASK))
+    // no fragmenting of any kind
+    if (big_to_native(ip->ip_off))
         return {nullptr, IPPROTO_RAW};
     // iph checksum
     if (checksum(ippkt.subspan(0, sizeof(struct ip)), 0))
@@ -131,6 +130,8 @@ static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
     flags.isv6() = false;
     fk.srcip = ip->ip_src;
     fk.dstip = ip->ip_dst;
+    fk.tos = ip->ip_tos;
+    fk.ttl = ip->ip_ttl;
     return std::make_pair(ip, ip->ip_p);
 }
 
@@ -145,6 +146,8 @@ static std::pair<const ip6_hdr *, uint8_t> fill_fk_ip6(
     flags.isv6() = true;
     fk.srcip = ip->ip6_src;
     fk.dstip = ip->ip6_dst;
+    fk.tos = (big_to_native(ip->ip6_flow) >> 20) & 0xff;
+    fk.ttl = ip->ip6_hlim;
     return std::make_pair(ip, ip->ip6_ctlun.ip6_un1.ip6_un1_nxt);
 }
 
@@ -199,6 +202,8 @@ static DecapBatch::Outcome evaluate_packet(
 
     if (ippkt.size() < sizeof(ip_header_type))
         return GRO_DROP;
+    else if (ippkt.size() > UINT16_MAX)
+        return GRO_NOADD;
 
     auto [ip, proto] = fill_ip(fk, ippkt, flags);
     if (!ip)
