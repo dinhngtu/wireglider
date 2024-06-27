@@ -46,11 +46,12 @@ namespace wgss::worker_impl {
  * │ ... iph_csum ... │ ...  l4_csum ... │ payload part │
  *   ...
  */
-PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &outbuf, const virtio_net_hdr &vnethdr) {
+PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr) {
     auto l4_csum_offset = vnethdr.csum_start + vnethdr.csum_offset;
     auto isv6 = reinterpret_cast<struct ip *>(inbuf.data())->ip_v == 6;
 
-    if (vnethdr.gso_type == VIRTIO_NET_HDR_GSO_NONE) {
+    switch (vnethdr.gso_type) {
+    case VIRTIO_NET_HDR_GSO_NONE:
         if (vnethdr.flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) {
             // clear ipv4 header checksum
             if (!isv6)
@@ -62,6 +63,45 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
             auto l4_csum = calc_l4_checksum(inbuf, isv6, istcp, vnethdr.csum_start);
             store_big_u16(&inbuf[l4_csum_offset], l4_csum);
         }
+        return PacketBatch{
+            .prefix = {},
+            .data = inbuf,
+            .segment_size = inbuf.size(),
+            .isv6 = isv6,
+        };
+    case VIRTIO_NET_HDR_GSO_TCPV4:
+    case VIRTIO_NET_HDR_GSO_TCPV6: {
+        // Don't trust hdr.hdrLen from the kernel as it can be equal to the length
+        // of the entire first packet when the kernel is handling it as part of a
+        // FORWARD path. Instead, parse the transport header length and add it onto
+        // csumStart, which is synonymous for IP header length.
+        if (inbuf.size() - vnethdr.csum_start < sizeof(tcphdr)) {
+            fmt::print("packet is too short\n");
+            return PacketBatch{
+                .prefix = {},
+                .data = inbuf,
+                .segment_size = inbuf.size(),
+                .isv6 = isv6,
+            };
+        }
+        auto thlen = 4u * reinterpret_cast<tcphdr *>(&inbuf[vnethdr.csum_start])->doff;
+        if (thlen < sizeof(tcphdr)) {
+            fmt::print("thlen too small: {}\n", thlen);
+            return PacketBatch{
+                .prefix = {},
+                .data = inbuf,
+                .segment_size = inbuf.size(),
+                .isv6 = isv6,
+            };
+        }
+        vnethdr.hdr_len = vnethdr.csum_start + thlen;
+        break;
+    }
+    case VIRTIO_NET_HDR_GSO_UDP_L4:
+        vnethdr.hdr_len = vnethdr.csum_start + sizeof(udphdr);
+        break;
+    default:
+        fmt::print("unknown gso type {}\n", vnethdr.gso_type);
         return PacketBatch{
             .prefix = {},
             .data = inbuf,

@@ -86,6 +86,6 @@ constexpr PacketBatch::iterator end(const PacketBatch &pb) {
     return PacketBatch::iterator(pb.segment_size, pb.data.end(), pb.data.end());
 }
 
-PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &outbuf, const virtio_net_hdr &vnethdr);
+PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr);
 
 } // namespace wgss::worker_impl
