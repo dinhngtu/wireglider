@@ -15,6 +15,7 @@
 #include "worker/offload.hpp"
 #include "worker/flowkey.hpp"
 #include "worker/send.hpp"
+#include "worker/write.hpp"
 
 namespace wgss {
 
@@ -82,16 +83,9 @@ private:
         worker_impl::PacketBatch pb,
         worker_impl::ClientEndpoint ep,
         std::vector<uint8_t> &scratch);
-    void tunnel_flush(
-        [[maybe_unused]] RundownGuard &rcu,
-        [[maybe_unused]] std::lock_guard<std::mutex> &lock,
-        std::deque<std::vector<uint8_t>> &serversend,
-        wireguard_tunnel_raw *tunnel,
-        std::vector<uint8_t> &scratch);
 
-    static constexpr bool is_eagain(int e = errno) {
-        return e == EAGAIN || e == EWOULDBLOCK;
-    }
+    void do_tun_write();
+    void do_tun_write_batch(worker_impl::DecapBatch &batch);
 
     void tun_disable(uint32_t events) {
         auto newevents = _poll_tun & ~events;
@@ -127,6 +121,7 @@ private:
     std::vector<uint8_t> _recvbuf;
     std::vector<uint8_t> _pktbuf, _sendbuf;
     worker_impl::ServerSendQueue _serversend;
+    worker_impl::TunWriteQueue _tunwrite;
 };
 
 // this function forces all worker allocations to happen within its own thread

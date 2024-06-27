@@ -76,7 +76,7 @@ static void append_flow(
     FlowKey<T> &fk,
     std::span<const uint8_t> pkthdr,
     std::span<const uint8_t> pktdata,
-    const PacketFlags &flags) {
+    PacketFlags &flags) {
     auto [it, usable] = find_flow(flow, fk, pktdata, flags);
     bool created;
     if (!usable) {
@@ -84,6 +84,11 @@ static void append_flow(
         if (!flags.istcp())
             // udp: continue from last flow
             fk.seq = (it != flow.end()) ? (it->first.seq + 1) : 0;
+        flags.vnethdr.flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
+        if (flags.istcp())
+            flags.vnethdr.gso_type = flags.isv6() ? VIRTIO_NET_HDR_GSO_TCPV6 : VIRTIO_NET_HDR_GSO_TCPV4;
+        else
+            flags.vnethdr.gso_type = VIRTIO_NET_HDR_GSO_UDP_L4;
         std::tie(it, created) = flow.emplace(fk, OwnedPacketBatch(pkthdr, size_t(4) * fk.segment_size, flags));
         assert(created);
     }
@@ -122,6 +127,7 @@ static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
     // iph checksum
     if (checksum(ippkt.subspan(0, sizeof(struct ip)), 0))
         return {nullptr, IPPROTO_RAW};
+    flags.vnethdr.hdr_len = flags.vnethdr.csum_start = sizeof(struct ip);
     flags.isv6() = false;
     fk.srcip = ip->ip_src;
     fk.dstip = ip->ip_dst;
@@ -139,6 +145,7 @@ static std::pair<const ip6_hdr *, uint8_t> fill_fk_ip6(
     if (rest.size() != big_to_native(ip->ip6_ctlun.ip6_un1.ip6_un1_plen))
         return {nullptr, IPPROTO_RAW};
     flags.isv6() = true;
+    flags.vnethdr.hdr_len = flags.vnethdr.csum_start = sizeof(ip6_hdr);
     fk.srcip = ip->ip6_src;
     fk.dstip = ip->ip6_dst;
     fk.tos = (big_to_native(ip->ip6_flow) >> 20) & 0xff;
@@ -166,6 +173,8 @@ static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
         return nullptr;
     flags.istcp() = true;
     flags.ispsh() = !!tcp->psh;
+    flags.vnethdr.hdr_len += sizeof(tcphdr);
+    flags.vnethdr.csum_offset = offsetof(tcphdr, check);
     fk.srcport = big_to_native(tcp->source);
     fk.dstport = big_to_native(tcp->dest);
     fk.tcpack = big_to_native(tcp->ack_seq);
@@ -183,6 +192,8 @@ static const udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
     auto udp = reinterpret_cast<const udphdr *>(&ippkt[iphsize]);
     flags.istcp() = false;
     flags.ispsh() = false;
+    flags.vnethdr.hdr_len += sizeof(udphdr);
+    flags.vnethdr.csum_offset = offsetof(udphdr, check);
     fk.srcport = big_to_native(udp->source);
     fk.dstport = big_to_native(udp->dest);
     fk.tcpack = 0;
@@ -195,9 +206,7 @@ static DecapBatch::Outcome evaluate_packet(
     std::span<const uint8_t> ippkt,
     FlowKey<address_type_of_t<fill_ip>> &fk,
     PacketFlags &flags) {
-    using ip_header_type = ip_header_of_t<fill_ip>;
-
-    if (ippkt.size() < sizeof(ip_header_type))
+    if (ippkt.size() < sizeof(ip_header_of_t<fill_ip>))
         return GRO_NOADD;
     else if (ippkt.size() > UINT16_MAX)
         return GRO_NOADD;
@@ -222,7 +231,7 @@ static DecapBatch::Outcome evaluate_packet(
     }
     fk.segment_size = ippkt.size() - sizeof(*ip) - (flags.istcp() ? sizeof(tcphdr) : sizeof(udphdr));
 
-    return GRO_ADDED;
+    return GRO_ADD;
 }
 
 template <auto fill_ip>
@@ -231,15 +240,13 @@ static DecapBatch::Outcome do_push_packet(
     FlowMap<address_type_of_t<fill_ip>> &tcpflow,
     FlowMap<address_type_of_t<fill_ip>> &udpflow,
     std::deque<std::vector<uint8_t>> &unrel) {
-    using ip_header_type = ip_header_of_t<fill_ip>;
     FlowKey<address_type_of_t<fill_ip>> fk{};
     PacketFlags flags;
     auto res = evaluate_packet<fill_ip>(ippkt, fk, flags);
     switch (res) {
-    case GRO_ADDED: {
-        auto hsize = sizeof(ip_header_type) + (flags.istcp() ? sizeof(tcphdr) : sizeof(udphdr));
-        auto pkthdr = ippkt.subspan(0, hsize);
-        auto pktdata = ippkt.subspan(hsize);
+    case GRO_ADD: {
+        auto pkthdr = ippkt.subspan(0, flags.vnethdr.hdr_len);
+        auto pktdata = ippkt.subspan(flags.vnethdr.hdr_len);
         append_flow(flags.istcp() ? tcpflow : udpflow, fk, pkthdr, pktdata, flags);
         break;
     }

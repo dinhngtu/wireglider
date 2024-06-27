@@ -19,6 +19,8 @@ using namespace wgss::worker_impl;
 namespace wgss {
 
 void Worker::do_tun(epoll_event *ev) {
+    if (ev->events & EPOLLOUT)
+        do_tun_write();
     if (ev->events & EPOLLIN) {
         virtio_net_hdr vnethdr;
         auto read_pb = do_tun_recv(_recvbuf, vnethdr);

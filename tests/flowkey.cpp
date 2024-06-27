@@ -14,7 +14,7 @@ static const IPv6Address ip6a("2001:db8::1"), ip6b("2001:db8::2"), ip6c("2001:db
 static void push_one(
     worker_impl::DecapBatch &batch,
     std::vector<uint8_t> pkt,
-    worker_impl::DecapBatch::Outcome outcome = GRO_ADDED) {
+    worker_impl::DecapBatch::Outcome outcome = GRO_ADD) {
     auto res = batch.push_packet(std::span<const uint8_t>(pkt));
     REQUIRE(res == outcome);
 }

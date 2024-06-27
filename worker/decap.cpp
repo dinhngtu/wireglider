@@ -28,6 +28,8 @@ void Worker::do_server(epoll_event *ev) {
             }
         }
 
+        do_tun_write_batch(*batch);
+
         // TODO
     }
 }
@@ -86,52 +88,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
     return std::make_pair(pb, ep);
 }
 
-/*
- * packets sent from ep are decapsulated
- * each packet is a separate ip packet with:
- *  - src ip/port (sender side)
- *  - dst ip/port (may be client or tun destination elsewhere)
- *  - tcp/udp
- * see struct FlowKey for flow key description
- */
-std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint ep, std::vector<uint8_t> &scratch) {
-    RundownGuard rcu;
-    auto it = _arg.clients->find(rcu, ep);
-    if (it == _arg.clients->end())
-        return std::nullopt;
-
-    DecapBatch batch;
-    std::lock_guard<std::mutex> client_lock(it->mutex);
-
-    auto rest = pb.data;
-    for (auto pkt : pb) {
-        auto result = wireguard_read_raw(it->tunnel, pkt.data(), pkt.size(), scratch.data(), scratch.size());
-        switch (result.op) {
-        case WRITE_TO_TUNNEL_IPV4: {
-            auto outpkt = std::span(&scratch[0], &scratch[result.size]);
-            batch.push_packet_v4(outpkt);
-            break;
-        }
-        case WRITE_TO_TUNNEL_IPV6: {
-            auto outpkt = std::span(&scratch[0], &scratch[result.size]);
-            batch.push_packet_v6(outpkt);
-            break;
-        }
-        case WRITE_TO_NETWORK: {
-            batch.retpkt.emplace_back(&scratch[0], &scratch[result.size]);
-            tunnel_flush(rcu, client_lock, batch.retpkt, it->tunnel, scratch);
-            break;
-        }
-        case WIREGUARD_ERROR:
-        case WIREGUARD_DONE:
-            break;
-        }
-    }
-
-    return batch;
-}
-
-void Worker::tunnel_flush(
+static void tunnel_flush(
     [[maybe_unused]] RundownGuard &rcu,
     [[maybe_unused]] std::lock_guard<std::mutex> &lock,
     std::deque<std::vector<uint8_t>> &serversend,
@@ -149,6 +106,54 @@ void Worker::tunnel_flush(
             break;
         }
     }
+}
+
+/*
+ * packets sent from ep are decapsulated
+ * each packet is a separate ip packet with:
+ *  - src ip/port (sender side)
+ *  - dst ip/port (may be client or tun destination elsewhere)
+ *  - tcp/udp
+ * see struct FlowKey for flow key description
+ */
+std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint ep, std::vector<uint8_t> &scratch) {
+    RundownGuard rcu;
+    auto it = _arg.clients->find(rcu, ep);
+    if (it == _arg.clients->end())
+        return std::nullopt;
+
+    DecapBatch batch;
+    {
+        std::lock_guard client_lock(it->mutex);
+        auto rest = pb.data;
+        for (auto pkt : pb) {
+            auto result = wireguard_read_raw(it->tunnel, pkt.data(), pkt.size(), scratch.data(), scratch.size());
+            switch (result.op) {
+            case WRITE_TO_TUNNEL_IPV4: {
+                auto outpkt = std::span(&scratch[0], &scratch[result.size]);
+                batch.push_packet_v4(outpkt);
+                break;
+            }
+            case WRITE_TO_TUNNEL_IPV6: {
+                auto outpkt = std::span(&scratch[0], &scratch[result.size]);
+                batch.push_packet_v6(outpkt);
+                break;
+            }
+            case WRITE_TO_NETWORK: {
+                batch.retpkt.emplace_back(&scratch[0], &scratch[result.size]);
+                tunnel_flush(rcu, client_lock, batch.retpkt, it->tunnel, scratch);
+                break;
+            }
+            case WIREGUARD_ERROR:
+            case WIREGUARD_DONE:
+                break;
+            }
+        }
+    }
+
+    batch.aggregate_udp();
+
+    return batch;
 }
 
 } // namespace wgss

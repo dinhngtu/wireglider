@@ -10,6 +10,7 @@
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+#include "virtio_net.hpp"
 #include <boost/endian.hpp>
 #include <boost/container/flat_map.hpp>
 
@@ -17,6 +18,7 @@ namespace wgss::worker_impl {
 
 struct PacketFlags {
     using type = std::bitset<3>;
+    virtio_net_hdr vnethdr;
     type storage;
     constexpr bool isv6() const {
         return storage[0];
@@ -81,8 +83,8 @@ struct OwnedPacketBatch {
     }
     std::vector<uint8_t> hdrbuf;
     std::vector<uint8_t> buf;
-    PacketFlags flags;
     size_t count = 0;
+    PacketFlags flags;
 };
 
 template <typename AddressType>
@@ -101,6 +103,10 @@ struct FlowKey {
 
     // variable part
     uint32_t seq;
+
+    // TODO: reordering to tcpack-tos-ttl-segment_size breaks our tests
+    // need to see what's happening and why we needed to reorder in the first place
+    // normally we only depend on ordering of `seq` so the reordering shouldn't have broken anything...
 
     static constexpr size_t variable_offset = offsetof(FlowKey, seq);
 
@@ -139,14 +145,14 @@ using IP6Flow = FlowMap<in6_addr>;
 
 struct DecapBatch {
     enum Outcome {
-        GRO_ADDED,
+        GRO_ADD,
         GRO_NOADD,
         GRO_DROP,
     };
 
     IP4Flow tcp4;
-    IP6Flow tcp6;
     IP4Flow udp4;
+    IP6Flow tcp6;
     IP6Flow udp6;
     // packets that are not aggregated
     std::deque<std::vector<uint8_t>> unrel;

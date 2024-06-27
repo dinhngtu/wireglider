@@ -56,6 +56,10 @@ struct Ifr {
 
 std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_sockaddr(const char *str);
 
+static constexpr bool is_eagain(int e = errno) {
+    return e == EAGAIN || e == EWOULDBLOCK;
+}
+
 } // namespace wgss
 
 static inline bool operator==(const sockaddr_in &a, const sockaddr_in &b) noexcept {
