@@ -9,7 +9,7 @@
 #include <sys/socket.h>
 #include <boost/intrusive/list.hpp>
 
-#include "worker/endpoint.hpp"
+#include "endpoint.hpp"
 
 namespace wgss::worker_impl {
 

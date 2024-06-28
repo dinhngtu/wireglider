@@ -70,11 +70,9 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
     ClientEndpoint ep;
     bool isv6;
     if (static_cast<sockaddr *>(mh.msg_name)->sa_family == AF_INET6) {
-        assert(_arg.srv_is_v6);
         ep = *static_cast<sockaddr_in6 *>(mh.msg_name);
         isv6 = true;
     } else {
-        assert(!_arg.srv_is_v6);
         ep = *static_cast<sockaddr_in *>(mh.msg_name);
         isv6 = false;
     }

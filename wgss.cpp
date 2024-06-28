@@ -73,35 +73,29 @@ int main(int argc, char **argv) {
     }
 
     std::vector<std::unique_ptr<UdpServer>> server;
-    bool srv_is_v6;
     if (auto sin = std::get_if<sockaddr_in>(&listen_addr)) {
         sin->sin_port = htons(listen_port);
         server.push_back(std::make_unique<UdpServer>(*sin));
-        srv_is_v6 = false;
     } else if (auto sin6 = std::get_if<sockaddr_in6>(&listen_addr)) {
         sin6->sin6_port = htons(listen_port);
         server.push_back(std::make_unique<UdpServer>(*sin6));
-        srv_is_v6 = true;
     } else {
         throw std::runtime_error("cannot get server address");
     }
 
     std::vector<std::unique_ptr<Tun>> tun;
-    bool tun_is_v6;
     tun.push_back(std::make_unique<Tun>("wg%d"));
     tun[0]->fd().set_nonblock();
     if (auto tun_sin = std::get_if<sockaddr_in>(&tun_addr)) {
         tun[0]->set_address(*tun_sin, tun_prefix);
-        tun_is_v6 = false;
     } else if (auto tun_sin6 = std::get_if<sockaddr_in6>(&tun_addr)) {
         tun[0]->set_address6(*tun_sin6, tun_prefix);
-        tun_is_v6 = true;
     } else {
         throw std::runtime_error("cannot get tunnel address");
     }
     tun[0]->set_up(true);
 
-    auto clients = std::make_unique<CdsHashtable<worker_impl::ClientEndpoint, worker_impl::Client>>(1024, 1024, 0, CDS_LFHT_AUTO_RESIZE, nullptr);
+    auto clients = std::make_unique<CdsHashtable<ClientEndpoint, Client>>(1024, 1024, 0, CDS_LFHT_AUTO_RESIZE, nullptr);
 
     maple_tree allowed_ips = MTREE_INIT("allowed_ips", MT_FLAGS_USE_RCU);
 
@@ -113,8 +107,6 @@ int main(int argc, char **argv) {
             .id = 0,
             .tun = tun[0].get(),
             .server = server[0].get(),
-            .tun_is_v6 = tun_is_v6,
-            .srv_is_v6 = srv_is_v6,
             .clients = clients.get(),
             .allowed_ips = &allowed_ips,
         });
@@ -131,8 +123,6 @@ int main(int argc, char **argv) {
                     .id = i,
                     .tun = tun[i].get(),
                     .server = server[i].get(),
-                    .tun_is_v6 = tun_is_v6,
-                    .srv_is_v6 = srv_is_v6,
                     .clients = clients.get(),
                     .allowed_ips = &allowed_ips,
                 });
