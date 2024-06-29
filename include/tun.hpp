@@ -35,7 +35,7 @@ public:
         if (ioctl(_tun, TUNSETVNETHDRSZ, &vnethdrsz) < 0)
             throw std::system_error(errno, std::system_category(), "ioctl(TUNSETVNETHDRSZ)");
 
-        unsigned long offload = TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6 | TUN_F_USO4 | TUN_F_USO6;
+        unsigned long offload = TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6 | TUN_F_TSO_ECN | TUN_F_USO4 | TUN_F_USO6;
         if (ioctl(_tun, TUNSETOFFLOAD, offload) < 0)
             throw std::system_error(errno, std::system_category(), "ioctl(TUNSETOFFLOAD)");
 

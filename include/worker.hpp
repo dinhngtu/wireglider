@@ -48,8 +48,15 @@ private:
 
     void do_server_send();
     // returns -errno
-    int server_send(std::span<uint8_t> data, size_t segment_size, ClientEndpoint ep, bool queue_on_eagain);
-    int server_send(worker_impl::ServerSendList *list);
+    int server_send_batch(worker_impl::ServerSendBatch *batch, std::span<uint8_t> data, bool queue_on_eagain);
+    // use when batch is a non-owning batch that contains no data
+    int server_send_batch(worker_impl::ServerSendBatch *batch, std::span<uint8_t> data) {
+        return server_send_batch(batch, data, true);
+    }
+    int server_send_batch(worker_impl::ServerSendBatch *batch) {
+        return server_send_batch(batch, batch->buf, false);
+    }
+    int server_send_list(worker_impl::ServerSendList *list);
     int do_server_send_step(worker_impl::ServerSendBase *send);
 
     void do_server(epoll_event *ev);

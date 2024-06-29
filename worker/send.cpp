@@ -28,24 +28,33 @@ void Worker::do_server_send() {
         tun_disable(EPOLLIN);
 }
 
-int Worker::server_send(std::span<uint8_t> data, size_t segment_size, ClientEndpoint ep, bool queue_on_eagain) {
+int Worker::server_send_batch(ServerSendBatch *batch, std::span<uint8_t> data, bool queue_on_eagain) {
     msghdr mh;
     memset(&mh, 0, sizeof(mh));
-    if (auto sin6 = std::get_if<sockaddr_in6>(&ep)) {
+    if (auto sin6 = std::get_if<sockaddr_in6>(&batch->ep)) {
         mh.msg_name = sin6;
         mh.msg_namelen = sizeof(sockaddr_in6);
-    } else if (auto sin = std::get_if<sockaddr_in>(&ep)) {
+    } else if (auto sin = std::get_if<sockaddr_in>(&batch->ep)) {
         mh.msg_name = sin;
         mh.msg_namelen = sizeof(sockaddr_in);
     }
     mh.msg_iovlen = 1;
-    std::array<uint8_t, CMSG_SPACE(sizeof(uint16_t))> _cm;
-    auto cm = reinterpret_cast<cmsghdr *>(_cm.data());
+    std::array<uint8_t, CMSG_SPACE(sizeof(uint16_t)) + CMSG_SPACE(sizeof(uint8_t))> _cm;
+
+    auto cm = CMSG_FIRSTHDR(&mh);
     cm->cmsg_level = SOL_UDP;
     cm->cmsg_type = UDP_SEGMENT;
-    cm->cmsg_len = _cm.size();
-    *reinterpret_cast<uint16_t *>(CMSG_DATA(cm)) = segment_size;
-    mh.msg_control = cm;
+    cm->cmsg_len = CMSG_LEN(sizeof(uint16_t));
+    *reinterpret_cast<uint16_t *>(CMSG_DATA(cm)) = batch->segment_size;
+
+    // RFC 6040
+    cm = CMSG_NXTHDR(&mh, cm);
+    cm->cmsg_level = SOL_IP;
+    cm->cmsg_type = IP_TOS;
+    cm->cmsg_len = CMSG_LEN(sizeof(uint8_t));
+    *reinterpret_cast<uint8_t *>(CMSG_DATA(cm)) = batch->ecn;
+
+    mh.msg_control = _cm.data();
     mh.msg_controllen = _cm.size();
 
     while (!data.empty()) {
@@ -55,7 +64,7 @@ int Worker::server_send(std::span<uint8_t> data, size_t segment_size, ClientEndp
         if (ret < 0) {
             auto err = errno;
             if (queue_on_eagain && is_eagain()) {
-                auto tosend = new ServerSendBatch(data, segment_size, ep);
+                auto tosend = new ServerSendBatch(data, batch->segment_size, batch->ep);
                 _serversend.push_back(*tosend);
                 server_enable(EPOLLOUT);
             }
@@ -101,7 +110,7 @@ ServerSendList::ServerSendList(ServerSendList::packet_list &&pkts, ClientEndpoin
         });
 }
 
-int Worker::server_send(ServerSendList *list) {
+int Worker::server_send_list(ServerSendList *list) {
     while (list->pos < list->mh.size()) {
         auto ret = sendmmsg(_arg.server->fd(), &list->mh[list->pos], list->mh.size() - list->pos, 0);
         if (ret < 0)
@@ -115,12 +124,12 @@ int Worker::server_send(ServerSendList *list) {
 int Worker::do_server_send_step(ServerSendBase *send) {
     if (typeid(*send) == typeid(ServerSendBatch)) {
         auto batch = static_cast<ServerSendBatch *>(send);
-        auto ret = server_send(batch->buf, batch->segment_size, batch->ep, false);
+        auto ret = server_send_batch(batch);
         // TODO: update send position for this batch
         return ret;
     } else if (typeid(*send) == typeid(ServerSendList)) {
         auto list = static_cast<ServerSendList *>(send);
-        return server_send(list);
+        return server_send_list(list);
     } else {
         tdutil::unreachable();
     }

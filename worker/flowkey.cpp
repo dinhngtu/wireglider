@@ -76,23 +76,35 @@ static void append_flow(
     FlowKey<T> &fk,
     std::span<const uint8_t> pkthdr,
     std::span<const uint8_t> pktdata,
-    PacketFlags &flags) {
+    PacketFlags &flags,
+    uint32_t &udpid) {
     auto [it, usable] = find_flow(flow, fk, pktdata, flags);
     bool created;
     if (!usable) {
         // create a new flow
         if (!flags.istcp())
-            // udp: continue from last flow
-            fk.seq = (it != flow.end()) ? (it->first.seq + 1) : 0;
+            fk.seq = udpid++;
         flags.vnethdr.flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
-        if (flags.istcp())
+        if (flags.istcp()) {
             flags.vnethdr.gso_type = flags.isv6() ? VIRTIO_NET_HDR_GSO_TCPV6 : VIRTIO_NET_HDR_GSO_TCPV4;
-        else
+            if (IPTOS_ECN(fk.tos) == IPTOS_ECN_CE)
+                flags.vnethdr.gso_type |= VIRTIO_NET_HDR_GSO_ECN;
+        } else {
             flags.vnethdr.gso_type = VIRTIO_NET_HDR_GSO_UDP_L4;
+        }
         std::tie(it, created) = flow.emplace(fk, OwnedPacketBatch(pkthdr, size_t(4) * fk.segment_size, flags));
         assert(created);
     }
     it->second.append(pktdata);
+    if (it->second.flags.isv6()) {
+        auto ip6 = it->second.ip6hdr();
+        big_to_native_inplace(ip6->ip6_flow);
+        ip6->ip6_flow &= ~0xFF00000;
+        ip6->ip6_flow |= static_cast<uint32_t>(fk.tos) << 20;
+        native_to_big_inplace(ip6->ip6_flow);
+    } else {
+        it->second.ip4hdr()->tos = fk.tos;
+    }
     if (flags.istcp() && flags.ispsh()) {
         it->second.tcphdr()->psh |= 1;
         it->second.flags.ispsh() = true;
@@ -142,7 +154,7 @@ static std::pair<const ip6_hdr *, uint8_t> fill_fk_ip6(
     PacketFlags &flags) {
     auto ip = reinterpret_cast<const ip6_hdr *>(ippkt.data());
     auto rest = ippkt.subspan(sizeof(ip6_hdr));
-    if (rest.size() != big_to_native(ip->ip6_ctlun.ip6_un1.ip6_un1_plen))
+    if (rest.size() != big_to_native(ip->ip6_plen))
         return {nullptr, IPPROTO_RAW};
     flags.isv6() = true;
     flags.vnethdr.hdr_len = flags.vnethdr.csum_start = sizeof(ip6_hdr);
@@ -150,13 +162,36 @@ static std::pair<const ip6_hdr *, uint8_t> fill_fk_ip6(
     fk.dstip = ip->ip6_dst;
     fk.tos = (big_to_native(ip->ip6_flow) >> 20) & 0xff;
     fk.ttl = ip->ip6_hlim;
-    return std::make_pair(ip, ip->ip6_ctlun.ip6_un1.ip6_un1_nxt);
+    return std::make_pair(ip, ip->ip6_nxt);
 }
 
 template <auto F>
 using ip_header_of_t = std::remove_pointer_t<typename tdutil::result_type_t<decltype(F)>::first_type>;
 template <auto F>
 using address_type_of_t = std::remove_cvref_t<tdutil::first_argument_t<decltype(F)>>::address_type;
+
+template <typename T>
+static bool fill_fk_ecn(FlowKey<T> &fk, PacketFlags &flags, uint8_t ecn_outer) {
+    // RFC 6040 section 4.2
+    // ecnmap consists of groups of 4 bits indexed by inner (2 bits)||outer (2 bits) (see fig 4)
+    // each group is warn (2 bits)||resulting ecn (2 bits)
+    // warn 1 = (!), warn 2 = (!!!), warn 3 = drop
+    const uint64_t ecnmap = 0x3B3331223151F880;
+    uint8_t ecn_inner = IPTOS_ECN(fk.tos);
+    auto newecn = ecnmap >> (((ecn_inner << 2) | ecn_outer) * 4);
+    switch ((newecn >> 2) & 3) {
+    case 0:
+        break;
+    case 1:
+    case 2:
+        // might want to warn here
+        break;
+    case 3:
+        return false;
+    }
+    fk.tos = IPTOS_DSCP(fk.tos) | IPTOS_ECN(newecn);
+    return true;
+}
 
 template <typename T>
 static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> ippkt, PacketFlags &flags) {
@@ -205,7 +240,8 @@ template <auto fill_ip>
 static DecapBatch::Outcome evaluate_packet(
     std::span<const uint8_t> ippkt,
     FlowKey<address_type_of_t<fill_ip>> &fk,
-    PacketFlags &flags) {
+    PacketFlags &flags,
+    uint8_t ecn_outer) {
     if (ippkt.size() < sizeof(ip_header_of_t<fill_ip>))
         return GRO_NOADD;
     else if (ippkt.size() > UINT16_MAX)
@@ -214,6 +250,9 @@ static DecapBatch::Outcome evaluate_packet(
     auto [ip, proto] = fill_ip(fk, ippkt, flags);
     if (!ip)
         return GRO_NOADD;
+
+    if (!fill_fk_ecn(fk, flags, ecn_outer))
+        return GRO_DROP;
 
     switch (proto) {
     case IPPROTO_TCP: {
@@ -239,15 +278,17 @@ static DecapBatch::Outcome do_push_packet(
     std::span<const uint8_t> ippkt,
     FlowMap<address_type_of_t<fill_ip>> &tcpflow,
     FlowMap<address_type_of_t<fill_ip>> &udpflow,
-    std::deque<std::vector<uint8_t>> &unrel) {
+    std::deque<std::vector<uint8_t>> &unrel,
+    uint32_t &udpid,
+    uint8_t ecn_outer) {
     FlowKey<address_type_of_t<fill_ip>> fk{};
     PacketFlags flags;
-    auto res = evaluate_packet<fill_ip>(ippkt, fk, flags);
+    auto res = evaluate_packet<fill_ip>(ippkt, fk, flags, ecn_outer);
     switch (res) {
     case GRO_ADD: {
         auto pkthdr = ippkt.subspan(0, flags.vnethdr.hdr_len);
         auto pktdata = ippkt.subspan(flags.vnethdr.hdr_len);
-        append_flow(flags.istcp() ? tcpflow : udpflow, fk, pkthdr, pktdata, flags);
+        append_flow(flags.istcp() ? tcpflow : udpflow, fk, pkthdr, pktdata, flags, udpid);
         break;
     }
     case GRO_NOADD:
@@ -259,22 +300,22 @@ static DecapBatch::Outcome do_push_packet(
     return res;
 }
 
-DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<const uint8_t> ippkt) {
-    return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel);
+DecapBatch::Outcome DecapBatch::push_packet_v4(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
+    return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel, udpid, ecn_outer);
 }
 
-DecapBatch::Outcome DecapBatch::push_packet_v6(std::span<const uint8_t> ippkt) {
-    return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel);
+DecapBatch::Outcome DecapBatch::push_packet_v6(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
+    return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel, udpid, ecn_outer);
 }
 
-DecapBatch::Outcome DecapBatch::push_packet(std::span<const uint8_t> ippkt) {
+DecapBatch::Outcome DecapBatch::push_packet(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
     if (ippkt.size() < sizeof(struct ip))
         return GRO_NOADD;
     auto ip = reinterpret_cast<const struct ip *>(ippkt.data());
     if (ip->ip_v == 4)
-        return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel);
+        return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel, udpid, ecn_outer);
     else
-        return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel);
+        return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel, udpid, ecn_outer);
 }
 
 void DecapBatch::aggregate_udp() {

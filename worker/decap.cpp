@@ -18,7 +18,7 @@ void Worker::do_server(epoll_event *ev) {
 
         {
             auto sendlist = new ServerSendList(std::move(batch->retpkt), crypt->second);
-            auto ret = server_send(sendlist);
+            auto ret = server_send_list(sendlist);
             if (is_eagain(ret)) {
                 _serversend.push_back(*sendlist);
                 server_enable(EPOLLOUT);
@@ -49,7 +49,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
     iovec iov{buf.data(), buf.size()};
     mh.msg_iov = &iov;
     mh.msg_iovlen = 1;
-    std::array<uint8_t, CMSG_LEN(sizeof(uint16_t))> _cm;
+    std::array<uint8_t, CMSG_SPACE(sizeof(uint16_t)) + CMSG_SPACE(sizeof(uint8_t))> _cm;
     mh.msg_control = _cm.data();
     mh.msg_controllen = _cm.size();
 
@@ -60,11 +60,12 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
     }
 
     size_t gro_size = static_cast<size_t>(bytes);
+    uint8_t ecn = 0;
     for (auto cm = CMSG_FIRSTHDR(&mh); cm; cm = CMSG_NXTHDR(&mh, cm)) {
-        if (cm->cmsg_type == UDP_GRO) {
+        if (cm->cmsg_type == UDP_GRO)
             gro_size = *reinterpret_cast<const uint16_t *>(CMSG_DATA(cm));
-            break;
-        }
+        else if (cm->cmsg_type == IP_TOS)
+            ecn = *reinterpret_cast<const uint8_t *>(CMSG_DATA(cm));
     }
 
     ClientEndpoint ep;
@@ -82,6 +83,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
         .data = {buf.data(), iov.iov_len},
         .segment_size = gro_size,
         .isv6 = isv6,
+        .ecn = ecn,
     };
     return std::make_pair(pb, ep);
 }
@@ -129,12 +131,12 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
             switch (result.op) {
             case WRITE_TO_TUNNEL_IPV4: {
                 auto outpkt = std::span(&scratch[0], &scratch[result.size]);
-                batch.push_packet_v4(outpkt);
+                batch.push_packet_v4(outpkt, pb.ecn);
                 break;
             }
             case WRITE_TO_TUNNEL_IPV6: {
                 auto outpkt = std::span(&scratch[0], &scratch[result.size]);
-                batch.push_packet_v6(outpkt);
+                batch.push_packet_v6(outpkt, pb.ecn);
                 break;
             }
             case WRITE_TO_NETWORK: {

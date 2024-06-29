@@ -33,7 +33,11 @@ void Worker::do_tun(epoll_event *ev) {
         if (!crypt)
             return;
 
-        auto ret = server_send(crypt->first.data, crypt->first.segment_size, crypt->second, true);
+        ServerSendBatch batch;
+        batch.ep = crypt->second;
+        batch.segment_size = crypt->first.segment_size;
+        batch.ecn = crypt->first.ecn;
+        auto ret = server_send_batch(&batch, crypt->first.data);
         if (ret < 0 && !is_eagain(-ret))
             fmt::print("do_server_send: {}\n", strerrordesc_np(ret));
     }
@@ -105,6 +109,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
         .data = std::span(outbuf.data(), outbuf.size() - remain.size()),
         .segment_size = crypted_segment_size,
         .isv6 = pb.isv6,
+        .ecn = pb.ecn,
     };
     return std::make_pair(newpb, client->_cds_lfht_key);
 }

@@ -48,6 +48,10 @@ private:
         int gro = 1;
         if (setsockopt(_sock, SOL_UDP, UDP_GRO, &gro, sizeof(gro)) < 0)
             throw std::system_error(errno, std::system_category(), "setsockopt(UDP_GRO)");
+
+        int tos = 1;
+        if (setsockopt(_sock, SOL_IP, IP_RECVTOS, &tos, sizeof(tos)) < 0)
+            throw std::system_error(errno, std::system_category(), "setsockopt(IP_RECVTOS)");
     }
 
 private:

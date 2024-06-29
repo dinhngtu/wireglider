@@ -49,8 +49,13 @@ namespace wgss::worker_impl {
 PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr) {
     auto l4_csum_offset = vnethdr.csum_start + vnethdr.csum_offset;
     auto isv6 = reinterpret_cast<struct ip *>(inbuf.data())->ip_v == 6;
+    uint8_t ecn;
+    if (isv6)
+        ecn = IPTOS_ECN(reinterpret_cast<ip6_hdr *>(inbuf.data())->ip6_flow >> 20);
+    else
+        ecn = IPTOS_ECN(reinterpret_cast<struct ip *>(inbuf.data())->ip_tos);
 
-    switch (vnethdr.gso_type) {
+    switch (vnethdr.gso_type & ~VIRTIO_NET_HDR_GSO_ECN) {
     case VIRTIO_NET_HDR_GSO_NONE:
         if (vnethdr.flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) {
             // clear ipv4 header checksum
@@ -68,6 +73,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
             .data = inbuf,
             .segment_size = inbuf.size(),
             .isv6 = isv6,
+            .ecn = ecn,
         };
     case VIRTIO_NET_HDR_GSO_TCPV4:
     case VIRTIO_NET_HDR_GSO_TCPV6: {
@@ -82,6 +88,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
                 .data = inbuf,
                 .segment_size = inbuf.size(),
                 .isv6 = isv6,
+                .ecn = ecn,
             };
         }
         auto thlen = 4u * reinterpret_cast<tcphdr *>(&inbuf[vnethdr.csum_start])->doff;
@@ -92,6 +99,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
                 .data = inbuf,
                 .segment_size = inbuf.size(),
                 .isv6 = isv6,
+                .ecn = ecn,
             };
         }
         vnethdr.hdr_len = vnethdr.csum_start + thlen;
@@ -107,6 +115,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
             .data = inbuf,
             .segment_size = inbuf.size(),
             .isv6 = isv6,
+            .ecn = ecn,
         };
     }
 
@@ -117,6 +126,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
             .data = inbuf,
             .segment_size = inbuf.size(),
             .isv6 = isv6,
+            .ecn = ecn,
         };
     }
 
@@ -196,6 +206,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
         .data = std::span(outbuf.begin(), pbsize),
         .segment_size = prefix.size() + vnethdr.gso_size,
         .isv6 = isv6,
+        .ecn = ecn,
     };
 }
 

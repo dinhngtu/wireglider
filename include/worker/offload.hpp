@@ -11,6 +11,7 @@ struct PacketBatch {
     std::span<uint8_t> data;
     size_t segment_size;
     bool isv6;
+    uint8_t ecn;
     constexpr size_t nr_segments() {
         return tdutil::round_up(data.size(), segment_size) / segment_size;
     }
