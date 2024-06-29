@@ -14,8 +14,9 @@ static const IPv6Address ip6a("2001:db8::1"), ip6b("2001:db8::2"), ip6c("2001:db
 static void push_one(
     worker_impl::DecapBatch &batch,
     std::vector<uint8_t> pkt,
-    worker_impl::DecapBatch::Outcome outcome = GRO_ADD) {
-    auto res = batch.push_packet(std::span<const uint8_t>(pkt));
+    worker_impl::DecapBatch::Outcome outcome = GRO_ADD,
+    uint8_t ecn_outer = 0) {
+    auto res = batch.push_packet(std::span<const uint8_t>(pkt), ecn_outer);
     REQUIRE(res == outcome);
 }
 
@@ -122,14 +123,18 @@ TEST_CASE("DecapBatch multiple protocols and flows") {
 
     REQUIRE(batch.udp4.size() == 2);
     {
-        auto fk = make_fk(ip4a, ip4b, 0);
-        auto it = batch.udp4.lower_bound(fk);
-        REQUIRE(it != batch.udp4.end());
-        check_flow(it, ip4a, ip4b, 0, 2);
-
-        REQUIRE(it != batch.udp4.begin());
-        it--;
-        check_flow(it, ip4a, ip4c, 1, 1);
+        {
+            auto fk = make_fk(ip4a, ip4b, UINT32_MAX);
+            auto it = batch.udp4.upper_bound(fk);
+            REQUIRE(it != batch.udp4.end());
+            check_flow_udp(it, ip4a, ip4b, 2);
+        }
+        {
+            auto fk = make_fk(ip4a, ip4c, UINT32_MAX);
+            auto it = batch.udp4.upper_bound(fk);
+            REQUIRE(it != batch.udp4.end());
+            check_flow_udp(it, ip4a, ip4c, 1);
+        }
     }
 
     REQUIRE(batch.tcp6.size() == 2);
@@ -146,10 +151,10 @@ TEST_CASE("DecapBatch multiple protocols and flows") {
 
     REQUIRE(batch.udp6.size() == 1);
     {
-        auto fk = make_fk(ip6a, ip6b, 0);
-        auto it = batch.udp6.lower_bound(fk);
+        auto fk = make_fk(ip6a, ip6b, UINT32_MAX);
+        auto it = batch.udp6.upper_bound(fk);
         REQUIRE(it != batch.udp6.end());
-        check_flow(it, ip6a, ip6b, 0, 2);
+        check_flow_udp(it, ip6a, ip6b, 2);
     }
 }
 
@@ -210,7 +215,7 @@ TEST_CASE("DecapBatch coalesceItemInvalidCSum") {
     REQUIRE(batch.tcp4.size() == 1);
     {
         auto fk = make_fk(ip4a, ip4b, UINT32_MAX);
-        auto it = batch.tcp4.lower_bound(fk);
+        auto it = batch.tcp4.upper_bound(fk);
         REQUIRE(it != batch.tcp4.end());
         check_flow(it, ip4a, ip4b, 101, 2);
     }
@@ -218,9 +223,9 @@ TEST_CASE("DecapBatch coalesceItemInvalidCSum") {
     REQUIRE(batch.udp4.size() == 1);
     {
         auto fk = make_fk(ip4a, ip4b, UINT32_MAX);
-        auto it = batch.udp4.lower_bound(fk);
+        auto it = batch.udp4.upper_bound(fk);
         REQUIRE(it != batch.udp4.end());
-        check_flow(it, ip4a, ip4b, 0, 2);
+        check_flow_udp(it, ip4a, ip4b, 2);
     }
 
     REQUIRE(batch.unrel.size() == 2);
@@ -268,26 +273,36 @@ TEST_CASE("DecapBatch unequal TTL") {
 
     REQUIRE(batch.tcp4.size() == 2);
     {
-        auto fk = make_fk(ip4a, ip4b, 1);
-        auto it = batch.tcp4.lower_bound(fk);
-        REQUIRE(it != batch.tcp4.end());
-        check_flow(it, ip4a, ip4b, 1, 1);
-
-        REQUIRE(it != batch.tcp4.begin());
-        it--;
-        check_flow(it, ip4a, ip4b, 101, 1);
+        {
+            auto fk = make_fk(ip4a, ip4b, 1);
+            auto it = batch.tcp4.lower_bound(fk);
+            REQUIRE(it != batch.tcp4.end());
+            check_flow(it, ip4a, ip4b, 1, 1);
+        }
+        {
+            auto fk = make_fk(ip4a, ip4b, 101);
+            fk.ttl = 65;
+            auto it = batch.tcp4.lower_bound(fk);
+            REQUIRE(it != batch.tcp4.end());
+            check_flow(it, ip4a, ip4b, 101, 1);
+        }
     }
 
     REQUIRE(batch.udp4.size() == 2);
     {
-        auto fk = make_fk(ip4a, ip4b, 0);
-        auto it = batch.udp4.lower_bound(fk);
-        REQUIRE(it != batch.udp4.end());
-        check_flow_udp(it, ip4a, ip4b, 1);
-
-        REQUIRE(it != batch.udp4.begin());
-        it--;
-        check_flow_udp(it, ip4a, ip4b, 1);
+        {
+            auto fk = make_fk(ip4a, ip4b, UINT32_MAX);
+            auto it = batch.udp4.upper_bound(fk);
+            REQUIRE(it != batch.udp4.end());
+            check_flow_udp(it, ip4a, ip4b, 1);
+        }
+        {
+            auto fk = make_fk(ip4a, ip4b, UINT32_MAX);
+            fk.ttl = 65;
+            auto it = batch.udp4.upper_bound(fk);
+            REQUIRE(it != batch.udp4.end());
+            check_flow_udp(it, ip4a, ip4b, 1);
+        }
     }
 }
 
@@ -301,26 +316,36 @@ TEST_CASE("DecapBatch unequal ToS") {
 
     REQUIRE(batch.tcp4.size() == 2);
     {
-        auto fk = make_fk(ip4a, ip4b, 1);
-        auto it = batch.tcp4.lower_bound(fk);
-        REQUIRE(it != batch.tcp4.end());
-        check_flow(it, ip4a, ip4b, 1, 1);
-
-        REQUIRE(it != batch.tcp4.begin());
-        it--;
-        check_flow(it, ip4a, ip4b, 101, 1);
+        {
+            auto fk = make_fk(ip4a, ip4b, 1);
+            auto it = batch.tcp4.lower_bound(fk);
+            REQUIRE(it != batch.tcp4.end());
+            check_flow(it, ip4a, ip4b, 1, 1);
+        }
+        {
+            auto fk = make_fk(ip4a, ip4b, 101);
+            fk.tos = 1;
+            auto it = batch.tcp4.lower_bound(fk);
+            REQUIRE(it != batch.tcp4.end());
+            check_flow(it, ip4a, ip4b, 101, 1);
+        }
     }
 
     REQUIRE(batch.udp4.size() == 2);
     {
-        auto fk = make_fk(ip4a, ip4b, 0);
-        auto it = batch.udp4.lower_bound(fk);
-        REQUIRE(it != batch.udp4.end());
-        check_flow_udp(it, ip4a, ip4b, 1);
-
-        REQUIRE(it != batch.udp4.begin());
-        it--;
-        check_flow_udp(it, ip4a, ip4b, 1);
+        {
+            auto fk = make_fk(ip4a, ip4b, UINT32_MAX);
+            auto it = batch.udp4.upper_bound(fk);
+            REQUIRE(it != batch.udp4.end());
+            check_flow_udp(it, ip4a, ip4b, 1);
+        }
+        {
+            auto fk = make_fk(ip4a, ip4b, UINT32_MAX);
+            fk.tos = 1;
+            auto it = batch.udp4.upper_bound(fk);
+            REQUIRE(it != batch.udp4.end());
+            check_flow_udp(it, ip4a, ip4b, 1);
+        }
     }
 }
 
@@ -392,26 +417,36 @@ TEST_CASE("DecapBatch ipv6 unequal hop limit") {
 
     REQUIRE(batch.tcp6.size() == 2);
     {
-        auto fk = make_fk(ip6a, ip6b, 1);
-        auto it = batch.tcp6.lower_bound(fk);
-        REQUIRE(it != batch.tcp6.end());
-        check_flow(it, ip6a, ip6b, 1, 1);
-
-        REQUIRE(it != batch.tcp6.begin());
-        it--;
-        check_flow(it, ip6a, ip6b, 101, 1);
+        {
+            auto fk = make_fk(ip6a, ip6b, 1);
+            auto it = batch.tcp6.lower_bound(fk);
+            REQUIRE(it != batch.tcp6.end());
+            check_flow(it, ip6a, ip6b, 1, 1);
+        }
+        {
+            auto fk = make_fk(ip6a, ip6b, 101);
+            fk.ttl = 65;
+            auto it = batch.tcp6.lower_bound(fk);
+            REQUIRE(it != batch.tcp6.end());
+            check_flow(it, ip6a, ip6b, 101, 1);
+        }
     }
 
     REQUIRE(batch.udp6.size() == 2);
     {
-        auto fk = make_fk(ip6a, ip6b, 0);
-        auto it = batch.udp6.lower_bound(fk);
-        REQUIRE(it != batch.udp6.end());
-        check_flow_udp(it, ip6a, ip6b, 1);
-
-        REQUIRE(it != batch.udp6.begin());
-        it--;
-        check_flow_udp(it, ip6a, ip6b, 1);
+        {
+            auto fk = make_fk(ip6a, ip6b, UINT32_MAX);
+            auto it = batch.udp6.upper_bound(fk);
+            REQUIRE(it != batch.udp6.end());
+            check_flow_udp(it, ip6a, ip6b, 1);
+        }
+        {
+            auto fk = make_fk(ip6a, ip6b, UINT32_MAX);
+            fk.ttl = 65;
+            auto it = batch.udp6.upper_bound(fk);
+            REQUIRE(it != batch.udp6.end());
+            check_flow_udp(it, ip6a, ip6b, 1);
+        }
     }
 }
 
@@ -427,26 +462,36 @@ TEST_CASE("DecapBatch ipv6 unequal traffic class") {
 
     REQUIRE(batch.tcp6.size() == 2);
     {
-        auto fk = make_fk(ip6a, ip6b, 1);
-        auto it = batch.tcp6.lower_bound(fk);
-        REQUIRE(it != batch.tcp6.end());
-        check_flow(it, ip6a, ip6b, 1, 1);
-
-        REQUIRE(it != batch.tcp6.begin());
-        it--;
-        check_flow(it, ip6a, ip6b, 101, 1);
+        {
+            auto fk = make_fk(ip6a, ip6b, 1);
+            auto it = batch.tcp6.lower_bound(fk);
+            REQUIRE(it != batch.tcp6.end());
+            check_flow(it, ip6a, ip6b, 1, 1);
+        }
+        {
+            auto fk = make_fk(ip6a, ip6b, 101);
+            fk.tos = 1;
+            auto it = batch.tcp6.lower_bound(fk);
+            REQUIRE(it != batch.tcp6.end());
+            check_flow(it, ip6a, ip6b, 101, 1);
+        }
     }
 
     REQUIRE(batch.udp6.size() == 2);
     {
-        auto fk = make_fk(ip6a, ip6b, 0);
-        auto it = batch.udp6.lower_bound(fk);
-        REQUIRE(it != batch.udp6.end());
-        check_flow_udp(it, ip6a, ip6b, 1);
-
-        REQUIRE(it != batch.udp6.begin());
-        it--;
-        check_flow_udp(it, ip6a, ip6b, 1);
+        {
+            auto fk = make_fk(ip6a, ip6b, UINT32_MAX);
+            auto it = batch.udp6.upper_bound(fk);
+            REQUIRE(it != batch.udp6.end());
+            check_flow_udp(it, ip6a, ip6b, 1);
+        }
+        {
+            auto fk = make_fk(ip6a, ip6b, UINT32_MAX);
+            fk.tos = 1;
+            auto it = batch.udp6.upper_bound(fk);
+            REQUIRE(it != batch.udp6.end());
+            check_flow_udp(it, ip6a, ip6b, 1);
+        }
     }
 }
 
