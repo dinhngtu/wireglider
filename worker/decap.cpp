@@ -1,4 +1,5 @@
 #include "worker.hpp"
+#include "ancillary.hpp"
 
 using namespace wgss::worker_impl;
 
@@ -49,9 +50,9 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
     iovec iov{buf.data(), buf.size()};
     mh.msg_iov = &iov;
     mh.msg_iovlen = 1;
-    std::array<uint8_t, CMSG_SPACE(sizeof(uint16_t)) + CMSG_SPACE(sizeof(uint8_t))> _cm;
-    mh.msg_control = _cm.data();
-    mh.msg_controllen = _cm.size();
+
+    AncillaryData<uint16_t, uint8_t> ad;
+    ad.set(mh);
 
     auto bytes = recvmsg(_arg.server->fd(), &mh, 0);
     if (bytes < 0) {
@@ -63,7 +64,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
     uint8_t ecn = 0;
     for (auto cm = CMSG_FIRSTHDR(&mh); cm; cm = CMSG_NXTHDR(&mh, cm)) {
         if (cm->cmsg_type == UDP_GRO)
-            gro_size = *reinterpret_cast<const uint16_t *>(CMSG_DATA(cm));
+            gro_size = *reinterpret_cast<const int *>(CMSG_DATA(cm));
         else if (cm->cmsg_type == IP_TOS)
             ecn = *reinterpret_cast<const uint8_t *>(CMSG_DATA(cm));
     }

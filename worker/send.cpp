@@ -3,6 +3,7 @@
 #include <fmt/format.h>
 
 #include "worker.hpp"
+#include "ancillary.hpp"
 
 using namespace boost::endian;
 using namespace wgss::worker_impl;
@@ -39,24 +40,13 @@ int Worker::server_send_batch(ServerSendBatch *batch, std::span<uint8_t> data, b
         mh.msg_namelen = sizeof(sockaddr_in);
     }
     mh.msg_iovlen = 1;
-    std::array<uint8_t, CMSG_SPACE(sizeof(uint16_t)) + CMSG_SPACE(sizeof(uint8_t))> _cm;
-    mh.msg_control = _cm.data();
-    mh.msg_controllen = _cm.size();
 
-    auto cm = CMSG_FIRSTHDR(&mh);
-    cm->cmsg_level = SOL_UDP;
-    cm->cmsg_type = UDP_SEGMENT;
-    cm->cmsg_len = CMSG_LEN(sizeof(uint16_t));
-    *reinterpret_cast<uint16_t *>(CMSG_DATA(cm)) = batch->segment_size;
-
-    // RFC 6040
-    cm = CMSG_NXTHDR(&mh, cm);
-    cm->cmsg_level = SOL_IP;
-    cm->cmsg_type = IP_TOS;
-    cm->cmsg_len = CMSG_LEN(sizeof(uint8_t));
+    AncillaryData<uint16_t, uint8_t> cm;
+    cm.set(mh);
+    cm.setmsg<0>(SOL_UDP, UDP_SEGMENT, batch->segment_size);
     // batch->ecn is set all the way from do_tun_gso_split()
     // it only contains the lower ECN bits and not DSCP per WG spec
-    *reinterpret_cast<uint8_t *>(CMSG_DATA(cm)) = batch->ecn;
+    cm.setmsg<1>(SOL_IP, IP_TOS, batch->ecn);
 
     while (!data.empty()) {
         iovec iov{data.data(), data.size()};
