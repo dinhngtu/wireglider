@@ -10,6 +10,8 @@ namespace worker_impl {
 
 // returns -errno
 static int write_opb(int fd, OwnedPacketBatch &opb) {
+    if (!opb.count)
+        return 0;
     std::array<iovec, 3> iov = {
         iovec{&opb.flags.vnethdr, sizeof(opb.flags.vnethdr)},
         iovec{opb.hdrbuf.data(), opb.hdrbuf.size()},
@@ -60,13 +62,17 @@ void Worker::do_tun_write_batch(worker_impl::DecapBatch &batch) {
     auto ret = worker_impl::do_tun_write_batch(_arg.tun->fd(), batch);
     if (is_eagain(ret)) {
         for (auto &flow : batch.tcp4)
-            _tunwrite.emplace_back(std::move(flow.second));
+            if (flow.second.count)
+                _tunwrite.emplace_back(std::move(flow.second));
         for (auto &flow : batch.udp4)
-            _tunwrite.emplace_back(std::move(flow.second));
+            if (flow.second.count)
+                _tunwrite.emplace_back(std::move(flow.second));
         for (auto &flow : batch.tcp6)
-            _tunwrite.emplace_back(std::move(flow.second));
+            if (flow.second.count)
+                _tunwrite.emplace_back(std::move(flow.second));
         for (auto &flow : batch.udp6)
-            _tunwrite.emplace_back(std::move(flow.second));
+            if (flow.second.count)
+                _tunwrite.emplace_back(std::move(flow.second));
         tun_enable(EPOLLOUT);
     }
 }
