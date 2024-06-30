@@ -39,11 +39,7 @@ TEST_CASE("ancillary") {
 
     AncillaryData<uint16_t, uint8_t> cm2(mh);
     cm2.set<0>(SOL_UDP, UDP_SEGMENT, 1234);
-    // batch->ecn is set all the way from do_tun_gso_split()
-    // it only contains the lower ECN bits and not DSCP per WG spec
     cm2.set<1>(SOL_IP, IP_TOS, 1);
 
-    REQUIRE(
-        std::lexicographical_compare_three_way(std::begin(_cm.arr), std::end(_cm.arr), cm2.begin(), cm2.end()) ==
-        std::strong_ordering::equal);
+    REQUIRE(std::equal(_cm.arr.begin(), _cm.arr.end(), cm2.begin(), cm2.end()));
 }

@@ -50,7 +50,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
     iovec iov{buf.data(), buf.size()};
     mh.msg_iov = &iov;
     mh.msg_iovlen = 1;
-    AncillaryData<uint16_t, uint8_t> ad(mh);
+    AncillaryData<uint16_t, uint8_t> _cm(mh);
 
     auto bytes = recvmsg(_arg.server->fd(), &mh, 0);
     if (bytes < 0) {
