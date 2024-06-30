@@ -103,7 +103,7 @@ static void append_flow(
         ip6->ip6_flow |= static_cast<uint32_t>(fk.tos) << 20;
         native_to_big_inplace(ip6->ip6_flow);
     } else {
-        it->second.ip4hdr()->tos = fk.tos;
+        it->second.ip4hdr()->ip_tos = fk.tos;
     }
     if (flags.istcp() && flags.ispsh()) {
         it->second.tcphdr()->psh |= 1;
