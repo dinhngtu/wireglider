@@ -41,12 +41,11 @@ int Worker::server_send_batch(ServerSendBatch *batch, std::span<uint8_t> data, b
     }
     mh.msg_iovlen = 1;
 
-    AncillaryData<uint16_t, uint8_t> cm;
-    cm.set(mh);
-    cm.setmsg<0>(SOL_UDP, UDP_SEGMENT, batch->segment_size);
+    AncillaryData<uint16_t, uint8_t> cm(mh);
+    cm.set<0>(SOL_UDP, UDP_SEGMENT, batch->segment_size);
     // batch->ecn is set all the way from do_tun_gso_split()
     // it only contains the lower ECN bits and not DSCP per WG spec
-    cm.setmsg<1>(SOL_IP, IP_TOS, batch->ecn);
+    cm.set<1>(SOL_IP, IP_TOS, batch->ecn);
 
     while (!data.empty()) {
         iovec iov{data.data(), data.size()};

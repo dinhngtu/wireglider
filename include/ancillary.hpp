@@ -43,13 +43,16 @@ public:
         return (space_one<Ts>() + ... + 0);
     }
 
-    void set(msghdr &mh) {
+    constexpr AncillaryData() {
+    }
+
+    constexpr explicit AncillaryData(msghdr &mh) {
         mh.msg_control = _storage.data();
         mh.msg_controllen = _storage.size();
     }
 
     template <size_t Idx>
-    void setmsg(int level, int type, const type_at<Idx> &val) {
+    void set(int level, int type, const type_at<Idx> &val) {
         size_t off = calc_off<Idx>();
         cmsghdr *cm = reinterpret_cast<cmsghdr *>(&_storage[off]);
         cm->cmsg_level = level;
