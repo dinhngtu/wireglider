@@ -17,29 +17,30 @@
 namespace wgss::worker_impl {
 
 struct PacketFlags {
-    using type = std::bitset<3>;
-    virtio_net_hdr vnethdr;
-    type storage;
+    using flag_type = std::bitset<3>;
+    virtio_net_hdr vnethdr{};
+    flag_type storage;
     constexpr bool isv6() const {
         return storage[0];
     }
-    type::reference isv6() {
+    flag_type::reference isv6() {
         return storage[0];
     }
     constexpr bool istcp() const {
         return storage[1];
     }
-    type::reference istcp() {
+    flag_type::reference istcp() {
         return storage[1];
     }
     constexpr bool ispsh() const {
         return storage[2];
     }
-    type::reference ispsh() {
+    flag_type::reference ispsh() {
         return storage[2];
     }
 };
 
+// TODO: investigate arenas for OPBs to reduce allocator pressure
 struct OwnedPacketBatch {
     explicit OwnedPacketBatch() {
     }
@@ -47,6 +48,25 @@ struct OwnedPacketBatch {
         : hdrbuf(hdr.begin(), hdr.end()), flags(_flags) {
         buf.reserve(cap);
     }
+    OwnedPacketBatch(const OwnedPacketBatch &) = default;
+    OwnedPacketBatch &operator=(const OwnedPacketBatch &) = default;
+    OwnedPacketBatch(OwnedPacketBatch &&other) {
+        hdrbuf = std::move(other.hdrbuf);
+        buf = std::move(other.buf);
+        count = std::exchange(other.count, 0);
+        flags = other.flags;
+    }
+    OwnedPacketBatch &operator=(OwnedPacketBatch &&other) {
+        if (this != &other) {
+            hdrbuf = std::move(other.hdrbuf);
+            buf = std::move(other.buf);
+            count = std::exchange(other.count, 0);
+            flags = other.flags;
+        }
+        return *this;
+    }
+    ~OwnedPacketBatch() = default;
+
     void append(std::span<const uint8_t> data) {
         buf.insert(buf.end(), data.begin(), data.end());
         count++;
