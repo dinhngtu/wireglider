@@ -3,7 +3,8 @@
 *.d
 .vscode/*.log
 wgss
-tests/checksum
-tests/offload
-tests/endian
-tests/flowkey
+tests/test-checksum
+tests/test-offload
+tests/test-endian
+tests/test-flowkey
+tests/test-ancillary

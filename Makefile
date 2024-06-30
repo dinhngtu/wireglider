@@ -133,11 +133,11 @@ TARGETS=\
 	wgss \
 
 TESTS=\
-	tests/checksum \
-	tests/offload \
-	tests/endian \
-	tests/flowkey \
-	tests/ancillary \
+	tests/test-checksum \
+	tests/test-offload \
+	tests/test-endian \
+	tests/test-flowkey \
+	tests/test-ancillary \
 
 $(TESTS): CPPFLAGS+=$(CATCH_CPPFLAGS) $(TINS_CPPFLAGS)
 $(TESTS): CFLAGS+=-Wno-unused -Wno-shadow
@@ -172,11 +172,11 @@ $(TARGETS): %: %.cpp $(OBJ_MIMALLOC)
 $(TESTS): %: %.cpp
 	$(LINK.cpp) $< $(filter %.o,$^) $(LOADLIBES) $(LDLIBS) -o $@
 
-tests/checksum: checksum.o
+tests/test-checksum: checksum.o
 
-tests/offload: worker/offload.o checksum.o
+tests/test-offload: worker/offload.o checksum.o
 
-tests/flowkey: worker/flowkey.o checksum.o
+tests/test-flowkey: worker/flowkey.o checksum.o
 
 liblinux/xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 

@@ -495,6 +495,8 @@ TEST_CASE("DecapBatch ipv6 unequal traffic class") {
     }
 }
 
+// TODO: ECN tests
+
 TEST_CASE("DecapBatch invalid packets") {
     auto tcp4 = make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1);
     auto udp4 = make_udp<IP>(ip4a, 1, ip4b, 1, 100);
