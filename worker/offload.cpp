@@ -51,7 +51,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
     auto isv6 = reinterpret_cast<struct ip *>(inbuf.data())->ip_v == 6;
     uint8_t ecn;
     if (isv6)
-        ecn = IPTOS_ECN(reinterpret_cast<ip6_hdr *>(inbuf.data())->ip6_flow >> 20);
+        ecn = IPTOS_ECN(big_to_native(reinterpret_cast<ip6_hdr *>(inbuf.data())->ip6_flow) >> 20);
     else
         ecn = IPTOS_ECN(reinterpret_cast<struct ip *>(inbuf.data())->ip_tos);
 
