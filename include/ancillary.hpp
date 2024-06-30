@@ -61,6 +61,14 @@ public:
         *reinterpret_cast<type_at<Idx> *>(CMSG_DATA(cm)) = val;
     }
 
+    constexpr std::array<uint8_t, space()>::const_iterator begin() const {
+        return _storage.begin();
+    }
+
+    constexpr std::array<uint8_t, space()>::const_iterator end() const {
+        return _storage.end();
+    }
+
 private:
     union {
         std::array<uint8_t, space()> _storage = {0};

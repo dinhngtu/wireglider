@@ -1,0 +1,49 @@
+#include <cassert>
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <algorithm>
+#include <tuple>
+
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include "ancillary.hpp"
+
+using namespace wgss;
+
+TEST_CASE("ancillary") {
+    msghdr mh;
+    union {
+        std::array<uint8_t, CMSG_SPACE(sizeof(uint16_t)) + CMSG_SPACE(sizeof(uint8_t))> arr;
+        cmsghdr align;
+    } _cm = {0};
+    mh.msg_control = _cm.arr.data();
+    mh.msg_controllen = _cm.arr.size();
+
+    auto cm = CMSG_FIRSTHDR(&mh);
+    cm->cmsg_level = SOL_UDP;
+    cm->cmsg_type = UDP_SEGMENT;
+    cm->cmsg_len = CMSG_LEN(sizeof(uint16_t));
+    *reinterpret_cast<uint16_t *>(CMSG_DATA(cm)) = 1234;
+
+    cm = CMSG_NXTHDR(&mh, cm);
+    cm->cmsg_level = SOL_IP;
+    cm->cmsg_type = IP_TOS;
+    cm->cmsg_len = CMSG_LEN(sizeof(uint8_t));
+    *reinterpret_cast<uint8_t *>(CMSG_DATA(cm)) = 1;
+
+    AncillaryData<uint16_t, uint8_t> cm2(mh);
+    cm2.set<0>(SOL_UDP, UDP_SEGMENT, 1234);
+    // batch->ecn is set all the way from do_tun_gso_split()
+    // it only contains the lower ECN bits and not DSCP per WG spec
+    cm2.set<1>(SOL_IP, IP_TOS, 1);
+
+    REQUIRE(
+        std::lexicographical_compare_three_way(std::begin(_cm.arr), std::end(_cm.arr), cm2.begin(), cm2.end()) ==
+        std::strong_ordering::equal);
+}
