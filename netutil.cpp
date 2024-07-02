@@ -2,6 +2,7 @@
 #include <regex>
 #include <stdexcept>
 #include <arpa/inet.h>
+#include <boost/algorithm/string.hpp>
 
 #include "netutil.hpp"
 
@@ -51,6 +52,26 @@ std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_ipport(const char 
         }
     }
     return {};
+}
+
+std::variant<std::monostate, std::pair<in_addr, unsigned int>, std::pair<in6_addr, unsigned int>> parse_iprange(
+    const char *str) {
+    std::string cidr(str);
+    std::vector<std::string> cidr_parts;
+    boost::split(cidr_parts, cidr, boost::is_any_of("/"));
+    if (cidr_parts.size() != 2)
+        return {};
+    unsigned int prefix = strtoul(cidr_parts[1].c_str(), nullptr, 10);
+    auto addr = parse_sockaddr(cidr_parts[0].c_str());
+    if (std::holds_alternative<sockaddr_in>(addr)) {
+        if (prefix > 32)
+            return {};
+    } else if (std::holds_alternative<sockaddr_in6>(addr)) {
+        if (prefix > 128)
+            return {};
+    } else {
+        return {};
+    }
 }
 
 } // namespace wireglider

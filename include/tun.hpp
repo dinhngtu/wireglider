@@ -73,6 +73,13 @@ public:
             throw std::system_error(errno, std::system_category(), "ioctl(SIOCSIFNETMASK)");
     }
 
+    void set_address(in_addr addr, uint32_t prefixlen) {
+        sockaddr_in sin;
+        sin.sin_family = AF_INET;
+        sin.sin_addr = addr;
+        set_address(sin, prefixlen);
+    }
+
     void set_address6(sockaddr_in6 sin6, uint32_t prefixlen) {
         auto tunsock = tdutil::FileDescriptor(socket(AF_INET6, SOCK_DGRAM, 0));
         tunsock.check();
@@ -84,6 +91,13 @@ public:
         ifr6.ifr6_ifindex = get_ifindex(tunsock);
         if (ioctl(tunsock, SIOCSIFADDR, &ifr6) < 0)
             throw std::system_error(errno, std::system_category(), "ioctl(SIOCSIFADDR)");
+    }
+
+    void set_address6(in6_addr addr, uint32_t prefixlen) {
+        sockaddr_in6 sin6;
+        sin6.sin6_family = AF_INET6;
+        sin6.sin6_addr = addr;
+        set_address6(sin6, prefixlen);
     }
 
     void set_up(bool up) {

@@ -186,10 +186,10 @@ liblinux/xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-fi
 liblinux/maple_tree.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
 run: wireglider
-	sudo ./$< -a 0.0.0.0 -A 10.77.44.1/24 -j 8
+	sudo ./$< -a 0.0.0.0:7744 -A 10.77.44.1/24 -j 8
 
 debug: wireglider
-	sudo gdb -ex "run -a 0.0.0.0 -A 10.77.44.1/24" ./$<
+	sudo gdb -ex "run -a 0.0.0.0:7744 -A 10.77.44.1/24" ./$<
 
 check: tests
 	@if (for test in $(TESTS); do echo $$test; $$test || exit; done); then \

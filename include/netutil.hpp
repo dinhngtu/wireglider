@@ -56,6 +56,8 @@ struct Ifr {
 
 std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_sockaddr(const char *str);
 std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_ipport(const char *str);
+std::variant<std::monostate, std::pair<in_addr, unsigned int>, std::pair<in6_addr, unsigned int>> parse_iprange(
+    const char *str);
 
 } // namespace wireglider
 
