@@ -4,7 +4,7 @@
 #include <span>
 #include <typeinfo>
 #include <sys/types.h>
-#include <signal.h>
+#include <csignal>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>

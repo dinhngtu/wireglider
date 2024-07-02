@@ -1,5 +1,5 @@
 #include <sys/types.h>
-#include <signal.h>
+#include <csignal>
 #include <unistd.h>
 #include <sys/uio.h>
 #include <fmt/format.h>

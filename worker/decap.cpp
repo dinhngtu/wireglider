@@ -1,5 +1,5 @@
 #include <sys/types.h>
-#include <signal.h>
+#include <csignal>
 
 #include "worker.hpp"
 #include "ancillary.hpp"

@@ -157,10 +157,9 @@ public:
         return it;
     }
 
-    void erase(iterator it) {
+    bool erase(iterator it) {
         auto err = cds_lfht_del(_tbl, it._iter.node);
-        if (err)
-            throw CdsException(err);
+        return err == 0;
     }
 
     V *extract([[maybe_unused]] const RundownGuard &rcu, const K &k) {
@@ -175,8 +174,7 @@ public:
 
     void erase_at([[maybe_unused]] const RundownGuard &rcu, V *v) {
         auto err = cds_lfht_del(_tbl, v->node(Tag{}));
-        if (err)
-            throw CdsException(err);
+        return err == 0;
     }
 
     bool is_erased([[maybe_unused]] const RundownGuard &rcu, V *v) {

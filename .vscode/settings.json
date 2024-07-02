@@ -84,6 +84,11 @@
         "valarray": "cpp",
         "netfwd": "cpp",
         "io_context": "cpp",
-        "executor": "cpp"
+        "executor": "cpp",
+        "cfenv": "cpp",
+        "charconv": "cpp",
+        "complex": "cpp",
+        "coroutine": "cpp",
+        "csignal": "cpp"
     }
 }
