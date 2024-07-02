@@ -2,7 +2,7 @@
 *.o
 *.d
 .vscode/*.log
-wgss
+wireglider
 tests/test-checksum
 tests/test-offload
 tests/test-endian

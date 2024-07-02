@@ -8,7 +8,7 @@
 #include <fmt/format.h>
 #include <boost/algorithm/string.hpp>
 
-#include "wgss.hpp"
+#include "wireglider.hpp"
 #include "tun.hpp"
 #include "udpsock.hpp"
 #include "worker.hpp"
@@ -26,11 +26,11 @@
  * - read udp -> decap -> write tun
  */
 
-using namespace wgss;
+using namespace wireglider;
 using namespace tdutil;
 
 static cxxopts::Options make_options() {
-    cxxopts::Options opt{"wgss"};
+    cxxopts::Options opt{"wireglider"};
     auto g = opt.add_options();
     g("a,listen-address", "listen address", cxxopts::value<std::string>());
     g("A,tunnel-address", "tunnel CIDR", cxxopts::value<std::string>());

@@ -7,7 +7,7 @@
 #include "worker.hpp"
 #include "netutil.hpp"
 
-namespace wgss {
+namespace wireglider {
 
 namespace worker_impl {
 
@@ -94,4 +94,4 @@ void Worker::do_tun_write() {
         server_disable(EPOLLIN);
 }
 
-} // namespace wgss
+} // namespace wireglider

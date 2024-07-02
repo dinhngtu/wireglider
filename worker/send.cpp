@@ -6,9 +6,9 @@
 #include "ancillary.hpp"
 
 using namespace boost::endian;
-using namespace wgss::worker_impl;
+using namespace wireglider::worker_impl;
 
-namespace wgss {
+namespace wireglider {
 
 void Worker::do_server_send() {
     while (!_serversend.empty()) {
@@ -121,4 +121,4 @@ outcome::result<void> Worker::do_server_send_step(ServerSendBase *send) {
     }
 }
 
-} // namespace wgss
+} // namespace wireglider

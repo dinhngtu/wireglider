@@ -10,10 +10,10 @@
 #include "checksum.hpp"
 
 using namespace boost::endian;
-using namespace wgss::worker_impl;
+using namespace wireglider::worker_impl;
 using enum DecapBatch::Outcome;
 
-namespace wgss::worker_impl {
+namespace wireglider::worker_impl {
 
 template <typename T>
 static std::pair<typename FlowMap<T>::iterator, bool> find_flow(
@@ -321,4 +321,4 @@ DecapBatch::Outcome DecapBatch::push_packet(std::span<const uint8_t> ippkt, uint
 void DecapBatch::aggregate_udp() {
 }
 
-} // namespace wgss::worker_impl
+} // namespace wireglider::worker_impl

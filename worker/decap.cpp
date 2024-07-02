@@ -4,9 +4,9 @@
 #include "worker.hpp"
 #include "ancillary.hpp"
 
-using namespace wgss::worker_impl;
+using namespace wireglider::worker_impl;
 
-namespace wgss {
+namespace wireglider {
 
 void Worker::do_server(epoll_event *ev) {
     if (ev->events & (EPOLLHUP | EPOLLERR)) {
@@ -165,4 +165,4 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
     return batch;
 }
 
-} // namespace wgss
+} // namespace wireglider

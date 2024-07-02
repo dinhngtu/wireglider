@@ -8,7 +8,7 @@
 
 #include "xxhash.h"
 
-namespace wgss {
+namespace wireglider {
 
 using ClientEndpoint = std::variant<sockaddr_in, sockaddr_in6>;
 
@@ -42,12 +42,12 @@ static inline std::strong_ordering operator<=>(const ClientEndpoint &a, const Cl
 
 // I swear that all of the crap above compiles down to fairly efficient code...
 
-} // namespace wgss
+} // namespace wireglider
 
 namespace std {
 template <>
-struct hash<wgss::ClientEndpoint> {
-    constexpr size_t operator()(const wgss::ClientEndpoint &a) const noexcept {
+struct hash<wireglider::ClientEndpoint> {
+    constexpr size_t operator()(const wireglider::ClientEndpoint &a) const noexcept {
         if (auto sin = std::get_if<sockaddr_in>(&a))
             return XXH3_64bits(sin, offsetof(sockaddr_in, sin_zero));
         else if (auto sin6 = std::get_if<sockaddr_in6>(&a))

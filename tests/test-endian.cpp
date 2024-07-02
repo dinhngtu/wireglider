@@ -2,7 +2,7 @@
 
 #include "endian.hpp"
 
-using namespace wgss;
+using namespace wireglider;
 using namespace boost::endian;
 
 TEST_CASE("large from small") {

@@ -11,7 +11,7 @@
 
 #include <tdutil/util.hpp>
 
-namespace wgss {
+namespace wireglider {
 
 struct Ifr {
     Ifr() {
@@ -57,7 +57,7 @@ struct Ifr {
 std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_sockaddr(const char *str);
 std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_ipport(const char *str);
 
-} // namespace wgss
+} // namespace wireglider
 
 static inline bool operator==(const sockaddr_in &a, const sockaddr_in &b) noexcept {
     return !memcmp(&a, &b, offsetof(sockaddr_in, sin_zero));

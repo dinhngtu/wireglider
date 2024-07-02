@@ -11,7 +11,7 @@ using namespace Tins;
 TEST_CASE("checksum") {
     auto size = GENERATE(Catch::Generators::range(1, 1501));
     auto pkt = create_packet(size);
-    auto csum = wgss::checksum(pkt, 0);
+    auto csum = wireglider::checksum(pkt, 0);
     auto ref1 = checksum_ref1(pkt.data(), pkt.size());
     auto ref2 = checksum_ref2(reinterpret_cast<uint16_t *>(pkt.data()), pkt.size());
     REQUIRE(ref1 == ref2);
@@ -21,7 +21,7 @@ TEST_CASE("checksum") {
 TEST_CASE("checksum_carry") {
     auto size = GENERATE(Catch::Generators::range(1, 64));
     auto pkt = create_packet_carry(size);
-    auto csum = wgss::checksum(pkt, 0);
+    auto csum = wireglider::checksum(pkt, 0);
     auto ref1 = checksum_ref1(pkt.data(), pkt.size());
     auto ref2 = checksum_ref2(reinterpret_cast<uint16_t *>(pkt.data()), pkt.size());
     REQUIRE(ref1 == ref2);
@@ -31,7 +31,7 @@ TEST_CASE("checksum_carry") {
 template <size_t O, size_t N>
 static inline void csum_test_sized(std::span<uint8_t> b) {
     std::span<const uint8_t, N> pkt = b.subspan<O, N>();
-    auto csum = fastcsum::fold_complement_checksum64(wgss::checksum_impl::checksum_nofold(pkt, 0));
+    auto csum = fastcsum::fold_complement_checksum64(wireglider::checksum_impl::checksum_nofold(pkt, 0));
     auto ref1 = checksum_ref1(pkt.data(), pkt.size());
     auto ref2 = checksum_ref2(reinterpret_cast<const uint16_t *>(pkt.data()), pkt.size());
     REQUIRE(ref1 == ref2);
@@ -69,7 +69,7 @@ void csum_test_l4() {
     RawPDU payload(create_packet(100));
     auto pkt = ip / l4 / payload;
     auto pkt_bytes = pkt.serialize();
-    REQUIRE(wgss::calc_l4_checksum(pkt_bytes, isv6, istcp, ip.header_size()) == 0);
+    REQUIRE(wireglider::calc_l4_checksum(pkt_bytes, isv6, istcp, ip.header_size()) == 0);
 }
 
 TEST_CASE("l4 checksum") {

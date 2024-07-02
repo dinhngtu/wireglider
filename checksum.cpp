@@ -3,7 +3,7 @@
 
 #include "checksum.hpp"
 
-namespace wgss {
+namespace wireglider {
 
 uint16_t calc_l4_checksum(std::span<const uint8_t> ippkt, bool isv6, bool istcp, uint16_t csum_start) {
     uint64_t l4_csum_tmp;
@@ -31,4 +31,4 @@ uint16_t calc_l4_checksum(std::span<const uint8_t> ippkt, bool isv6, bool istcp,
     return checksum(ippkt.subspan(csum_start), l4_csum_tmp);
 }
 
-} // namespace wgss
+} // namespace wireglider

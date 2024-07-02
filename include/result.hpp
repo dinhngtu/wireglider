@@ -5,7 +5,7 @@
 
 namespace outcome = BOOST_OUTCOME_V2_NAMESPACE;
 
-namespace wgss {
+namespace wireglider {
 
 static constexpr bool is_eagain(int e = errno) {
     return e == EAGAIN || e == EWOULDBLOCK;
@@ -22,4 +22,4 @@ static inline outcome::failure_type<std::error_code> check_eagain(int e = errno,
         throw std::system_error(e, std::system_category(), what);
 }
 
-} // namespace wgss
+} // namespace wireglider

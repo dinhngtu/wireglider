@@ -6,14 +6,14 @@
 #include <boost/endian.hpp>
 #include <fmt/format.h>
 
-#include "wgss.hpp"
+#include "wireglider.hpp"
 #include "worker.hpp"
 
 using namespace boost::endian;
 using namespace tdutil;
-using namespace wgss::worker_impl;
+using namespace wireglider::worker_impl;
 
-namespace wgss {
+namespace wireglider {
 
 void worker_func(WorkerArg arg) {
     Worker w(arg);
@@ -73,4 +73,4 @@ void Worker::run() {
     }
 }
 
-} // namespace wgss
+} // namespace wireglider

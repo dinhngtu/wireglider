@@ -6,7 +6,7 @@
 #include "endpoint.hpp"
 #include "client.hpp"
 
-namespace wgss {
+namespace wireglider {
 
 using ClientTable = CdsHashtable<x25519_key, Client::PubkeyTag, Client>;
 using EndpointTable = CdsHashtable<ClientEndpoint, Client::EndpointTag, Client>;
@@ -18,4 +18,4 @@ static inline void make_exit_sigset(sigset_t &sigs) {
         throw std::system_error(errno, std::system_category(), "sigset");
 }
 
-} // namespace wgss
+} // namespace wireglider

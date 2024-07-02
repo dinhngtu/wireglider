@@ -13,7 +13,7 @@
 
 #include <fastcsum.hpp>
 
-namespace wgss {
+namespace wireglider {
 
 namespace checksum_impl {
 
@@ -122,4 +122,4 @@ static inline uint16_t checksum(std::span<const uint8_t> b, uint64_t initial) {
 
 uint16_t calc_l4_checksum(std::span<const uint8_t> thispkt, bool isv6, bool istcp, uint16_t csum_start);
 
-} // namespace wgss
+} // namespace wireglider

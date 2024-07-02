@@ -4,9 +4,9 @@
 #include "packet_tests.hpp"
 #include "netutil.hpp"
 
-using namespace wgss;
+using namespace wireglider;
 using namespace Tins;
-using enum wgss::worker_impl::DecapBatch::Outcome;
+using enum wireglider::worker_impl::DecapBatch::Outcome;
 
 static const IPv4Address ip4a("192.0.2.1"), ip4b("192.0.2.2"), ip4c("192.0.2.3");
 static const IPv6Address ip6a("2001:db8::1"), ip6b("2001:db8::2"), ip6c("2001:db8::3");
@@ -58,7 +58,7 @@ static std::vector<uint8_t> flip_l4_csum(std::vector<uint8_t> pkt) {
     return pkt;
 }
 
-static inline wgss::worker_impl::FlowKey<in_addr> make_fk(
+static inline wireglider::worker_impl::FlowKey<in_addr> make_fk(
     Tins::IPv4Address ipsrc,
     Tins::IPv4Address ipdst,
     uint32_t seq = 0,
@@ -76,7 +76,7 @@ static inline wgss::worker_impl::FlowKey<in_addr> make_fk(
     };
 }
 
-static inline wgss::worker_impl::FlowKey<in6_addr> make_fk(
+static inline wireglider::worker_impl::FlowKey<in6_addr> make_fk(
     Tins::IPv6Address ipsrc,
     Tins::IPv6Address ipdst,
     uint32_t seq = 0,

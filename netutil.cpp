@@ -5,7 +5,7 @@
 
 #include "netutil.hpp"
 
-namespace wgss {
+namespace wireglider {
 
 std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_sockaddr(const char *str) {
     sockaddr_in sin{};
@@ -53,4 +53,4 @@ std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_ipport(const char 
     return {};
 }
 
-} // namespace wgss
+} // namespace wireglider

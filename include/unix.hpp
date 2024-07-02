@@ -10,7 +10,7 @@
 #include <fmt/format.h>
 #include <tdutil/fildes.hpp>
 
-namespace wgss {
+namespace wireglider {
 
 class UnixServer {
 public:
@@ -46,4 +46,4 @@ private:
     tdutil::FileDescriptor _sock;
 };
 
-} // namespace wgss
+} // namespace wireglider

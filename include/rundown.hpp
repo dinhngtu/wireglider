@@ -12,7 +12,7 @@
 #include <urcu/rculfhash.h>
 #pragma GCC diagnostic pop
 
-namespace wgss {
+namespace wireglider {
 
 class RundownGuard {
 public:
@@ -223,4 +223,4 @@ constexpr CdsHashtable<K, Tag, V>::iterator end(CdsHashtable<K, Tag, V> &ht) {
     return ht.end();
 }
 
-} // namespace wgss
+} // namespace wireglider

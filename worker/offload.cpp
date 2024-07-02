@@ -17,9 +17,9 @@
 #include "endian.hpp"
 
 using namespace boost::endian;
-using namespace wgss::worker_impl;
+using namespace wireglider::worker_impl;
 
-namespace wgss::worker_impl {
+namespace wireglider::worker_impl {
 
 /*
  * Parsing logic adapted from wireguard-go:
@@ -210,4 +210,4 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
     };
 }
 
-} // namespace wgss::worker_impl
+} // namespace wireglider::worker_impl

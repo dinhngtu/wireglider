@@ -4,16 +4,16 @@
 #include <sys/un.h>
 #include <fmt/format.h>
 
-#include "wgss.hpp"
+#include "wireglider.hpp"
 #include "result.hpp"
 #include "control.hpp"
 #include "netutil.hpp"
 #include "rundown.hpp"
 
 using namespace tdutil;
-using namespace wgss::control_impl;
+using namespace wireglider::control_impl;
 
-namespace wgss {
+namespace wireglider {
 
 void control_func(ControlArg arg) {
     ControlWorker w(arg);
@@ -206,4 +206,4 @@ void ControlWorker::do_cmd_set(ControlClient *client) {
     }
 }
 
-} // namespace wgss
+} // namespace wireglider

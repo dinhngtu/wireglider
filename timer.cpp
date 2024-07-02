@@ -3,15 +3,15 @@
 #include <sys/timerfd.h>
 #include <fmt/format.h>
 
-#include "wgss.hpp"
+#include "wireglider.hpp"
 #include "timer.hpp"
 #include "netutil.hpp"
 #include "rundown.hpp"
 
 using namespace tdutil;
-using namespace wgss::timer_impl;
+using namespace wireglider::timer_impl;
 
-namespace wgss {
+namespace wireglider {
 
 void timer_func(TimerArg arg) {
     TimerWorker w(arg);
@@ -148,4 +148,4 @@ void TimerWorker::update_period(bool overloaded, uint64_t elapsed) {
 }
  */
 
-} // namespace wgss
+} // namespace wireglider

@@ -16,9 +16,9 @@
 #include "worker.hpp"
 
 using namespace boost::endian;
-using namespace wgss::worker_impl;
+using namespace wireglider::worker_impl;
 
-namespace wgss {
+namespace wireglider {
 
 void Worker::do_tun(epoll_event *ev) {
     if (ev->events & (EPOLLHUP | EPOLLERR)) {
@@ -125,4 +125,4 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     return std::make_pair(newpb, client->epkey);
 }
 
-} // namespace wgss
+} // namespace wireglider

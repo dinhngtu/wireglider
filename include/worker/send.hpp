@@ -11,7 +11,7 @@
 
 #include "endpoint.hpp"
 
-namespace wgss::worker_impl {
+namespace wireglider::worker_impl {
 
 struct ServerSendBase : public boost::intrusive::list_base_hook<> {
     virtual ~ServerSendBase() {
@@ -53,4 +53,4 @@ struct ServerSendList : public ServerSendBase {
 
 using ServerSendQueue = boost::intrusive::list<worker_impl::ServerSendBase, boost::intrusive::constant_time_size<true>>;
 
-} // namespace wgss::worker_impl
+} // namespace wireglider::worker_impl

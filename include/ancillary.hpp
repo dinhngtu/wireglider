@@ -6,7 +6,7 @@
 #include <utility>
 #include <sys/socket.h>
 
-namespace wgss {
+namespace wireglider {
 
 template <typename... Ts>
 class AncillaryData {
@@ -76,4 +76,4 @@ private:
     };
 };
 
-} // namespace wgss
+} // namespace wireglider

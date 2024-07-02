@@ -7,11 +7,11 @@
 #include <tdutil/fildes.hpp>
 #include <tdutil/epollman.hpp>
 
-#include "wgss.hpp"
+#include "wireglider.hpp"
 #include "client.hpp"
 #include "maple_tree.hpp"
 
-namespace wgss {
+namespace wireglider {
 
 struct TimerArg {
     unsigned int id;
@@ -62,4 +62,4 @@ private:
 
 void timer_func(TimerArg arg);
 
-} // namespace wgss
+} // namespace wireglider

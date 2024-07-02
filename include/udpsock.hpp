@@ -7,7 +7,7 @@
 
 #include <tdutil/fildes.hpp>
 
-namespace wgss {
+namespace wireglider {
 
 class UdpServer {
 public:
@@ -59,4 +59,4 @@ private:
     tdutil::FileDescriptor _sock;
 };
 
-} // namespace wgss
+} // namespace wireglider

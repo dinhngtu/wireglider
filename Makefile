@@ -130,7 +130,7 @@ ifeq ($(HARDENING), 1)
 endif
 
 TARGETS=\
-	wgss \
+	wireglider \
 
 TESTS=\
 	tests/test-checksum \
@@ -185,10 +185,10 @@ liblinux/xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-fi
 
 liblinux/maple_tree.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
-run: wgss
+run: wireglider
 	sudo ./$< -a 0.0.0.0 -A 10.77.44.1/24 -j 8
 
-debug: wgss
+debug: wireglider
 	sudo gdb -ex "run -a 0.0.0.0 -A 10.77.44.1/24" ./$<
 
 check: tests

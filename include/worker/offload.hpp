@@ -4,7 +4,7 @@
 #include <vector>
 #include <span>
 
-namespace wgss::worker_impl {
+namespace wireglider::worker_impl {
 
 struct PacketBatch {
     std::span<uint8_t> prefix;
@@ -89,4 +89,4 @@ constexpr PacketBatch::iterator end(const PacketBatch &pb) {
 
 PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr);
 
-} // namespace wgss::worker_impl
+} // namespace wireglider::worker_impl

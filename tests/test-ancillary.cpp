@@ -14,7 +14,7 @@
 
 #include "ancillary.hpp"
 
-using namespace wgss;
+using namespace wireglider;
 
 TEST_CASE("ancillary") {
     msghdr mh;

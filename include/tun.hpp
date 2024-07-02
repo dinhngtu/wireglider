@@ -8,7 +8,7 @@
 #include <tdutil/fildes.hpp>
 #include "netutil.hpp"
 
-namespace wgss {
+namespace wireglider {
 
 class Tun {
 public:
@@ -128,4 +128,4 @@ private:
     std::string _name;
 };
 
-} // namespace wgss
+} // namespace wireglider

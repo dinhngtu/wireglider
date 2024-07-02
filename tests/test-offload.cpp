@@ -10,7 +10,7 @@
 #include "packet_tests.hpp"
 #include "netutil.hpp"
 
-using namespace wgss;
+using namespace wireglider;
 using namespace Tins;
 
 static const IPv4Address ip4a("192.0.2.1"), ip4b("192.0.2.2"), ip4c("192.0.2.3");

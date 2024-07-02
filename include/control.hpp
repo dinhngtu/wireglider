@@ -6,13 +6,13 @@
 #include <tdutil/auto_handle.hpp>
 #include <tdutil/srbuf.hpp>
 
-#include "wgss.hpp"
+#include "wireglider.hpp"
 #include "client.hpp"
 #include "unix.hpp"
 #include "maple_tree.hpp"
 #include "result.hpp"
 
-namespace wgss {
+namespace wireglider {
 
 struct ControlArg {
     unsigned int ntimers;
@@ -69,4 +69,4 @@ private:
 
 void control_func(ControlArg arg);
 
-} // namespace wgss
+} // namespace wireglider

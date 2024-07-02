@@ -8,7 +8,7 @@
 // be truncated, and things will explode.
 // thus the replacement functions.
 
-namespace wgss {
+namespace wireglider {
 
 template <typename TDest, typename TSrc>
 constexpr void assign_big_from_native(TDest &lhs, TSrc &&rhs) noexcept {
@@ -89,4 +89,4 @@ constexpr EndianVal<boost::endian::order::little, T> little_ref(const T &val) no
     return EndianVal<boost::endian::order::little, T>(val);
 }
 
-} // namespace wgss
+} // namespace wireglider

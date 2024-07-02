@@ -6,7 +6,7 @@
 #include <wireguard_ffi.h>
 #include <tdutil/epollman.hpp>
 
-#include "wgss.hpp"
+#include "wireglider.hpp"
 #include "result.hpp"
 #include "client.hpp"
 #include "tun.hpp"
@@ -18,7 +18,7 @@
 #include "worker/send.hpp"
 #include "worker/write.hpp"
 
-namespace wgss {
+namespace wireglider {
 
 struct WorkerArg {
     unsigned int id;
@@ -121,4 +121,4 @@ private:
 // this function forces all worker allocations to happen within its own thread
 void worker_func(WorkerArg arg);
 
-} // namespace wgss
+} // namespace wireglider

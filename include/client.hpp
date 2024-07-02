@@ -9,7 +9,7 @@
 #include "rundown.hpp"
 #include "endpoint.hpp"
 
-namespace wgss {
+namespace wireglider {
 
 using IpRange = std::variant<std::pair<in_addr, unsigned int>, std::pair<in6_addr, unsigned int>>;
 
@@ -55,7 +55,7 @@ struct Client {
     }
 };
 
-} // namespace wgss
+} // namespace wireglider
 
 namespace std {
 template <>

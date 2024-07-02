@@ -14,7 +14,7 @@
 #include <boost/endian.hpp>
 #include <boost/container/flat_map.hpp>
 
-namespace wgss::worker_impl {
+namespace wireglider::worker_impl {
 
 struct PacketFlags {
     using flag_type = std::bitset<3>;
@@ -189,4 +189,4 @@ struct DecapBatch {
     void aggregate_udp();
 };
 
-} // namespace wgss::worker_impl
+} // namespace wireglider::worker_impl
