@@ -1,7 +1,7 @@
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
 CPPFLAGS+=-Iinclude
 CFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -std=c11 -fwrapv
-CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -std=c++20 -fwrapv
+CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -std=c++20 -fwrapv -fconcepts-diagnostics-depth=2
 
 CPPFLAGS+=-pthread
 LDLIBS+=-pthread
@@ -152,6 +152,9 @@ OBJECTS=\
 	worker/offload.o \
 	worker/flowkey.o \
 	worker/send.o \
+	worker/write.o \
+	control.o \
+	timer.o \
 	netutil.o \
 	checksum.o \
 	liblinux/maple_tree.o \
@@ -182,6 +185,12 @@ liblinux/xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-fi
 
 liblinux/maple_tree.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
+run: wgss
+	sudo ./$< -a 0.0.0.0 -A 10.77.44.1/24 -j 8
+
+debug: wgss
+	sudo gdb -ex "run -a 0.0.0.0 -A 10.77.44.1/24" ./$<
+
 check: tests
 	@if (for test in $(TESTS); do echo $$test; $$test || exit; done); then \
 		echo "All tests succeeded"; \
@@ -196,6 +205,6 @@ clean:
 	$(RM) $(DEPS)
 	find . -name '*.[od]' -print -delete
 
-.PHONY: $(TESTS_RUN) check clean
+.PHONY: $(TESTS_RUN) run debug check clean
 
 -include $(DEPS) $(wildcard tests/*.d)

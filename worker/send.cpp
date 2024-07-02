@@ -13,13 +13,8 @@ namespace wgss {
 void Worker::do_server_send() {
     while (!_serversend.empty()) {
         auto ret = do_server_send_step(&_serversend.front());
-        if (is_eagain(-ret)) {
+        if (!ret)
             break;
-        } else {
-            if (ret < 0)
-                fmt::print("do_server_send: {}\n", strerrordesc_np(ret));
-            _serversend.pop_front_and_dispose(ServerSendBase::deleter());
-        }
     }
     if (_serversend.empty())
         server_disable(EPOLLOUT);
@@ -29,7 +24,7 @@ void Worker::do_server_send() {
         tun_disable(EPOLLIN);
 }
 
-int Worker::server_send_batch(ServerSendBatch *batch, std::span<uint8_t> data, bool queue_on_eagain) {
+void Worker::server_send_batch(ServerSendBatch *batch, std::span<uint8_t> data, bool queue_on_eagain) {
     msghdr mh;
     memset(&mh, 0, sizeof(mh));
     if (auto sin6 = std::get_if<sockaddr_in6>(&batch->ep)) {
@@ -52,19 +47,20 @@ int Worker::server_send_batch(ServerSendBatch *batch, std::span<uint8_t> data, b
         mh.msg_iov = &iov;
         auto ret = sendmsg(_arg.server->fd(), &mh, 0);
         if (ret < 0) {
-            auto err = errno;
-            if (queue_on_eagain && is_eagain()) {
-                auto tosend = new ServerSendBatch(data, batch->segment_size, batch->ep);
-                _serversend.push_back(*tosend);
-                server_enable(EPOLLOUT);
+            if (is_eagain()) {
+                if (queue_on_eagain) {
+                    auto tosend = new ServerSendBatch(data, batch->segment_size, batch->ep);
+                    _serversend.push_back(*tosend);
+                    server_enable(EPOLLOUT);
+                }
+                return;
+            } else {
+                throw std::system_error(errno, std::system_category(), "server_send_batch sendmsg");
             }
-            return -err;
         } else {
             data = data.subspan(ret);
         }
     }
-
-    return 0;
 }
 
 ServerSendList::ServerSendList(ServerSendList::packet_list &&pkts, ClientEndpoint _ep)
@@ -100,23 +96,23 @@ ServerSendList::ServerSendList(ServerSendList::packet_list &&pkts, ClientEndpoin
         });
 }
 
-int Worker::server_send_list(ServerSendList *list) {
+outcome::result<void> Worker::server_send_list(ServerSendList *list) {
     while (list->pos < list->mh.size()) {
         auto ret = sendmmsg(_arg.server->fd(), &list->mh[list->pos], list->mh.size() - list->pos, 0);
         if (ret < 0)
-            return -errno;
+            return check_eagain(errno, "server_send_list sendmmsg");
         else
             list->pos += ret;
     }
-    return 0;
+    return outcome::success();
 }
 
-int Worker::do_server_send_step(ServerSendBase *send) {
+outcome::result<void> Worker::do_server_send_step(ServerSendBase *send) {
     if (typeid(*send) == typeid(ServerSendBatch)) {
         auto batch = static_cast<ServerSendBatch *>(send);
-        auto ret = server_send_batch(batch);
+        server_send_batch(batch);
+        return outcome::success();
         // TODO: update send position for this batch
-        return ret;
     } else if (typeid(*send) == typeid(ServerSendList)) {
         auto list = static_cast<ServerSendList *>(send);
         return server_send_list(list);

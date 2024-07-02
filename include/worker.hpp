@@ -6,10 +6,11 @@
 #include <wireguard_ffi.h>
 #include <tdutil/epollman.hpp>
 
+#include "wgss.hpp"
+#include "result.hpp"
 #include "client.hpp"
 #include "tun.hpp"
 #include "udpsock.hpp"
-#include "rundown.hpp"
 #include "maple_tree.hpp"
 #include "endpoint.hpp"
 #include "worker/offload.hpp"
@@ -20,10 +21,11 @@
 namespace wgss {
 
 struct WorkerArg {
-    int id;
+    unsigned int id;
     Tun *tun;
     UdpServer *server;
-    CdsHashtable<ClientEndpoint, Client> *clients;
+    ClientTable *clients;
+    EndpointTable *client_eps;
     maple_tree *allowed_ips;
 };
 
@@ -41,23 +43,22 @@ public:
 private:
     void do_tun(epoll_event *ev);
     // returns (size of each segment, number of segments)
-    std::optional<std::span<uint8_t>> do_tun_recv(std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr);
+    outcome::result<std::span<uint8_t>> do_tun_recv(std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr);
     std::optional<std::pair<worker_impl::PacketBatch, ClientEndpoint>> do_tun_encap(
         worker_impl::PacketBatch &pb,
         std::vector<uint8_t> &outbuf);
 
     void do_server_send();
-    // returns -errno
-    int server_send_batch(worker_impl::ServerSendBatch *batch, std::span<uint8_t> data, bool queue_on_eagain);
+    void server_send_batch(worker_impl::ServerSendBatch *batch, std::span<uint8_t> data, bool queue_on_eagain);
     // use when batch is a non-owning batch that contains no data
-    int server_send_batch(worker_impl::ServerSendBatch *batch, std::span<uint8_t> data) {
-        return server_send_batch(batch, data, true);
+    void server_send_batch(worker_impl::ServerSendBatch *batch, std::span<uint8_t> data) {
+        server_send_batch(batch, data, true);
     }
-    int server_send_batch(worker_impl::ServerSendBatch *batch) {
-        return server_send_batch(batch, batch->buf, false);
+    void server_send_batch(worker_impl::ServerSendBatch *batch) {
+        server_send_batch(batch, batch->buf, false);
     }
-    int server_send_list(worker_impl::ServerSendList *list);
-    int do_server_send_step(worker_impl::ServerSendBase *send);
+    outcome::result<void> server_send_list(worker_impl::ServerSendList *list);
+    outcome::result<void> do_server_send_step(worker_impl::ServerSendBase *send);
 
     void do_server(epoll_event *ev);
     std::optional<std::pair<worker_impl::PacketBatch, ClientEndpoint>> do_server_recv(
@@ -69,7 +70,7 @@ private:
         std::vector<uint8_t> &scratch);
 
     void do_tun_write();
-    void do_tun_write_batch(worker_impl::DecapBatch &batch);
+    outcome::result<void> do_tun_write_batch(worker_impl::DecapBatch &batch);
 
     void tun_disable(uint32_t events) {
         auto newevents = _poll_tun & ~events;
@@ -104,6 +105,7 @@ private:
     }
 
 private:
+    tdutil::FileDescriptor _sigfd;
     tdutil::EpollManager<> _poll;
     uint32_t _poll_tun = 0;
     uint32_t _poll_server = 0;

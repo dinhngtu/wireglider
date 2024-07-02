@@ -55,10 +55,7 @@ struct Ifr {
 };
 
 std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_sockaddr(const char *str);
-
-static constexpr bool is_eagain(int e = errno) {
-    return e == EAGAIN || e == EWOULDBLOCK;
-}
+std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_ipport(const char *str);
 
 } // namespace wgss
 

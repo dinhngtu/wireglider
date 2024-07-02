@@ -171,7 +171,7 @@ template <auto F>
 using address_type_of_t = std::remove_cvref_t<tdutil::first_argument_t<decltype(F)>>::address_type;
 
 template <typename T>
-static bool fill_fk_ecn(FlowKey<T> &fk, PacketFlags &flags, uint8_t ecn_outer) {
+static bool fill_fk_ecn(FlowKey<T> &fk, uint8_t ecn_outer) {
     // RFC 6040 section 4.2
     // ecnmap consists of groups of 4 bits indexed by inner (2 bits)||outer (2 bits) (see fig 4)
     // each group is warn (2 bits)||resulting ecn (2 bits)
@@ -251,7 +251,7 @@ static DecapBatch::Outcome evaluate_packet(
     if (!ip)
         return GRO_NOADD;
 
-    if (!fill_fk_ecn(fk, flags, ecn_outer))
+    if (!fill_fk_ecn(fk, ecn_outer))
         return GRO_DROP;
 
     switch (proto) {

@@ -3,6 +3,8 @@
 #include <utility>
 #include <span>
 #include <typeinfo>
+#include <sys/types.h>
+#include <signal.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
@@ -19,15 +21,19 @@ using namespace wgss::worker_impl;
 namespace wgss {
 
 void Worker::do_tun(epoll_event *ev) {
+    if (ev->events & (EPOLLHUP | EPOLLERR)) {
+        throw QuitException();
+    }
     if (ev->events & EPOLLOUT)
         do_tun_write();
     if (ev->events & EPOLLIN) {
         virtio_net_hdr vnethdr;
-        auto read_pb = do_tun_recv(_recvbuf, vnethdr);
-        if (!read_pb)
+        auto ret = do_tun_recv(_recvbuf, vnethdr);
+        if (!ret)
             return;
+        auto read_pb = ret.value();
 
-        auto tun_pb = do_tun_gso_split(read_pb.value(), _pktbuf, vnethdr);
+        auto tun_pb = do_tun_gso_split(read_pb, _pktbuf, vnethdr);
 
         auto crypt = do_tun_encap(tun_pb, _sendbuf);
         if (!crypt)
@@ -37,25 +43,29 @@ void Worker::do_tun(epoll_event *ev) {
         batch.ep = crypt->second;
         batch.segment_size = crypt->first.segment_size;
         batch.ecn = crypt->first.ecn;
-        auto ret = server_send_batch(&batch, crypt->first.data);
-        if (ret < 0 && !is_eagain(-ret))
-            fmt::print("do_server_send: {}\n", strerrordesc_np(ret));
+        server_send_batch(&batch, crypt->first.data);
     }
 }
 
-std::optional<std::span<uint8_t>> Worker::do_tun_recv(std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr) {
+outcome::result<std::span<uint8_t>> Worker::do_tun_recv(std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr) {
     // if (outbuf.size() < 65536 + sizeof(virtio_net_hdr))
     // outbuf.resize(65536 + sizeof(virtio_net_hdr));
     assert(outbuf.size() >= 65536 + sizeof(virtio_net_hdr));
 
     // don't use directly
     auto msize = read(_arg.tun->fd(), outbuf.data(), outbuf.size());
-    if (msize < 0)
-        return std::nullopt;
+    if (msize < 0) {
+        if (is_eagain())
+            return fail(EAGAIN);
+        else if (errno == EBADFD)
+            throw QuitException();
+        else
+            throw std::system_error(errno, std::system_category(), "do_tun_recv read");
+    }
     auto rest = std::span(outbuf.begin(), msize);
 
     if (rest.size() < sizeof(virtio_net_hdr))
-        return std::nullopt;
+        return fail(EIO);
     vnethdr = *reinterpret_cast<virtio_net_hdr *>(rest.data());
     rest = rest.subspan(sizeof(virtio_net_hdr));
     // rest now contains iphdr+l4hdr+giant payload
@@ -96,6 +106,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     size_t crypted_segment_size = 0;
     for (auto pkt : pb) {
         auto res = wireguard_write_raw(client->tunnel, pkt.data(), pkt.size(), remain.data(), remain.size());
+        // op: handle error
         if (res.op == WRITE_TO_NETWORK) {
             remain = remain.subspan(res.size);
             if (!crypted_segment_size)
@@ -111,7 +122,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
         .isv6 = pb.isv6,
         .ecn = pb.ecn,
     };
-    return std::make_pair(newpb, client->_cds_lfht_key);
+    return std::make_pair(newpb, client->epkey);
 }
 
 } // namespace wgss

@@ -1,3 +1,6 @@
+#include <sys/types.h>
+#include <signal.h>
+
 #include "worker.hpp"
 #include "ancillary.hpp"
 
@@ -6,6 +9,9 @@ using namespace wgss::worker_impl;
 namespace wgss {
 
 void Worker::do_server(epoll_event *ev) {
+    if (ev->events & (EPOLLHUP | EPOLLERR)) {
+        throw std::system_error(EIO, std::system_category(), "do_server events");
+    }
     if (ev->events & EPOLLOUT)
         do_server_send();
     if (ev->events & EPOLLIN) {
@@ -17,19 +23,18 @@ void Worker::do_server(epoll_event *ev) {
         if (!batch)
             return;
 
-        {
-            auto sendlist = new ServerSendList(std::move(batch->retpkt), crypt->second);
-            auto ret = server_send_list(sendlist);
-            if (is_eagain(ret)) {
-                _serversend.push_back(*sendlist);
-                server_enable(EPOLLOUT);
-            } else {
-                assert(sendlist->pos == sendlist->mh.size());
-                delete sendlist;
-            }
+        auto sendlist = new ServerSendList(std::move(batch->retpkt), crypt->second);
+        auto ret = server_send_list(sendlist);
+        if (ret) {
+            assert(sendlist->pos == sendlist->mh.size());
+            delete sendlist;
+        } else {
+            _serversend.push_back(*sendlist);
+            server_enable(EPOLLOUT);
         }
 
-        do_tun_write_batch(*batch);
+        if (!do_tun_write_batch(*batch))
+            return;
 
         // TODO
     }
@@ -54,8 +59,10 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
 
     auto bytes = recvmsg(_arg.server->fd(), &mh, 0);
     if (bytes < 0) {
-        perror("recvmsg");
-        return std::nullopt;
+        if (is_eagain())
+            return std::nullopt;
+        else
+            throw std::system_error(errno, std::system_category(), "do_server_recv recvmsg");
     }
 
     size_t gro_size = static_cast<size_t>(bytes);
@@ -101,6 +108,8 @@ static void tunnel_flush(
             break;
         case WIREGUARD_DONE:
             return;
+        case WIREGUARD_ERROR:
+        // TODO
         default:
             break;
         }
@@ -117,8 +126,8 @@ static void tunnel_flush(
  */
 std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint ep, std::vector<uint8_t> &scratch) {
     RundownGuard rcu;
-    auto it = _arg.clients->find(rcu, ep);
-    if (it == _arg.clients->end())
+    auto it = _arg.client_eps->find(rcu, ep);
+    if (it == _arg.client_eps->end())
         return std::nullopt;
 
     DecapBatch batch;
@@ -144,6 +153,7 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
                 break;
             }
             case WIREGUARD_ERROR:
+            // TODO
             case WIREGUARD_DONE:
                 break;
             }

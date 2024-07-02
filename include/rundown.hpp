@@ -39,26 +39,17 @@ struct CdsException : public std::exception {
 };
 
 // reversed typename order for use in constraints
-template <typename V, typename K>
-concept IsCdsHashtableNode = requires(V v) {
-    { v._cds_lfht_key } -> std::same_as<K &>;
-    { v._cds_lfht_node } -> std::same_as<cds_lfht_node &>;
+template <typename V, typename K, typename Tag>
+concept IsCdsHashtableNode = requires(V v, Tag tag, cds_lfht_node *node) {
+    { v.key(tag) } -> std::same_as<K &>;
+    { v.node(tag) } -> std::same_as<cds_lfht_node &>;
+    { V::get_from(node, tag) } -> std::convertible_to<V *>;
 };
 
-template <typename K, typename V>
-struct CdsHashtableNode {
-    static V *get(cds_lfht_node *node) {
-        return caa_container_of(node, V, _cds_lfht_node);
-    }
-
-    cds_lfht_node _cds_lfht_node;
-    K _cds_lfht_key;
-};
-
-template <std::totally_ordered K, IsCdsHashtableNode<K> V>
+template <std::totally_ordered K, typename Tag, IsCdsHashtableNode<K, Tag> V>
 class CdsHashtable;
 
-template <typename K, IsCdsHashtableNode<K> V>
+template <typename K, typename Tag, IsCdsHashtableNode<K, Tag> V>
 class CdsHashtableIterator {
 public:
     using iterator_category = std::input_iterator_tag;
@@ -79,7 +70,7 @@ public:
     }
 
     pointer get() const {
-        return CdsHashtableNode<K, V>::get(_iter.node);
+        return V::get_from(_iter.node, Tag{});
     }
 
     reference operator*() const {
@@ -93,7 +84,7 @@ public:
         return a._tbl == b._tbl && a._iter.node == b._iter.node;
     }
 
-    friend class CdsHashtable<K, V>;
+    friend class CdsHashtable<K, Tag, V>;
 
 private:
     explicit CdsHashtableIterator(cds_lfht *tbl) : _tbl(tbl) {
@@ -103,10 +94,10 @@ private:
     cds_lfht_iter _iter{};
 };
 
-template <std::totally_ordered K, IsCdsHashtableNode<K> V>
+template <std::totally_ordered K, typename Tag, IsCdsHashtableNode<K, Tag> V>
 class CdsHashtable {
 public:
-    using iterator = CdsHashtableIterator<K, V>;
+    using iterator = CdsHashtableIterator<K, Tag, V>;
 
     CdsHashtable(
         unsigned long init_size,
@@ -145,19 +136,17 @@ public:
     }
 
     std::pair<V *, bool> try_insert([[maybe_unused]] const RundownGuard &rcu, V *v) {
-        auto old =
-            cds_lfht_add_unique(_tbl, std::hash(v->_cds_lfht_key), compare, &v->_cds_lfht_key, &v->_cds_lfht_node);
-        if (old == &v->_cds_lfht_node)
+        auto old = cds_lfht_add_unique(_tbl, std::hash(v->key(Tag{})), compare, &v->key(Tag{}), &v->node(Tag{}));
+        if (old == &v->key(Tag{}))
             return std::make_pair(v, true);
         else
-            return std::make_pair(CdsHashtableNode<K, V>::get(old), false);
+            return std::make_pair(V::get_from(old, Tag{}), false);
     }
 
     V *replace([[maybe_unused]] const RundownGuard &rcu, V *v) {
-        auto old =
-            cds_lfht_add_replace(_tbl, std::hash(v->_cds_lfht_key), compare, &v->_cds_lfht_key, &v->_cds_lfht_node);
+        auto old = cds_lfht_add_replace(_tbl, std::hash(v->key(Tag{})), compare, &v->key(Tag{}), &v->node(Tag{}));
         if (old)
-            return CdsHashtableNode<K, V>::get(old);
+            return V::get_from(old, Tag{});
         else
             return nullptr;
     }
@@ -185,13 +174,13 @@ public:
     }
 
     void erase_at([[maybe_unused]] const RundownGuard &rcu, V *v) {
-        auto err = cds_lfht_del(_tbl, v->_cds_lfht_node);
+        auto err = cds_lfht_del(_tbl, v->node(Tag{}));
         if (err)
             throw CdsException(err);
     }
 
     bool is_erased([[maybe_unused]] const RundownGuard &rcu, V *v) {
-        return cds_lfht_is_node_deleted(v._cds_lfht_node);
+        return cds_lfht_is_node_deleted(v.node(Tag{}));
     }
 
     void resize(size_t newsize) {
@@ -210,7 +199,7 @@ private:
     }
 
     static int compare(struct cds_lfht_node *node, const void *key) {
-        const K &leftkey = CdsHashtableNode<K, V>::get(node)->_cds_lfht_key;
+        const K &leftkey = V::get_from(node, Tag{})->key(Tag{});
         auto comp = leftkey <=> *static_cast<const K *>(key);
         if (comp == std::strong_ordering::less)
             return -1;
@@ -224,13 +213,13 @@ private:
     cds_lfht *_tbl = nullptr;
 };
 
-template <std::totally_ordered K, IsCdsHashtableNode<K> V>
-constexpr CdsHashtable<K, V>::iterator begin(CdsHashtable<K, V> &ht) {
+template <std::totally_ordered K, typename Tag, IsCdsHashtableNode<K, Tag> V>
+constexpr CdsHashtable<K, Tag, V>::iterator begin(CdsHashtable<K, Tag, V> &ht) {
     return ht.begin();
 }
 
-template <std::totally_ordered K, IsCdsHashtableNode<K> V>
-constexpr CdsHashtable<K, V>::iterator end(CdsHashtable<K, V> &ht) {
+template <std::totally_ordered K, typename Tag, IsCdsHashtableNode<K, Tag> V>
+constexpr CdsHashtable<K, Tag, V>::iterator end(CdsHashtable<K, Tag, V> &ht) {
     return ht.end();
 }
 

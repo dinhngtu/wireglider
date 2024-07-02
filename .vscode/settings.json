@@ -82,6 +82,8 @@
         "buffer": "cpp",
         "socket": "cpp",
         "valarray": "cpp",
-        "netfwd": "cpp"
+        "netfwd": "cpp",
+        "io_context": "cpp",
+        "executor": "cpp"
     }
 }

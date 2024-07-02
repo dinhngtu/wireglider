@@ -541,3 +541,5 @@ TEST_CASE("DecapBatch invalid packets") {
         push_one(batch, pkt, GRO_NOADD);
     }
 }
+
+// TODO: opb tests (incl. copy/move ctors)
