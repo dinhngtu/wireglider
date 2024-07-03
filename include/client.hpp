@@ -8,10 +8,9 @@
 #include <wireguard_ffi.h>
 #include "rundown.hpp"
 #include "endpoint.hpp"
+#include "netutil.hpp"
 
 namespace wireglider {
-
-using IpRange = std::variant<std::pair<in_addr, unsigned int>, std::pair<in6_addr, unsigned int>>;
 
 // We want the same client to be in both the EP table and the pubkey table.
 // Therefore we need a way to have multiple node elements.

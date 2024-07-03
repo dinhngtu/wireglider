@@ -8,15 +8,13 @@
 
 namespace wireglider {
 
-std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_sockaddr(const char *str) {
-    sockaddr_in sin{};
-    sin.sin_family = AF_INET;
-    sockaddr_in6 sin6{};
-    sin6.sin6_family = AF_INET6;
-    if (inet_pton(AF_INET, str, &sin.sin_addr) > 0) {
-        return sin;
-    } else if (inet_pton(AF_INET6, str, &sin6.sin6_addr) > 0) {
-        return sin6;
+std::variant<std::monostate, in_addr, in6_addr> parse_inaddr(const char *str) {
+    in_addr addr4;
+    in6_addr addr6;
+    if (inet_pton(AF_INET, str, &addr4) > 0) {
+        return addr4;
+    } else if (inet_pton(AF_INET6, str, &addr6) > 0) {
+        return addr6;
     } else {
         return {};
     }
@@ -61,13 +59,13 @@ std::variant<std::monostate, std::pair<in_addr, unsigned int>, std::pair<in6_add
     if (cidr_parts.size() != 2)
         return {};
     unsigned int prefix = strtoul(cidr_parts[1].c_str(), nullptr, 10);
-    auto addr = parse_sockaddr(cidr_parts[0].c_str());
-    if (auto sin = std::get_if<sockaddr_in>(&addr)) {
+    auto addr = parse_inaddr(cidr_parts[0].c_str());
+    if (auto addr4 = std::get_if<in_addr>(&addr)) {
         if (prefix <= 32)
-            return std::make_pair(sin->sin_addr, prefix);
-    } else if (auto sin6 = std::get_if<sockaddr_in6>(&addr)) {
+            return std::make_pair(*addr4, prefix);
+    } else if (auto addr6 = std::get_if<in6_addr>(&addr)) {
         if (prefix <= 128)
-            return std::make_pair(sin6->sin6_addr, prefix);
+            return std::make_pair(*addr6, prefix);
     }
     return {};
 }

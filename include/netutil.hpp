@@ -54,10 +54,13 @@ struct Ifr {
     ifreq ifr;
 };
 
-std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_sockaddr(const char *str);
+using IpRange4 = std::pair<in_addr, unsigned int>;
+using IpRange6 = std::pair<in6_addr, unsigned int>;
+using IpRange = std::variant<IpRange4, IpRange6>;
+
+std::variant<std::monostate, in_addr, in6_addr> parse_inaddr(const char *str);
 std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_ipport(const char *str);
-std::variant<std::monostate, std::pair<in_addr, unsigned int>, std::pair<in6_addr, unsigned int>> parse_iprange(
-    const char *str);
+std::variant<std::monostate, IpRange4, IpRange6> parse_iprange(const char *str);
 
 } // namespace wireglider
 
