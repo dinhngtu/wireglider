@@ -156,6 +156,7 @@ OBJECTS=\
 	control.o \
 	timer.o \
 	netutil.o \
+	prefix.o \
 	checksum.o \
 	liblinux/maple_tree.o \
 	liblinux/kernel_compat.o \
