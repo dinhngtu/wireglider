@@ -66,11 +66,11 @@ struct hash<x25519_key> {
 };
 } // namespace std
 
-static inline bool operator==(const x25519_key &a, const x25519_key &b) noexcept {
+static constexpr bool operator==(const x25519_key &a, const x25519_key &b) noexcept {
     return std::equal(std::begin(a.key), std::end(a.key), std::begin(b.key));
 }
 
-static inline auto operator<=>(const x25519_key &a, const x25519_key &b) noexcept {
+static constexpr auto operator<=>(const x25519_key &a, const x25519_key &b) noexcept {
     return std::lexicographical_compare_three_way(
         std::begin(a.key),
         std::end(a.key),

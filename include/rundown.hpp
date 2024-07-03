@@ -62,6 +62,7 @@ public:
 
     CdsHashtableIterator &operator++() {
         cds_lfht_next(_tbl, &_iter);
+        return *this;
     }
     CdsHashtableIterator operator++(int) {
         CdsHashtableIterator tmp(*this);
