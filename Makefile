@@ -158,7 +158,6 @@ OBJECTS=\
 	netutil.o \
 	checksum.o \
 	liblinux/maple_tree.o \
-	liblinux/xarray.o \
 	liblinux/kernel_compat.o \
 
 DEPS=$(patsubst %.o,%.d,$(OBJECTS))
