@@ -163,6 +163,14 @@ public:
         return err == 0;
     }
 
+    void clear() {
+        cds_lfht_iter it;
+        cds_lfht_node node;
+        cds_lfht_for_each(_tbl, &it, &node) {
+            cds_lfht_del(_tbl, &node);
+        }
+    }
+
     V *extract([[maybe_unused]] const RundownGuard &rcu, const K &k) {
         auto it = find(rcu, k);
         if (it != end()) {
