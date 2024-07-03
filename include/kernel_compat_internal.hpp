@@ -1,7 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <cstring>
 #include <atomic>
+#include <pthread.h>
 #include "kernel_compat.hpp"
 
 #define __force
@@ -9,9 +11,6 @@
 #define might_alloc(x)
 
 #define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
-
-#define __GFP_BITS_SHIFT 26
-#define __GFP_BITS_MASK ((__force gfp_t)((1 << __GFP_BITS_SHIFT) - 1))
 
 #define IS_ALIGNED(x, a) (((x) & ((decltype(x))(a) - 1)) == 0)
 
@@ -230,3 +229,41 @@ static __always_inline void smp_rmb() {
 #define gfpflags_allow_blocking(x) 0
 
 #define ARRAY_SIZE(ar) (sizeof(ar) / sizeof(ar[0]))
+
+#define lockdep_is_held(x) 1
+
+#if __has_attribute(__fallthrough__)
+#define fallthrough __attribute__((__fallthrough__))
+#else
+#define fallthrough \
+    do {            \
+    } while (0) /* fallthrough */
+#endif
+
+template <typename T>
+static constexpr T min(T a, T b) {
+    return std::min(a, b);
+}
+
+template <typename T>
+static constexpr T max(T a, T b) {
+    return std::max(a, b);
+}
+
+#define new _new
+
+#define EXPORT_SYMBOL(x)
+#define EXPORT_SYMBOL_GPL(x)
+
+#define rcu_dereference_protected(a, b) rcu_dereference(a)
+#define rcu_dereference_check(a, b) rcu_dereference(a)
+
+#define trace_ma_op(x, y)
+#define trace_ma_read(x, y)
+#define trace_ma_write(x, y, z, t)
+
+#include "gfp_types.h"
+#define __GFP_BITS_MASK ((__force gfp_t)((1 << __GFP_BITS_SHIFT) - 1))
+
+#define IS_ENABLED(x) x
+#define CONFIG_LOCKDEP 0
