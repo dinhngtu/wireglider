@@ -13,7 +13,7 @@ std::pair<unsigned long, unsigned long> NetPrefix4::get_range(const in_addr &add
     return std::make_pair(begin, end);
 }
 
-unsigned long NetPrefix4::reduce(const in_addr &addr) const {
+unsigned long NetPrefix4::reduce([[maybe_unused]] const in_addr &addr) const {
     return 0;
 }
 

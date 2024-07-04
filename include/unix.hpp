@@ -29,7 +29,7 @@ public:
             unlink(_path.c_str());
 
         _sun.sun_family = AF_UNIX;
-        strncpy(&_sun.sun_path[0], _path.data(), std::size(_sun.sun_path));
+        strncpy(&_sun.sun_path[0], _path.c_str(), std::size(_sun.sun_path));
         _sun.sun_path[std::size(_sun.sun_path) - 1] = 0;
 
         if (bind(_sock, reinterpret_cast<sockaddr *>(&_sun), sizeof(_sun)) < 0)

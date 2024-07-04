@@ -71,7 +71,7 @@ public:
     }
 
     pointer get() const {
-        return V::get_from(_iter.node, Tag{});
+        return _iter.node ? V::get_from(_iter.node, Tag{}) : nullptr;
     }
 
     reference operator*() const {
@@ -126,7 +126,7 @@ public:
         dispose();
     }
 
-    iterator begin() {
+    iterator begin([[maybe_unused]] const RundownGuard &rcu) {
         iterator it(_tbl);
         cds_lfht_first(_tbl, &it._iter);
         return it;
@@ -137,15 +137,16 @@ public:
     }
 
     std::pair<V *, bool> try_insert([[maybe_unused]] const RundownGuard &rcu, V *v) {
-        auto old = cds_lfht_add_unique(_tbl, std::hash(v->key(Tag{})), compare, &v->key(Tag{}), &v->node(Tag{}));
-        if (old == &v->key(Tag{}))
+        auto old = cds_lfht_add_unique(_tbl, std::hash<K>()(v->key(Tag{})), compare, &v->key(Tag{}), &v->node(Tag{}));
+        // old is never null
+        if (old == &v->node(Tag{}))
             return std::make_pair(v, true);
         else
             return std::make_pair(V::get_from(old, Tag{}), false);
     }
 
     V *replace([[maybe_unused]] const RundownGuard &rcu, V *v) {
-        auto old = cds_lfht_add_replace(_tbl, std::hash(v->key(Tag{})), compare, &v->key(Tag{}), &v->node(Tag{}));
+        auto old = cds_lfht_add_replace(_tbl, std::hash<K>()(v->key(Tag{})), compare, &v->key(Tag{}), &v->node(Tag{}));
         if (old)
             return V::get_from(old, Tag{});
         else
@@ -158,16 +159,16 @@ public:
         return it;
     }
 
-    bool erase(iterator it) {
+    bool erase([[maybe_unused]] const RundownGuard &rcu, iterator it) {
         auto err = cds_lfht_del(_tbl, it._iter.node);
         return err == 0;
     }
 
-    void clear() {
+    void clear([[maybe_unused]] const RundownGuard &rcu) {
         cds_lfht_iter it;
-        cds_lfht_node node;
-        cds_lfht_for_each(_tbl, &it, &node) {
-            cds_lfht_del(_tbl, &node);
+        cds_lfht_node *node;
+        cds_lfht_for_each(_tbl, &it, node) {
+            cds_lfht_del(_tbl, node);
         }
     }
 
@@ -181,13 +182,13 @@ public:
         }
     }
 
-    void erase_at([[maybe_unused]] const RundownGuard &rcu, V *v) {
-        auto err = cds_lfht_del(_tbl, v->node(Tag{}));
+    bool erase_at([[maybe_unused]] const RundownGuard &rcu, V *v) {
+        auto err = cds_lfht_del(_tbl, &v->node(Tag{}));
         return err == 0;
     }
 
     bool is_erased([[maybe_unused]] const RundownGuard &rcu, V *v) {
-        return cds_lfht_is_node_deleted(v.node(Tag{}));
+        return cds_lfht_is_node_deleted(&v.node(Tag{}));
     }
 
     void resize(size_t newsize) {

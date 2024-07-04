@@ -19,6 +19,7 @@ struct maple_enode;
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wvolatile"
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 
 /*
  * Allocated nodes are mutable until they have been inserted into the tree,
@@ -472,17 +473,20 @@ struct ma_wr_state {
  */
 #define MA_ERROR(err) ((struct maple_enode *)(((unsigned long)err << 2) | 2UL))
 
-#define MA_STATE(name, mt, first, end) \
+#define MA_STATE(name, mt, first, _end) \
     struct ma_state name = {           \
         .tree = mt,                    \
         .index = first,                \
-        .last = end,                   \
+        .last = _end,                   \
         .node = NULL,                  \
         .min = 0,                      \
         .max = ULONG_MAX,              \
         .alloc = NULL,                 \
         .status = ma_start,            \
+        .depth = 0,                    \
+        .offset = 0,                   \
         .mas_flags = 0,                \
+        .end = 0,                      \
     }
 
 #define MA_WR_STATE(name, ma_state, wr_entry) \

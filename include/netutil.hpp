@@ -8,6 +8,8 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
+#include <boost/container_hash/hash.hpp>
+#include <xxhash.h>
 
 #include <tdutil/util.hpp>
 
@@ -63,6 +65,20 @@ std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_ipport(const char 
 std::variant<std::monostate, IpRange4, IpRange6> parse_iprange(const char *str);
 
 } // namespace wireglider
+
+static inline size_t hash_value(const wireglider::IpRange &a) {
+    if (auto ip4 = std::get_if<wireglider::IpRange4>(&a)) {
+        size_t seed = XXH3_64bits(&ip4->first, sizeof(ip4->first));
+        boost::hash_combine(seed, ip4->second);
+        return seed;
+    } else if (auto ip6 = std::get_if<wireglider::IpRange6>(&a)) {
+        size_t seed = XXH3_64bits(&ip6->first, sizeof(ip6->first));
+        boost::hash_combine(seed, ip6->second);
+        return seed;
+    } else {
+        tdutil::unreachable();
+    }
+}
 
 static inline bool operator==(const sockaddr_in &a, const sockaddr_in &b) noexcept {
     return !memcmp(&a, &b, offsetof(sockaddr_in, sin_zero));
