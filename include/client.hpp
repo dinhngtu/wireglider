@@ -1,10 +1,12 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <variant>
 #include <utility>
 #include <mutex>
 #include <vector>
+#include <boost/unordered/unordered_flat_set.hpp>
 #include <wireguard_ffi.h>
 #include "rundown.hpp"
 #include "endpoint.hpp"
@@ -27,11 +29,13 @@ struct Client {
 
     // readonly
     uint32_t index;
+    std::array<uint8_t, 32> psk = {0};
+    int keepalive = 0;
 
     std::mutex mutex;
     // protected by mutex:
     wireguard_tunnel_raw *tunnel;
-    std::vector<IpRange> allowed_ips;
+    boost::unordered_flat_set<IpRange> allowed_ips;
 
     // is there a better way to implement this stuff?
     constexpr x25519_key &key([[maybe_unused]] PubkeyTag tag) {

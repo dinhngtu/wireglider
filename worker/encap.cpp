@@ -94,7 +94,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     } else {
         dstip4 = reinterpret_cast<const ip *>(pb.data.data())->ip_dst;
         unsigned long ipkey = big_to_native(dstip4.s_addr);
-        client = static_cast<Client *>(mtree_load(_arg.allowed_ips, ipkey));
+        client = static_cast<Client *>(mtree_load(_arg.allowed_ip4, ipkey));
     }
 
     if (!client)

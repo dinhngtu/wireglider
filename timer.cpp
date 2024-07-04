@@ -64,7 +64,9 @@ void TimerWorker::run() {
 
     std::array<epoll_event, 3> evbuf;
     while (1) {
+        rcu_thread_offline();
         auto nevents = _poll.wait(evbuf, -1);
+        rcu_thread_online();
         if (nevents < 0) {
             if (errno == EINTR)
                 return;
@@ -92,15 +94,17 @@ void TimerWorker::do_timer(epoll_event *ev) {
     bool overloaded = false;
     auto now = gettime();
     RundownGuard rcu;
-    while (!_queue.empty() && _queue.top().nexttime <= now) {
+    std::lock_guard lock(_arg.queue->mutex);
+    while (!_arg.queue->queue.empty() && _arg.queue->queue.top().nexttime <= now) {
+        bool expired = false;
         // make a copy for mutability
-        auto &top = _queue.top();
+        auto &top = _arg.queue->queue.top();
         if (top.lasttime == now) {
             overloaded = true;
         } else if (!overloaded) {
             // process this client
             auto it = _arg.clients->find(rcu, top.pubkey);
-            if (it == _arg.clients->end()) {
+            if (it != _arg.clients->end()) {
                 std::lock_guard client_lock(it->mutex);
                 auto result = wireguard_tick_raw(it->tunnel, _scratch.data(), _scratch.size());
                 switch (result.op) {
@@ -115,14 +119,17 @@ void TimerWorker::do_timer(epoll_event *ev) {
                         fmt::format("unexpected wireguard_tick return {}", static_cast<int>(result.op)));
                 }
             } else {
-                // TODO: warn?
-                _queue.erase(top.handle);
+                expired = true;
             }
         }
-        top.lasttime = now;
-        // instead of per-client period, we have global period
-        top.nexttime = now + _period;
-        _queue.decrease(top.handle);
+        if (expired) {
+            _arg.queue->queue.erase(top.handle);
+        } else {
+            top.lasttime = now;
+            // instead of per-client period, we have global period
+            top.nexttime = now + _period;
+            _arg.queue->queue.decrease(top.handle);
+        }
     }
     // auto done = gettime();
     // update_period(overloaded, done - now);

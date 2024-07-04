@@ -26,7 +26,7 @@ struct WorkerArg {
     UdpServer *server;
     ClientTable *clients;
     EndpointTable *client_eps;
-    maple_tree *allowed_ips;
+    maple_tree *allowed_ip4, *allowed_ip6;
 };
 
 class Worker {

@@ -1,5 +1,8 @@
+#pragma once
+
 #include <vector>
 #include <variant>
+#include <mutex>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 #include <boost/heap/fibonacci_heap.hpp>
@@ -12,11 +15,6 @@
 #include "maple_tree.hpp"
 
 namespace wireglider {
-
-struct TimerArg {
-    unsigned int id;
-    ClientTable *clients;
-};
 
 namespace timer_impl {
 
@@ -33,9 +31,18 @@ struct ClientTimer {
     ClientTimerQueue::handle_type handle;
 };
 
-using ClientTimerQueue = ClientTimer::ClientTimerQueue;
+struct TimerQueue {
+    mutable std::mutex mutex;
+    mutable timer_impl::ClientTimer::ClientTimerQueue queue;
+};
 
 } // namespace timer_impl
+
+struct TimerArg {
+    unsigned int id;
+    ClientTable *clients;
+    timer_impl::TimerQueue *queue;
+};
 
 class TimerWorker {
 public:
@@ -52,7 +59,6 @@ private:
 
 private:
     TimerArg _arg;
-    timer_impl::ClientTimerQueue _queue;
     tdutil::FileDescriptor _sigfd;
     tdutil::FileDescriptor _timer;
     uint64_t _period = 100'000'000ull;
