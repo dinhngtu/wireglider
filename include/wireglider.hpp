@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <csignal>
 #include <system_error>
 
@@ -26,6 +27,7 @@ struct Config {
         delete config;
     }
 };
+using ConfigRef = std::atomic_ref<Config *>;
 
 static inline void make_exit_sigset(sigset_t &sigs) {
     if (sigemptyset(&sigs) < 0 || sigaddset(&sigs, SIGINT) < 0 || sigaddset(&sigs, SIGTERM) < 0)

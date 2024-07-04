@@ -85,15 +85,17 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     assert(outbuf.size() >= reserve_size);
 
     RundownGuard rcu;
+    auto config = _arg.config(rcu);
+
     in_addr dstip4;
     in6_addr dstip6;
     if (pb.isv6) {
         dstip6 = reinterpret_cast<const ip6_hdr *>(pb.data.data())->ip6_dst;
-        // not implemented
-        return std::nullopt;
+        unsigned long ipkey = config->prefix6.reduce(dstip6);
+        client = static_cast<Client *>(mtree_load(_arg.allowed_ip6, ipkey));
     } else {
         dstip4 = reinterpret_cast<const ip *>(pb.data.data())->ip_dst;
-        unsigned long ipkey = big_to_native(dstip4.s_addr);
+        unsigned long ipkey = config->prefix4.reduce(dstip4);
         client = static_cast<Client *>(mtree_load(_arg.allowed_ip4, ipkey));
     }
 

@@ -24,9 +24,14 @@ struct WorkerArg {
     unsigned int id;
     Tun *tun;
     UdpServer *server;
+    ConfigRef _config;
     ClientTable *clients;
     EndpointTable *client_eps;
     maple_tree *allowed_ip4, *allowed_ip6;
+
+    const Config *config([[maybe_unused]] RundownGuard &rcu) const {
+        return _config.load(std::memory_order_acquire);
+    }
 };
 
 class Worker {

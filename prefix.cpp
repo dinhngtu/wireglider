@@ -14,7 +14,7 @@ std::pair<unsigned long, unsigned long> NetPrefix4::get_range(const in_addr &add
 }
 
 unsigned long NetPrefix4::reduce([[maybe_unused]] const in_addr &addr) const {
-    return 0;
+    return boost::endian::big_to_native(addr.s_addr);
 }
 
 unsigned __int128 load_ip6(const in6_addr &addr) {

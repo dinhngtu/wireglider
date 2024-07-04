@@ -22,8 +22,6 @@
 
 namespace wireglider {
 
-using ConfigRef = std::atomic_ref<Config *>;
-
 struct ControlArg {
     ConfigRef _config;
     UnixServer *unx;
