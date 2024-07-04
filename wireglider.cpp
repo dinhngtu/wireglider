@@ -80,15 +80,12 @@ static void doit(Args &args) {
     alignas(ConfigRef::required_alignment) Config *config = make_config(args);
 
     boost::container::stable_vector<UdpServer> server;
-    if (auto sin = std::get_if<sockaddr_in>(&args.listen_addr)) {
-        sin->sin_port = htons(args.listen_port);
+    if (auto sin = std::get_if<sockaddr_in>(&args.listen_addr))
         server.emplace_back(*sin);
-    } else if (auto sin6 = std::get_if<sockaddr_in6>(&args.listen_addr)) {
-        sin6->sin6_port = htons(args.listen_port);
+    else if (auto sin6 = std::get_if<sockaddr_in6>(&args.listen_addr))
         server.emplace_back(*sin6);
-    } else {
+    else
         throw std::runtime_error("cannot get server address");
-    }
 
     boost::container::stable_vector<Tun> tun;
     tun.emplace_back(args.iface_name.c_str());

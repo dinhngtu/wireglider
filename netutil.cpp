@@ -5,6 +5,7 @@
 #include <boost/algorithm/string.hpp>
 
 #include "netutil.hpp"
+#include "endian.hpp"
 
 namespace wireglider {
 
@@ -32,7 +33,7 @@ std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_ipport(const char 
         if (inet_pton(AF_INET, ip.c_str(), &sin.sin_addr) > 0) {
             auto port = stoul(match[2].str());
             if (port > 0 && port <= UINT16_MAX) {
-                sin.sin_port = port;
+                assign_big_from_native(sin.sin_port, port);
                 return sin;
             }
         }
@@ -43,7 +44,7 @@ std::variant<std::monostate, sockaddr_in, sockaddr_in6> parse_ipport(const char 
         if (inet_pton(AF_INET6, ip.c_str(), &sin6.sin6_addr) > 0) {
             auto port = stoul(match[2].str());
             if (port > 0 && port <= UINT16_MAX) {
-                sin6.sin6_port = port;
+                assign_big_from_native(sin6.sin6_port, port);
                 return sin6;
             }
         }
