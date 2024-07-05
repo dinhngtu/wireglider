@@ -12,28 +12,29 @@ namespace wireglider {
 namespace worker_impl {
 
 static outcome::result<void> write_opb(int fd, OwnedPacketBatch &opb) {
-    if (!opb.count)
-        return outcome::success();
     std::array<iovec, 3> iov = {
         iovec{&opb.flags.vnethdr, sizeof(opb.flags.vnethdr)},
         iovec{opb.hdrbuf.data(), opb.hdrbuf.size()},
-        iovec{opb.buf.data(), opb.buf.size()},
+        iovec{},
     };
-    auto written = writev(fd, iov.data(), iov.size());
-    if (written < 0) {
-        if (is_eagain())
-            return fail(EAGAIN);
-        else if (errno == EBADFD)
-            throw QuitException();
-        else
-            throw std::system_error(errno, std::system_category(), "write_opb writev");
+    while (!opb.buf.empty()) {
+        iov[2] = {opb.buf.data(), opb.buf.size()};
+        auto written = writev(fd, iov.data(), iov.size());
+        if (written < 0) {
+            if (is_eagain())
+                return fail(EAGAIN);
+            else if (errno == EBADFD)
+                throw QuitException();
+            else
+                throw std::system_error(errno, std::system_category(), "write_opb writev");
+        }
+        if (std::cmp_less(written, sizeof(opb.flags.vnethdr) + opb.hdrbuf.size())) {
+            // this shouldn't happen but add the handling just in case
+            // return std::error_code(EAGAIN, std::system_category());
+            throw std::system_error(EAGAIN, std::system_category(), "unexpectedly short tun write");
+        }
+        opb.buf.erase(opb.buf.begin(), opb.buf.begin() + (written - sizeof(opb.flags.vnethdr) - opb.hdrbuf.size()));
     }
-    if (std::cmp_less(written, sizeof(opb.flags.vnethdr) + opb.hdrbuf.size())) {
-        // this shouldn't happen but add the handling just in case
-        // return std::error_code(EAGAIN, std::system_category());
-        throw std::system_error(EAGAIN, std::system_category(), "unexpectedly short tun write");
-    }
-    opb.buf.erase(opb.buf.begin(), opb.buf.begin() + (written - sizeof(opb.flags.vnethdr) - opb.hdrbuf.size()));
     return outcome::success();
 }
 
