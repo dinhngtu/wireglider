@@ -15,6 +15,7 @@
 #include "endpoint.hpp"
 #include "worker/offload.hpp"
 #include "worker/flowkey.hpp"
+#include "worker/flowkey_ref.hpp"
 #include "worker/send.hpp"
 #include "worker/write.hpp"
 
@@ -70,6 +71,10 @@ private:
         epoll_event *ev,
         std::vector<uint8_t> &outbuf);
     std::optional<worker_impl::DecapBatch> do_server_decap(
+        worker_impl::PacketBatch pb,
+        ClientEndpoint ep,
+        std::vector<uint8_t> &scratch);
+    std::optional<worker_impl::DecapRefBatch> do_server_decap_ref(
         worker_impl::PacketBatch pb,
         ClientEndpoint ep,
         std::vector<uint8_t> &scratch);

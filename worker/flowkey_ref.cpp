@@ -16,8 +16,8 @@ using enum DecapOutcome;
 namespace wireglider::worker_impl {
 
 template <typename T>
-static std::pair<typename FlowMap<T>::iterator, bool> find_flow(
-    FlowMap<T> &flow,
+static std::pair<typename RefFlowMap<T>::iterator, bool> find_flow(
+    RefFlowMap<T> &flow,
     const FlowKey<T> &fk,
     std::span<const uint8_t> pktdata,
     const PacketFlags &flags) {
@@ -35,7 +35,7 @@ static std::pair<typename FlowMap<T>::iterator, bool> find_flow(
 
 // returns true if the next flow was merged and erased
 template <typename T>
-static bool merge_next_flow(FlowMap<T> &flow, const typename FlowMap<T>::iterator &it) {
+static bool merge_next_flow(RefFlowMap<T> &flow, const typename RefFlowMap<T>::iterator &it) {
     if (it == flow.begin())
         return false;
     if (it->second.flags.ispsh())
@@ -43,7 +43,7 @@ static bool merge_next_flow(FlowMap<T> &flow, const typename FlowMap<T>::iterato
     auto next = it - 1;
     if (!it->second.is_mergeable(next->second))
         return false;
-    if (it->second.flags.istcp() ? !it->first.is_consecutive_with(next->first, it->second.count, it->second.buf.size())
+    if (it->second.flags.istcp() ? !it->first.is_consecutive_with(next->first, it->second.iov.size(), it->second.bytes)
                                  : !it->first.matches(next->first))
         return false;
     it->second.extend(next->second);
@@ -53,14 +53,14 @@ static bool merge_next_flow(FlowMap<T> &flow, const typename FlowMap<T>::iterato
 
 // returns true if this flow was merged with the previous flow and erased
 template <typename T>
-static bool merge_prev_flow(FlowMap<T> &flow, const typename FlowMap<T>::iterator &it) {
+static bool merge_prev_flow(RefFlowMap<T> &flow, const typename RefFlowMap<T>::iterator &it) {
     auto prev = it + 1;
     if (prev == flow.end())
         return false;
     if (!prev->second.is_mergeable(it->second))
         return false;
     if (it->second.flags.istcp()
-            ? !prev->first.is_consecutive_with(it->first, prev->second.count, prev->second.buf.size())
+            ? !prev->first.is_consecutive_with(it->first, prev->second.iov.size(), prev->second.bytes)
             : !prev->first.matches(it->first))
         return false;
     if (prev->second.flags.ispsh())
@@ -72,7 +72,7 @@ static bool merge_prev_flow(FlowMap<T> &flow, const typename FlowMap<T>::iterato
 
 template <typename T>
 static void append_flow(
-    FlowMap<T> &flow,
+    RefFlowMap<T> &flow,
     FlowKey<T> &fk,
     std::span<const uint8_t> pkthdr,
     std::span<const uint8_t> pktdata,
@@ -92,7 +92,7 @@ static void append_flow(
         } else {
             flags.vnethdr.gso_type = VIRTIO_NET_HDR_GSO_UDP_L4;
         }
-        std::tie(it, created) = flow.emplace(fk, OwnedPacketBatch(pkthdr, size_t(4) * fk.segment_size, flags));
+        std::tie(it, created) = flow.emplace(fk, PacketRefBatch(pkthdr, flags));
         assert(created);
     }
     it->second.append(pktdata);
@@ -276,9 +276,9 @@ static DecapOutcome evaluate_packet(
 template <auto fill_ip>
 static DecapOutcome do_push_packet(
     std::span<const uint8_t> ippkt,
-    FlowMap<address_type_of_t<fill_ip>> &tcpflow,
-    FlowMap<address_type_of_t<fill_ip>> &udpflow,
-    std::deque<std::vector<uint8_t>> &unrel,
+    RefFlowMap<address_type_of_t<fill_ip>> &tcpflow,
+    RefFlowMap<address_type_of_t<fill_ip>> &udpflow,
+    DecapRefBatch::unrel_type &unrel,
     uint32_t &udpid,
     uint8_t ecn_outer) {
     FlowKey<address_type_of_t<fill_ip>> fk{};
@@ -292,7 +292,7 @@ static DecapOutcome do_push_packet(
         break;
     }
     case GRO_NOADD:
-        unrel.emplace_back(ippkt.begin(), ippkt.end());
+        unrel.push_back({const_cast<uint8_t *>(ippkt.data()), ippkt.size()});
         break;
     case GRO_DROP:
         break;
@@ -300,15 +300,15 @@ static DecapOutcome do_push_packet(
     return res;
 }
 
-DecapOutcome DecapBatch::push_packet_v4(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
+DecapOutcome DecapRefBatch::push_packet_v4(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
     return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel, udpid, ecn_outer);
 }
 
-DecapOutcome DecapBatch::push_packet_v6(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
+DecapOutcome DecapRefBatch::push_packet_v6(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
     return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel, udpid, ecn_outer);
 }
 
-DecapOutcome DecapBatch::push_packet(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
+DecapOutcome DecapRefBatch::push_packet(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
     if (ippkt.size() < sizeof(struct ip))
         return GRO_NOADD;
     auto ip = reinterpret_cast<const struct ip *>(ippkt.data());
@@ -318,7 +318,7 @@ DecapOutcome DecapBatch::push_packet(std::span<const uint8_t> ippkt, uint8_t ecn
         return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel, udpid, ecn_outer);
 }
 
-void DecapBatch::aggregate_udp() {
+void DecapRefBatch::aggregate_udp() {
     // TODO
 }
 

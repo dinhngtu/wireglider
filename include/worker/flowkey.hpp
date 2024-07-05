@@ -163,13 +163,18 @@ using FlowMap = boost::container::flat_map<FlowKey<AddressType>, OwnedPacketBatc
 using IP4Flow = FlowMap<in_addr>;
 using IP6Flow = FlowMap<in6_addr>;
 
-struct DecapBatch {
-    enum Outcome {
-        GRO_ADD,
-        GRO_NOADD,
-        GRO_DROP,
-    };
+enum DecapOutcome {
+    GRO_ADD,
+    GRO_NOADD,
+    GRO_DROP,
+};
 
+static inline auto format_as(DecapOutcome o) {
+    static const std::array<std::string, 3> outcomes = {"GRO_ADD", "GRO_NOADD", "GRO_NOADD"};
+    return outcomes[o];
+}
+
+struct DecapBatch {
     IP4Flow tcp4;
     IP4Flow udp4;
     IP6Flow tcp6;
@@ -183,15 +188,10 @@ struct DecapBatch {
     // unique udp flow number
     uint32_t udpid = 0;
 
-    Outcome push_packet_v4(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
-    Outcome push_packet_v6(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
-    Outcome push_packet(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
+    DecapOutcome push_packet_v4(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
+    DecapOutcome push_packet_v6(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
+    DecapOutcome push_packet(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
     void aggregate_udp();
 };
-
-static inline auto format_as(DecapBatch::Outcome o) {
-    static const std::array<std::string, 3> outcomes = {"GRO_ADD", "GRO_NOADD", "GRO_NOADD"};
-    return outcomes[o];
-}
 
 } // namespace wireglider::worker_impl

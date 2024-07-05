@@ -8,3 +8,4 @@ tests/test-offload
 tests/test-endian
 tests/test-flowkey
 tests/test-ancillary
+tests/test-flowkey-ref

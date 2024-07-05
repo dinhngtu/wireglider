@@ -1,0 +1,124 @@
+#pragma once
+
+#include <cassert>
+#include <bitset>
+#include <vector>
+#include <span>
+#include <deque>
+#include <type_traits>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+#include "virtio_net.hpp"
+#include <boost/endian.hpp>
+#include <boost/container/flat_map.hpp>
+#include <boost/container/small_vector.hpp>
+
+#include "flowkey.hpp"
+
+namespace wireglider::worker_impl {
+
+template <typename T, size_t Size>
+struct sized_vector {
+    using type = boost::container::small_vector<T, Size - sizeof(boost::container::small_vector<T, 0>)>;
+    static_assert(sizeof(type) == Size);
+};
+
+template <typename T, size_t Size>
+using sized_vector_t = sized_vector<T, Size>::type;
+
+struct PacketRefBatch {
+    explicit PacketRefBatch() {
+    }
+    explicit PacketRefBatch(std::span<const uint8_t> hdr, const PacketFlags &_flags)
+        : hdrbuf(hdr.begin(), hdr.end()), flags(_flags) {
+    }
+    PacketRefBatch(const PacketRefBatch &) = default;
+    PacketRefBatch &operator=(const PacketRefBatch &) = default;
+    PacketRefBatch(PacketRefBatch &&other) {
+        hdrbuf = std::move(other.hdrbuf);
+        iov = std::move(other.iov);
+        bytes = std::exchange(other.bytes, 0);
+        flags = other.flags;
+    }
+    PacketRefBatch &operator=(PacketRefBatch &&other) {
+        if (this != &other) {
+            hdrbuf = std::move(other.hdrbuf);
+            iov = std::move(other.iov);
+            bytes = std::exchange(other.bytes, 0);
+            flags = other.flags;
+        }
+        return *this;
+    }
+    ~PacketRefBatch() = default;
+
+    void append(std::span<const uint8_t> data) {
+        iov.push_back({const_cast<uint8_t *>(data.data()), data.size()});
+        bytes += data.size();
+    }
+    void extend(PacketRefBatch &other) {
+        iov.insert(iov.end(), other.iov.begin(), other.iov.end());
+        bytes += other.bytes;
+        other.iov.clear();
+        other.bytes = 0;
+    }
+    bool is_appendable(size_t size) const {
+        return iov.size() + 1 < 64 && bytes + size < 65536;
+    }
+    bool is_mergeable(const PacketRefBatch &other) const {
+        return iov.size() + other.iov.size() < 64 && bytes + other.bytes < 65536;
+    }
+    struct ip *ip4hdr() {
+        assert(!flags.isv6());
+        return reinterpret_cast<struct ip *>(hdrbuf.data());
+    }
+    struct ip6_hdr *ip6hdr() {
+        assert(flags.isv6());
+        return reinterpret_cast<struct ip6_hdr *>(hdrbuf.data());
+    }
+    struct tcphdr *tcphdr() {
+        assert(flags.istcp());
+        auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
+        return reinterpret_cast<struct tcphdr *>(&hdrbuf[iphsize]);
+    }
+    struct udphdr *udphdr() {
+        assert(!flags.istcp());
+        auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
+        return reinterpret_cast<struct udphdr *>(&hdrbuf[iphsize]);
+    }
+    boost::container::small_vector<uint8_t, 64> hdrbuf;
+    boost::container::small_vector<iovec, 16> iov;
+    size_t bytes = 0;
+    PacketFlags flags;
+};
+
+template <typename AddressType>
+using RefFlowMap = boost::container::flat_map<FlowKey<AddressType>, PacketRefBatch, std::greater<FlowKey<AddressType>>>;
+using IP4RefFlow = RefFlowMap<in_addr>;
+using IP6RefFlow = RefFlowMap<in6_addr>;
+
+struct DecapRefBatch {
+    using unrel_type = boost::container::small_vector<iovec, 8>;
+    using retpkt_type = boost::container::small_vector<iovec, 8>;
+
+    IP4RefFlow tcp4;
+    IP4RefFlow udp4;
+    IP6RefFlow tcp6;
+    IP6RefFlow udp6;
+    // packets that are not aggregated
+    unrel_type unrel;
+
+    // packets that must be returned to the client for protocol reasons
+    retpkt_type retpkt;
+
+    // unique udp flow number
+    uint32_t udpid = 0;
+
+    DecapOutcome push_packet_v4(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
+    DecapOutcome push_packet_v6(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
+    DecapOutcome push_packet(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
+    void aggregate_udp();
+};
+
+} // namespace wireglider::worker_impl

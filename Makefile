@@ -137,6 +137,7 @@ TESTS=\
 	tests/test-offload \
 	tests/test-endian \
 	tests/test-flowkey \
+	tests/test-flowkey-ref \
 	tests/test-ancillary \
 
 $(TESTS): CPPFLAGS+=$(CATCH_CPPFLAGS) $(TINS_CPPFLAGS)
@@ -148,9 +149,11 @@ $(TESTS): LDLIBS=-ltdutil -lfmt -lfastcsum $(CATCH_LDLIBS) $(TINS_LDLIBS)
 OBJECTS=\
 	worker.o \
 	worker/decap.o \
+	worker/decap_ref.o \
 	worker/encap.o \
 	worker/offload.o \
 	worker/flowkey.o \
+	worker/flowkey_ref.o \
 	worker/send.o \
 	worker/write.o \
 	control.o \
@@ -180,6 +183,8 @@ tests/test-checksum: checksum.o
 tests/test-offload: worker/offload.o checksum.o
 
 tests/test-flowkey: worker/flowkey.o checksum.o
+
+tests/test-flowkey-ref: worker/flowkey_ref.o checksum.o
 
 liblinux/xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 

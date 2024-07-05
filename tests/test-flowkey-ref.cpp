@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "worker/flowkey.hpp"
+#include "worker/flowkey_ref.hpp"
 #include "packet_tests.hpp"
 #include "netutil.hpp"
 
@@ -12,7 +12,7 @@ static const IPv4Address ip4a("192.0.2.1"), ip4b("192.0.2.2"), ip4c("192.0.2.3")
 static const IPv6Address ip6a("2001:db8::1"), ip6b("2001:db8::2"), ip6c("2001:db8::3");
 
 static void push_one(
-    worker_impl::DecapBatch &batch,
+    worker_impl::DecapRefBatch &batch,
     std::vector<uint8_t> pkt,
     worker_impl::DecapOutcome outcome = GRO_ADD,
     uint8_t ecn_outer = 0) {
@@ -32,8 +32,8 @@ static void check_flow(
     REQUIRE(it->first.dstip == to_addr(dst));
     REQUIRE(it->first.segment_size == segment_size);
     REQUIRE(it->first.seq == seq);
-    REQUIRE(it->second.count == count);
-    REQUIRE(it->second.buf.size() == count * segment_size);
+    REQUIRE(it->second.iov.size() == count);
+    REQUIRE(it->second.bytes == count * segment_size);
 }
 
 // for use when the two flows are otherwise equivalent
@@ -47,8 +47,8 @@ static void check_flow_udp(
     REQUIRE(it->first.srcip == to_addr(src));
     REQUIRE(it->first.dstip == to_addr(dst));
     REQUIRE(it->first.segment_size == segment_size);
-    REQUIRE(it->second.count == count);
-    REQUIRE(it->second.buf.size() == count * segment_size);
+    REQUIRE(it->second.iov.size() == count);
+    REQUIRE(it->second.bytes == count * segment_size);
 }
 
 template <typename IPType, typename L4Type>
@@ -94,8 +94,8 @@ static inline wireglider::worker_impl::FlowKey<in6_addr> make_fk(
     };
 }
 
-TEST_CASE("DecapBatch multiple protocols and flows") {
-    worker_impl::DecapBatch batch;
+TEST_CASE("DecapRefBatch multiple protocols and flows") {
+    worker_impl::DecapRefBatch batch;
 
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));     // tcp4 flow 1
     push_one(batch, make_udp<IP>(ip4a, 1, ip4b, 1, 100));                  // udp4 flow 1
@@ -158,8 +158,8 @@ TEST_CASE("DecapBatch multiple protocols and flows") {
     }
 }
 
-TEST_CASE("DecapBatch PSH interleaved") {
-    worker_impl::DecapBatch batch;
+TEST_CASE("DecapRefBatch PSH interleaved") {
+    worker_impl::DecapRefBatch batch;
 
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));                // v4 flow 1
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK | TCP::PSH, 100, 101));   // v4 flow 1
@@ -199,8 +199,8 @@ TEST_CASE("DecapBatch PSH interleaved") {
     }
 }
 
-TEST_CASE("DecapBatch coalesceItemInvalidCSum") {
-    worker_impl::DecapBatch batch;
+TEST_CASE("DecapRefBatch coalesceItemInvalidCSum") {
+    worker_impl::DecapRefBatch batch;
 
     push_one(
         batch,
@@ -231,8 +231,8 @@ TEST_CASE("DecapBatch coalesceItemInvalidCSum") {
     REQUIRE(batch.unrel.size() == 2);
 }
 
-TEST_CASE("DecapBatch out of order") {
-    worker_impl::DecapBatch batch;
+TEST_CASE("DecapRefBatch out of order") {
+    worker_impl::DecapRefBatch batch;
 
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 101)); // v4 flow 1 seq 101 len 100
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));   // v4 flow 1 seq 1 len 100
@@ -247,8 +247,8 @@ TEST_CASE("DecapBatch out of order") {
     }
 }
 
-TEST_CASE("DecapBatch out of order 2") {
-    worker_impl::DecapBatch batch;
+TEST_CASE("DecapRefBatch out of order 2") {
+    worker_impl::DecapRefBatch batch;
 
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 201));
@@ -263,8 +263,8 @@ TEST_CASE("DecapBatch out of order 2") {
     }
 }
 
-TEST_CASE("DecapBatch unequal TTL") {
-    worker_impl::DecapBatch batch;
+TEST_CASE("DecapRefBatch unequal TTL") {
+    worker_impl::DecapRefBatch batch;
 
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 101, [](IP &ip, TCP &tcp) { ip.ttl(65); }));
@@ -306,8 +306,8 @@ TEST_CASE("DecapBatch unequal TTL") {
     }
 }
 
-TEST_CASE("DecapBatch unequal ToS") {
-    worker_impl::DecapBatch batch;
+TEST_CASE("DecapRefBatch unequal ToS") {
+    worker_impl::DecapRefBatch batch;
 
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 101, [](IP &ip, TCP &tcp) { ip.tos(1); }));
@@ -349,8 +349,8 @@ TEST_CASE("DecapBatch unequal ToS") {
     }
 }
 
-TEST_CASE("DecapBatch unequal flags more fragments set") {
-    worker_impl::DecapBatch batch;
+TEST_CASE("DecapRefBatch unequal flags more fragments set") {
+    worker_impl::DecapRefBatch batch;
 
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));
     push_one(
@@ -378,8 +378,8 @@ TEST_CASE("DecapBatch unequal flags more fragments set") {
         GRO_NOADD);
 }
 
-TEST_CASE("DecapBatch unequal flags DF set") {
-    worker_impl::DecapBatch batch;
+TEST_CASE("DecapRefBatch unequal flags DF set") {
+    worker_impl::DecapRefBatch batch;
 
     push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));
     push_one(
@@ -407,8 +407,8 @@ TEST_CASE("DecapBatch unequal flags DF set") {
         GRO_NOADD);
 }
 
-TEST_CASE("DecapBatch ipv6 unequal hop limit") {
-    worker_impl::DecapBatch batch;
+TEST_CASE("DecapRefBatch ipv6 unequal hop limit") {
+    worker_impl::DecapRefBatch batch;
 
     push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 1));
     push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 101, [](IPv6 &ip, TCP &tcp) { ip.hop_limit(65); }));
@@ -450,8 +450,8 @@ TEST_CASE("DecapBatch ipv6 unequal hop limit") {
     }
 }
 
-TEST_CASE("DecapBatch ipv6 unequal traffic class") {
-    worker_impl::DecapBatch batch;
+TEST_CASE("DecapRefBatch ipv6 unequal traffic class") {
+    worker_impl::DecapRefBatch batch;
 
     push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 1));
     push_one(batch, make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 101, [](IPv6 &ip, TCP &tcp) {
@@ -497,13 +497,13 @@ TEST_CASE("DecapBatch ipv6 unequal traffic class") {
 
 // TODO: ECN tests
 
-TEST_CASE("DecapBatch invalid packets") {
+TEST_CASE("DecapRefBatch invalid packets") {
     auto tcp4 = make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1);
     auto udp4 = make_udp<IP>(ip4a, 1, ip4b, 1, 100);
     auto tcp6 = make_tcp<IPv6>(ip6a, 1, ip6b, 1, TCP::ACK, 100, 1);
     auto udp6 = make_udp<IPv6>(ip6a, 1, ip6b, 1, 100);
 
-    worker_impl::DecapBatch batch;
+    worker_impl::DecapRefBatch batch;
 
     SECTION("tcp4 too short") {
         std::vector<uint8_t> pkt(&tcp4[0], &tcp4[40]);
