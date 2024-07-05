@@ -208,13 +208,7 @@ private:
 
     static int compare(struct cds_lfht_node *node, const void *key) {
         const K &leftkey = V::get_from(node, Tag{})->key(Tag{});
-        auto comp = leftkey <=> *static_cast<const K *>(key);
-        if (comp == std::strong_ordering::less)
-            return -1;
-        else if (comp == std::strong_ordering::equal)
-            return 0;
-        else
-            return 1;
+        return leftkey == *static_cast<const K *>(key);
     }
 
 private:
