@@ -22,9 +22,9 @@ struct Client {
     struct PubkeyTag {};
     struct EndpointTag {};
 
-    cds_lfht_node pubnode;
+    mutable cds_lfht_node pubnode;
     x25519_key pubkey;
-    cds_lfht_node epnode;
+    mutable cds_lfht_node epnode;
     ClientEndpoint epkey;
 
     // readonly
@@ -32,28 +32,28 @@ struct Client {
     std::array<uint8_t, 32> psk = {0};
     int keepalive = 0;
 
-    std::mutex mutex;
+    mutable std::mutex mutex;
     // protected by mutex:
-    wireguard_tunnel_raw *tunnel;
-    boost::unordered_flat_set<IpRange> allowed_ips;
+    mutable wireguard_tunnel_raw *tunnel;
+    mutable boost::unordered_flat_set<IpRange> allowed_ips;
 
     // is there a better way to implement this stuff?
-    constexpr x25519_key &key([[maybe_unused]] PubkeyTag tag) {
+    constexpr const x25519_key &key([[maybe_unused]] PubkeyTag tag) const {
         return pubkey;
     }
-    constexpr cds_lfht_node &node([[maybe_unused]] PubkeyTag tag) {
+    constexpr cds_lfht_node &node([[maybe_unused]] PubkeyTag tag) const {
         return pubnode;
     }
-    static Client *get_from(cds_lfht_node *node, [[maybe_unused]] PubkeyTag tag) {
+    static const Client *get_from(cds_lfht_node *node, [[maybe_unused]] PubkeyTag tag) {
         return caa_container_of(node, Client, pubnode);
     }
-    constexpr ClientEndpoint &key([[maybe_unused]] EndpointTag tag) {
+    constexpr const ClientEndpoint &key([[maybe_unused]] EndpointTag tag) const {
         return epkey;
     }
-    constexpr cds_lfht_node &node([[maybe_unused]] EndpointTag tag) {
+    constexpr cds_lfht_node &node([[maybe_unused]] EndpointTag tag) const {
         return epnode;
     }
-    static Client *get_from(cds_lfht_node *node, [[maybe_unused]] EndpointTag tag) {
+    static const Client *get_from(cds_lfht_node *node, [[maybe_unused]] EndpointTag tag) {
         return caa_container_of(node, Client, epnode);
     }
 };

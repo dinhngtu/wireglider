@@ -89,9 +89,9 @@ private:
     void do_cmd_set(control_impl::ControlClient *client);
     void do_cmd_set_privkey(const control_impl::InterfaceCommand &iface_cmd);
     void do_cmd_flush_tables(RundownGuard &rcu);
-    Client *do_remove_client(RundownGuard &rcu, Config *config, const x25519_key &public_key);
+    const Client *do_remove_client(RundownGuard &rcu, Config *config, const x25519_key &public_key);
     // returns **old** client to delete
-    Client *do_add_client(RundownGuard &rcu, Config *config, control_impl::ClientSetCommand &cmd);
+    const Client *do_add_client(RundownGuard &rcu, Config *config, control_impl::ClientSetCommand &cmd);
 
     unsigned int client_timer_id(const x25519_key &k) const {
         return std::hash<x25519_key>{}(k) % _arg.timerq->size();

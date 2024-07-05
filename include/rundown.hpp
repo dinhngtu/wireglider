@@ -41,8 +41,8 @@ struct CdsException : public std::exception {
 // reversed typename order for use in constraints
 template <typename V, typename K, typename Tag>
 concept IsCdsHashtableNode = requires(V v, Tag tag, cds_lfht_node *node) {
-    { v.key(tag) } -> std::same_as<K &>;
-    { v.node(tag) } -> std::same_as<cds_lfht_node &>;
+    { v.key(tag) } -> std::convertible_to<const K &>;
+    { v.node(tag) } -> std::convertible_to<cds_lfht_node &>;
     { V::get_from(node, tag) } -> std::convertible_to<V *>;
 };
 

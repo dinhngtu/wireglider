@@ -304,7 +304,7 @@ void ControlWorker::do_cmd_set(ControlClient *cc) {
     if (iface_cmd.has_privkey)
         do_cmd_set_privkey(iface_cmd);
 
-    std::deque<Client *> todelete;
+    std::deque<const Client *> todelete;
     try {
         RundownGuard rcu;
 
@@ -318,7 +318,7 @@ void ControlWorker::do_cmd_set(ControlClient *cc) {
 
         auto config = _arg._config.load(std::memory_order_acquire);
         for (auto &cmd : cmds) {
-            Client *old = nullptr;
+            const Client *old = nullptr;
             if (cmd.remove)
                 old = do_remove_client(rcu, config, cmd.public_key);
             else
@@ -379,11 +379,11 @@ void ControlWorker::do_cmd_flush_tables(RundownGuard &rcu) {
     _arg.clients->clear(rcu);
 }
 
-Client *ControlWorker::do_remove_client(RundownGuard &rcu, Config *config, const x25519_key &public_key) {
+const Client *ControlWorker::do_remove_client(RundownGuard &rcu, Config *config, const x25519_key &public_key) {
     auto it = _arg.clients->find(rcu, public_key);
     if (it != _arg.clients->end()) {
         auto oldclient = it.get();
-        Client *replaced;
+        const Client *replaced;
         // none of this should fail
         for (auto aip : oldclient->allowed_ips) {
             if (auto net4 = std::get_if<IpRange4>(&aip)) {
@@ -406,7 +406,7 @@ Client *ControlWorker::do_remove_client(RundownGuard &rcu, Config *config, const
     }
 }
 
-Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, ClientSetCommand &cmd) {
+const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, ClientSetCommand &cmd) {
     /*
     auto oldclient = do_remove_client(rcu, config, cmd.public_key);
     if (!oldclient && cmd.update_only)
@@ -458,7 +458,7 @@ Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, ClientSe
 
         // we're the only writer to client/ep/aip tables
         // so we're free to do rmw existence checking here
-        Client *replaced;
+        const Client *replaced;
         {
             replaced = _arg.clients->replace(rcu, newclient);
             if (replaced != oldclient)

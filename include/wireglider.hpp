@@ -11,8 +11,8 @@
 
 namespace wireglider {
 
-using ClientTable = CdsHashtable<x25519_key, Client::PubkeyTag, Client>;
-using EndpointTable = CdsHashtable<ClientEndpoint, Client::EndpointTag, Client>;
+using ClientTable = CdsHashtable<x25519_key, Client::PubkeyTag, const Client>;
+using EndpointTable = CdsHashtable<ClientEndpoint, Client::EndpointTag, const Client>;
 
 struct QuitException : public std::exception {};
 
