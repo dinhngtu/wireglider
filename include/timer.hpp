@@ -13,6 +13,7 @@
 #include "wireglider.hpp"
 #include "client.hpp"
 #include "maple_tree.hpp"
+#include "udpsock.hpp"
 
 namespace wireglider {
 
@@ -42,6 +43,7 @@ struct TimerArg {
     unsigned int id;
     ClientTable *clients;
     timer_impl::TimerQueue *queue;
+    UdpServer *server;
 };
 
 class TimerWorker {

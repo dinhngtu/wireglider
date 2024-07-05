@@ -107,14 +107,20 @@ static void doit(Args &args) {
 
     std::vector<std::jthread> timers;
     boost::container::stable_vector<timer_impl::TimerQueue> timerq;
+    boost::container::stable_vector<UdpServer> timer_server;
     for (unsigned int i = 0; i < args.ntimers; i++) {
         timerq.emplace_back();
+        if (auto sin = std::get_if<sockaddr_in>(&args.listen_addr))
+            timer_server.emplace_back(*sin, false);
+        else if (auto sin6 = std::get_if<sockaddr_in6>(&args.listen_addr))
+            timer_server.emplace_back(*sin6, false);
         timers.emplace_back(
             timer_func,
             TimerArg{
                 .id = i,
                 .clients = &clients,
                 .queue = &timerq[i],
+                .server = &timer_server[i],
             });
     }
 
