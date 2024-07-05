@@ -8,7 +8,9 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
+#include <boost/endian.hpp>
 #include <boost/container_hash/hash.hpp>
+#include <fmt/format.h>
 #include <xxhash.h>
 
 #include <tdutil/util.hpp>
@@ -110,4 +112,39 @@ static inline bool operator==(const in6_addr &a, const in6_addr &b) noexcept {
 
 static inline auto operator<=>(const in6_addr &a, const in6_addr &b) noexcept {
     return memcmp(&a, &b, sizeof(a)) <=> 0;
+}
+
+static inline auto format_as(const in_addr &a) {
+    uint8_t b[4];
+    boost::endian::store_big_u32(b, boost::endian::big_to_native(a.s_addr));
+    return fmt::format("{}.{}.{}.{}", b[0], b[1], b[2], b[3]);
+}
+
+static inline auto format_as(const in6_addr &a) {
+    return fmt::format(
+        "{:04x}:{:04x}:{:04x}:{:04x}:{:04x}:{:04x}:{:04x}:{:04x}",
+        boost::endian::big_to_native(a.s6_addr16[0]),
+        boost::endian::big_to_native(a.s6_addr16[1]),
+        boost::endian::big_to_native(a.s6_addr16[2]),
+        boost::endian::big_to_native(a.s6_addr16[3]),
+        boost::endian::big_to_native(a.s6_addr16[4]),
+        boost::endian::big_to_native(a.s6_addr16[5]),
+        boost::endian::big_to_native(a.s6_addr16[6]),
+        boost::endian::big_to_native(a.s6_addr16[7]));
+}
+
+static inline auto format_as(const struct ip &ip) {
+    return fmt::format("ip4 {}->{} proto {}", ip.ip_src, ip.ip_dst, ip.ip_p);
+}
+
+static inline auto format_as(const ip6_hdr &ip) {
+    return fmt::format("ip6 {}->{} proto {}", ip.ip6_src, ip.ip6_dst, ip.ip6_nxt);
+}
+
+static inline auto format_as(const sockaddr_in &sin) {
+    return fmt::format("{}:{}", format_as(sin.sin_addr), boost::endian::big_to_native(sin.sin_port));
+}
+
+static inline auto format_as(const sockaddr_in6 &sin6) {
+    return fmt::format("[{}]:{}", format_as(sin6.sin6_addr), boost::endian::big_to_native(sin6.sin6_port));
 }

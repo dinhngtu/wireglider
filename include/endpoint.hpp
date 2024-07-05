@@ -5,13 +5,25 @@
 #include <cstring>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
+#include <fmt/format.h>
 #include <xxhash.h>
 
 #include "netutil.hpp"
 
 namespace wireglider {
-
 using ClientEndpoint = std::variant<sockaddr_in, sockaddr_in6>;
+}
+
+static inline auto format_as(const wireglider::ClientEndpoint &a) {
+    if (auto sina = std::get_if<sockaddr_in>(&a))
+        return format_as(*sina);
+    else if (auto sin6a = std::get_if<sockaddr_in6>(&a))
+        return format_as(*sin6a);
+    else
+        return std::string();
+}
+
+namespace wireglider {
 
 static inline bool operator==(const ClientEndpoint &a, const ClientEndpoint &b) noexcept {
     if (a.index() != b.index())

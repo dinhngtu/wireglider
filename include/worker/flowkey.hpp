@@ -189,4 +189,9 @@ struct DecapBatch {
     void aggregate_udp();
 };
 
+static inline auto format_as(DecapBatch::Outcome o) {
+    static const std::array<std::string, 3> outcomes = {"GRO_ADD", "GRO_NOADD", "GRO_NOADD"};
+    return outcomes[o];
+}
+
 } // namespace wireglider::worker_impl
