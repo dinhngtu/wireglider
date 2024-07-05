@@ -86,7 +86,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
 
     PacketBatch pb{
         .prefix = {},
-        .data = {buf.data(), iov.iov_len},
+        .data = {buf.data(), static_cast<size_t>(bytes)},
         .segment_size = gro_size,
         .isv6 = isv6,
         .ecn = ecn,

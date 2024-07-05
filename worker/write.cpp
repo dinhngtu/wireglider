@@ -28,9 +28,11 @@ static outcome::result<void> write_opb(int fd, OwnedPacketBatch &opb) {
         else
             throw std::system_error(errno, std::system_category(), "write_opb writev");
     }
-    if (std::cmp_less_equal(written, sizeof(opb.flags.vnethdr) + opb.hdrbuf.size()))
+    if (std::cmp_less(written, sizeof(opb.flags.vnethdr) + opb.hdrbuf.size())) {
         // this shouldn't happen but add the handling just in case
-        return std::error_code(EAGAIN, std::system_category());
+        // return std::error_code(EAGAIN, std::system_category());
+        throw std::system_error(EAGAIN, std::system_category(), "unexpectedly short tun write");
+    }
     opb.buf.erase(opb.buf.begin(), opb.buf.begin() + (written - sizeof(opb.flags.vnethdr) - opb.hdrbuf.size()));
     return outcome::success();
 }
@@ -67,9 +69,11 @@ static outcome::result<void> do_tun_write_unrel(int fd, std::deque<std::vector<u
             else
                 throw std::system_error(errno, std::system_category(), "do_tun_write_unrel writev");
         }
-        if (std::cmp_less_equal(written, sizeof(vnethdr) + pkts.front().size()))
+        if (std::cmp_less(written, sizeof(vnethdr) + pkts.front().size())) {
             // this shouldn't happen but add the handling just in case
-            return std::error_code(EAGAIN, std::system_category());
+            // return std::error_code(EAGAIN, std::system_category());
+            throw std::system_error(EAGAIN, std::system_category(), "unexpectedly short tun write");
+        }
         pkts.pop_front();
     }
     return outcome::success();
@@ -89,7 +93,10 @@ static outcome::result<void> do_tun_write_batch(int fd, DecapBatch &batch) {
 outcome::result<void> Worker::do_tun_write_batch(worker_impl::DecapBatch &batch) {
     auto ret = worker_impl::do_tun_write_batch(_arg.tun->fd(), batch);
     if (!ret) {
-        _tununrel.insert(_tununrel.end(), batch.unrel.begin(), batch.unrel.end());
+        while (!batch.unrel.empty()) {
+            _tununrel.push_back(std::move(batch.unrel.front()));
+            batch.unrel.pop_front();
+        }
         for (auto &flow : batch.tcp4)
             if (flow.second.count)
                 _tunwrite.emplace_back(std::move(flow.second));
@@ -114,6 +121,7 @@ void Worker::do_tun_write() {
             auto ret = write_opb(_arg.tun->fd(), _tunwrite.front());
             if (!ret)
                 break;
+            _tunwrite.pop_front();
         }
     }
     if (_tunwrite.empty() && _tununrel.empty())
