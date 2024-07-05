@@ -109,7 +109,6 @@ outcome::result<void> Worker::do_tun_write_batch(worker_impl::DecapBatch &batch)
         for (auto &flow : batch.udp6)
             if (flow.second.count)
                 _tunwrite.emplace_back(std::move(flow.second));
-        batch.unrel.clear();
         tun_enable(EPOLLOUT);
     }
     return ret;

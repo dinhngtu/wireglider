@@ -191,7 +191,7 @@ liblinux/xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-fi
 liblinux/maple_tree.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
 
 run: wireglider
-	sudo ./$< -a 0.0.0.0:51820 -A 10.77.44.1/24 -j 8 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM=
+	sudo ./$< -a 0.0.0.0:51820 -A 10.77.44.1/24 -j 1 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM=
 
 debug: wireglider
 	sudo gdb -ex "start -a 0.0.0.0:51820 -A 10.77.44.1/24 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM=" ./$<

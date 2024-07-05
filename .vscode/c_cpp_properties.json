@@ -11,8 +11,10 @@
                 "${workspaceFolder}/../cxxopts/include",
                 "${workspaceFolder}/../boringtun/boringtun/src",
                 "${workspaceFolder}/../fmt/include",
-                "${workspaceFolder}/../libtins/include",
+                "${workspaceFolder}/../mimalloc/include",
                 "${workspaceFolder}/../xxHash",
+                "${workspaceFolder}/../userspace-rcu/include",
+                "${workspaceFolder}/../libtins/include",
                 "${workspaceFolder}/../Catch2/src",
                 "${workspaceFolder}/../Catch2/build/generated-includes",
                 "${workspaceFolder}/../fastcsum/include"

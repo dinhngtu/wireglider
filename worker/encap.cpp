@@ -114,6 +114,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
             if (!crypted_segment_size)
                 crypted_segment_size = res.size;
             else
+                // TODO: handle the case of cached packets
                 assert(rest.empty() || crypted_segment_size == res.size);
         }
     }
