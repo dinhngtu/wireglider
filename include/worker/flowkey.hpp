@@ -177,11 +177,11 @@ struct DecapBatch {
     // packets that are not aggregated
     std::deque<std::vector<uint8_t>> unrel;
 
-    // unique udp flow number
-    uint32_t udpid = 0;
-
     // packets that must be returned to the client for protocol reasons
     std::deque<std::vector<uint8_t>> retpkt;
+
+    // unique udp flow number
+    uint32_t udpid = 0;
 
     Outcome push_packet_v4(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
     Outcome push_packet_v6(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
