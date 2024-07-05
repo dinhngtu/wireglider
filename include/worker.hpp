@@ -121,6 +121,7 @@ private:
     std::vector<uint8_t> _pktbuf, _sendbuf;
     worker_impl::ServerSendQueue _serversend;
     worker_impl::TunWriteQueue _tunwrite;
+    std::deque<std::vector<uint8_t>> _tununrel;
 };
 
 // this function forces all worker allocations to happen within its own thread

@@ -11,7 +11,6 @@ namespace wireglider {
 
 namespace worker_impl {
 
-// returns -errno
 static outcome::result<void> write_opb(int fd, OwnedPacketBatch &opb) {
     if (!opb.count)
         return outcome::success();
@@ -50,7 +49,34 @@ static outcome::result<void> do_tun_write_flowmap(int fd, FlowMap<T> &flows) {
     return ret;
 }
 
+static outcome::result<void> do_tun_write_unrel(int fd, std::deque<std::vector<uint8_t>> &pkts) {
+    virtio_net_hdr vnethdr{};
+    vnethdr.flags = 0;
+    vnethdr.gso_type = VIRTIO_NET_HDR_GSO_NONE;
+    while (!pkts.empty()) {
+        std::array<iovec, 2> iov = {
+            iovec{&vnethdr, sizeof(vnethdr)},
+            iovec{pkts.front().data(), pkts.front().size()},
+        };
+        auto written = writev(fd, iov.data(), iov.size());
+        if (written < 0) {
+            if (is_eagain())
+                return fail(EAGAIN);
+            else if (errno == EBADFD)
+                throw QuitException();
+            else
+                throw std::system_error(errno, std::system_category(), "do_tun_write_unrel writev");
+        }
+        if (std::cmp_less_equal(written, sizeof(vnethdr) + pkts.front().size()))
+            // this shouldn't happen but add the handling just in case
+            return std::error_code(EAGAIN, std::system_category());
+        pkts.pop_front();
+    }
+    return outcome::success();
+}
+
 static outcome::result<void> do_tun_write_batch(int fd, DecapBatch &batch) {
+    BOOST_OUTCOME_TRY(do_tun_write_unrel(fd, batch.unrel));
     BOOST_OUTCOME_TRY(do_tun_write_flowmap(fd, batch.tcp4));
     BOOST_OUTCOME_TRY(do_tun_write_flowmap(fd, batch.udp4));
     BOOST_OUTCOME_TRY(do_tun_write_flowmap(fd, batch.tcp6));
@@ -63,6 +89,7 @@ static outcome::result<void> do_tun_write_batch(int fd, DecapBatch &batch) {
 outcome::result<void> Worker::do_tun_write_batch(worker_impl::DecapBatch &batch) {
     auto ret = worker_impl::do_tun_write_batch(_arg.tun->fd(), batch);
     if (!ret) {
+        _tununrel.insert(_tununrel.end(), batch.unrel.begin(), batch.unrel.end());
         for (auto &flow : batch.tcp4)
             if (flow.second.count)
                 _tunwrite.emplace_back(std::move(flow.second));
@@ -75,20 +102,23 @@ outcome::result<void> Worker::do_tun_write_batch(worker_impl::DecapBatch &batch)
         for (auto &flow : batch.udp6)
             if (flow.second.count)
                 _tunwrite.emplace_back(std::move(flow.second));
+        batch.unrel.clear();
         tun_enable(EPOLLOUT);
     }
     return ret;
 }
 
 void Worker::do_tun_write() {
-    while (!_tunwrite.empty()) {
-        auto ret = write_opb(_arg.tun->fd(), _tunwrite.front());
-        if (!ret)
-            break;
+    if (worker_impl::do_tun_write_unrel(_arg.tun->fd(), _tununrel)) {
+        while (!_tunwrite.empty()) {
+            auto ret = write_opb(_arg.tun->fd(), _tunwrite.front());
+            if (!ret)
+                break;
+        }
     }
-    if (_tunwrite.empty())
+    if (_tunwrite.empty() && _tununrel.empty())
         tun_disable(EPOLLOUT);
-    else if (_tunwrite.size() < 64)
+    else if ((_tunwrite.size() + _tununrel.size()) < 64)
         server_enable(EPOLLIN);
     else
         server_disable(EPOLLIN);
