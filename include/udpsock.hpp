@@ -11,7 +11,7 @@ namespace wireglider {
 
 class UdpServer {
 public:
-    UdpServer(sockaddr_in sin) : _sin(sin) {
+    UdpServer(sockaddr_in sin, bool nonblock) : _sin(sin) {
         _sock = tdutil::FileDescriptor(socket(AF_INET, SOCK_DGRAM, 0));
         _sock.check();
 
@@ -20,10 +20,11 @@ public:
         if (bind(_sock, reinterpret_cast<sockaddr *>(&sin), sizeof(sin)) < 0)
             throw std::system_error(errno, std::system_category(), "bind");
 
-        _sock.set_nonblock();
+        if (nonblock)
+            _sock.set_nonblock();
     }
 
-    UdpServer(sockaddr_in6 sin6) : _sin(sin6) {
+    UdpServer(sockaddr_in6 sin6, bool nonblock) : _sin(sin6) {
         _sock = tdutil::FileDescriptor(socket(AF_INET6, SOCK_DGRAM, 0));
         _sock.check();
 
@@ -32,7 +33,8 @@ public:
         if (bind(_sock, reinterpret_cast<sockaddr *>(&sin6), sizeof(sin6)) < 0)
             throw std::system_error(errno, std::system_category(), "bind");
 
-        _sock.set_nonblock();
+        if (nonblock)
+            _sock.set_nonblock();
     }
 
     constexpr tdutil::FileDescriptor &fd() {
