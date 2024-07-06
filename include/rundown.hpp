@@ -7,7 +7,11 @@
 #include <optional>
 
 #pragma GCC diagnostic push
+#if __clang__
+#pragma GCC diagnostic ignored "-Wdeprecated-volatile"
+#else
 #pragma GCC diagnostic ignored "-Wvolatile"
+#endif
 #include <urcu-qsbr.h>
 #include <urcu/rculfhash.h>
 #pragma GCC diagnostic pop
@@ -188,7 +192,7 @@ public:
     }
 
     bool is_erased([[maybe_unused]] const RundownGuard &rcu, V *v) {
-        return cds_lfht_is_node_deleted(&v.node(Tag{}));
+        return cds_lfht_is_node_deleted(&v->node(Tag{}));
     }
 
     void resize(size_t newsize) {
@@ -216,12 +220,12 @@ private:
 };
 
 template <std::totally_ordered K, typename Tag, IsCdsHashtableNode<K, Tag> V>
-constexpr CdsHashtable<K, Tag, V>::iterator begin(CdsHashtable<K, Tag, V> &ht) {
+constexpr typename CdsHashtable<K, Tag, V>::iterator begin(CdsHashtable<K, Tag, V> &ht) {
     return ht.begin();
 }
 
 template <std::totally_ordered K, typename Tag, IsCdsHashtableNode<K, Tag> V>
-constexpr CdsHashtable<K, Tag, V>::iterator end(CdsHashtable<K, Tag, V> &ht) {
+constexpr typename CdsHashtable<K, Tag, V>::iterator end(CdsHashtable<K, Tag, V> &ht) {
     return ht.end();
 }
 

@@ -172,7 +172,7 @@ static std::pair<const ip6_hdr *, uint8_t> fill_fk_ip6(
 template <auto F>
 using ip_header_of_t = std::remove_pointer_t<typename tdutil::result_type_t<decltype(F)>::first_type>;
 template <auto F>
-using address_type_of_t = std::remove_cvref_t<tdutil::first_argument_t<decltype(F)>>::address_type;
+using address_type_of_t = typename std::remove_cvref_t<tdutil::first_argument_t<decltype(F)>>::address_type;
 
 template <typename T>
 static bool fill_fk_ecn(FlowKey<T> &fk, uint8_t ecn_outer) {

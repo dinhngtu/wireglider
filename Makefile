@@ -1,7 +1,15 @@
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
 CPPFLAGS+=-Iinclude
 CFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -std=c11 -fwrapv
-CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -Wold-style-cast -std=c++20 -fwrapv -fconcepts-diagnostics-depth=2
+CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -Wold-style-cast -std=c++20 -fwrapv
+
+USE_CLANG?=0
+ifeq ($(USE_CLANG),1)
+CC=clang
+CXX=clang++
+else
+CXXFLAGS+=-fconcepts-diagnostics-depth=2
+endif
 
 CPPFLAGS+=-pthread
 LDLIBS+=-pthread
@@ -167,6 +175,7 @@ OBJECTS=\
 	liblinux/kernel_compat.o \
 
 DEPS=$(patsubst %.o,%.d,$(OBJECTS))
+SOURCES=$(patsubst %,%.cpp,$(TARGETS) $(TESTS)) $(patsubst %.o,%.cpp,$(filter-out liblinux/%,$(OBJECTS)))
 
 all: $(TARGETS) $(TESTS)
 
@@ -180,6 +189,8 @@ $(TARGETS): %: %.cpp $(OBJ_MIMALLOC)
 $(TESTS): %: %.cpp
 	$(LINK.cpp) $< $(filter %.o,$^) $(LOADLIBES) $(LDLIBS) -o $@
 
+$(TESTS): CXXFLAGS+=-Wno-unused-parameter
+
 tests/test-checksum: checksum.o
 
 tests/test-offload: worker/offload.o checksum.o
@@ -188,7 +199,13 @@ tests/test-flowkey: worker/flowkey.o checksum.o
 
 tests/test-flowkey-ref: worker/flowkey_ref.o checksum.o
 
-liblinux/maple_tree.o liblinux/kernel_compat.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing -Wno-old-style-cast
+liblinux/maple_tree.o liblinux/kernel_compat.o: CXXFLAGS+=-Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing -Wno-old-style-cast
+
+ifeq ($(USE_CLANG),1)
+liblinux/maple_tree.o liblinux/kernel_compat.o: CXXFLAGS+=-Wno-deprecated-volatile -Wno-unused-function -Wno-c99-designator
+else
+liblinux/maple_tree.o liblinux/kernel_compat.o: CXXFLAGS+=-Wno-volatile
+endif
 
 run: wireglider
 	sudo ./$< -a 0.0.0.0:51820 -A 10.77.44.1/24 -j 1 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM=
@@ -207,12 +224,15 @@ check: tests
 cloc:
 	cloc --config .clocconfig .
 
+tidy:
+	clang-tidy $(SOURCES) -- $(CPPFLAGS)
+
 clean:
 	$(RM) $(TARGETS) $(TESTS)
 	$(RM) $(OBJECTS)
 	$(RM) $(DEPS)
 	find . -name '*.[od]' -print -delete
 
-.PHONY: $(TESTS_RUN) run debug check cloc clean
+.PHONY: $(TESTS_RUN) run debug check cloc tidy clean
 
 -include $(DEPS) $(wildcard tests/*.d)

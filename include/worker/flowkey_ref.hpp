@@ -22,15 +22,6 @@
 
 namespace wireglider::worker_impl {
 
-template <typename T, size_t Size>
-struct sized_vector {
-    using type = boost::container::small_vector<T, Size - sizeof(boost::container::small_vector<T, 0>)>;
-    static_assert(sizeof(type) == Size);
-};
-
-template <typename T, size_t Size>
-using sized_vector_t = sized_vector<T, Size>::type;
-
 struct PacketRefBatch {
     explicit PacketRefBatch() {
     }

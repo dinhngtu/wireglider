@@ -21,7 +21,7 @@ TEST_CASE("ancillary") {
     union {
         std::array<uint8_t, CMSG_SPACE(sizeof(uint16_t)) + CMSG_SPACE(sizeof(uint8_t))> arr;
         cmsghdr align;
-    } _cm = {0};
+    } _cm = {{0}};
     mh.msg_control = _cm.arr.data();
     mh.msg_controllen = _cm.arr.size();
 

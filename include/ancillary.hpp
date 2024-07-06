@@ -64,11 +64,11 @@ public:
         memcpy(CMSG_DATA(reinterpret_cast<cmsghdr *>(&_storage[off])), &val, sizeof(val));
     }
 
-    constexpr std::array<uint8_t, space()>::const_iterator begin() const {
+    constexpr typename std::array<uint8_t, space()>::const_iterator begin() const {
         return _storage.begin();
     }
 
-    constexpr std::array<uint8_t, space()>::const_iterator end() const {
+    constexpr typename std::array<uint8_t, space()>::const_iterator end() const {
         return _storage.end();
     }
 
