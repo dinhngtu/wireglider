@@ -139,6 +139,7 @@ TESTS=\
 	tests/test-flowkey \
 	tests/test-flowkey-ref \
 	tests/test-ancillary \
+	tests/test-sizes \
 
 $(TESTS): CPPFLAGS+=$(CATCH_CPPFLAGS) $(TINS_CPPFLAGS)
 $(TESTS): CFLAGS+=-Wno-unused -Wno-shadow
