@@ -19,24 +19,42 @@ void Worker::do_server(epoll_event *ev) {
         if (!crypt)
             return;
 
-        auto batch = do_server_decap(crypt->first, crypt->second, _pktbuf);
-        if (!batch)
-            return;
+        if constexpr (false) {
+            auto batch = do_server_decap(crypt->first, crypt->second, _pktbuf);
+            if (!batch)
+                return;
 
-        auto sendlist = new ServerSendList(std::move(batch->retpkt), crypt->second);
-        auto ret = server_send_list(sendlist);
-        if (ret) {
-            assert(sendlist->pos == sendlist->mh.size());
-            delete sendlist;
+            auto sendlist = new ServerSendList(std::move(batch->retpkt), crypt->second);
+            auto ret = server_send_list(sendlist);
+            if (ret) {
+                assert(sendlist->pos == sendlist->mh.size());
+                delete sendlist;
+            } else {
+                _serversend.push_back(*sendlist);
+                server_enable(EPOLLOUT);
+            }
+
+            if (!do_tun_write_batch(*batch))
+                return;
+
         } else {
-            _serversend.push_back(*sendlist);
-            server_enable(EPOLLOUT);
+            auto batch = do_server_decap_ref(crypt->first, crypt->second, _pktbuf);
+            if (!batch)
+                return;
+
+            auto ret = server_send_reflist(batch->retpkt, crypt->second);
+            if (ret.has_value()) {
+                auto tosend = new ServerSendList(crypt->second);
+                for (auto it = ret->begin(); it != ret->end(); it++)
+                    tosend->push_back(*it);
+                tosend->finalize();
+                _serversend.push_back(*tosend);
+                server_enable(EPOLLOUT);
+            }
+
+            if (!do_tun_write_batch(*batch))
+                return;
         }
-
-        if (!do_tun_write_batch(*batch))
-            return;
-
-        // TODO
     }
 }
 

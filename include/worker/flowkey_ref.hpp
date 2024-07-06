@@ -12,6 +12,7 @@
 #include <netinet/udp.h>
 #include "virtio_net.hpp"
 #include <boost/endian.hpp>
+#include <boost/container/deque.hpp>
 #include <boost/container/flat_map.hpp>
 #include <boost/container/small_vector.hpp>
 
@@ -54,11 +55,14 @@ struct PacketRefBatch {
     ~PacketRefBatch() = default;
 
     void append(std::span<const uint8_t> data) {
-        iov.push_back({const_cast<uint8_t *>(data.data()), data.size()});
+        if (data.data() == iov.back().iov_base + iov.back().iov_len)
+            iov.back().iov_len += data.size();
+        else
+            iov.push_back({const_cast<uint8_t *>(data.data()), data.size()});
         bytes += data.size();
     }
     void extend(PacketRefBatch &other) {
-        iov.insert(iov.end(), other.iov.begin(), other.iov.end());
+        iov.insert(iov.end(), other.iov.begin() + 2, other.iov.end());
         bytes += other.bytes;
         other.iov.clear();
         other.bytes = 0;
@@ -67,7 +71,7 @@ struct PacketRefBatch {
         return iov.size() + 1 < 64 && bytes + size < 65536;
     }
     bool is_mergeable(const PacketRefBatch &other) const {
-        return iov.size() + other.iov.size() < 64 && bytes + other.bytes < 65536;
+        return iov.size() + other.iov.size() < 66 && bytes + other.bytes < 65536;
     }
     struct ip *ip4hdr() {
         assert(!flags.isv6());
@@ -87,6 +91,11 @@ struct PacketRefBatch {
         auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
         return reinterpret_cast<struct udphdr *>(&hdrbuf[iphsize]);
     }
+    void finalize() {
+        iov[0] = {&flags.vnethdr, sizeof(flags.vnethdr)};
+        iov[1] = {hdrbuf.data(), hdrbuf.size()};
+    }
+
     boost::container::small_vector<uint8_t, 64> hdrbuf;
     boost::container::small_vector<iovec, 16> iov;
     size_t bytes = 0;
@@ -94,12 +103,14 @@ struct PacketRefBatch {
 };
 
 template <typename AddressType>
-using RefFlowMap = boost::container::flat_map<FlowKey<AddressType>, PacketRefBatch, std::greater<FlowKey<AddressType>>>;
+using RefFlowMap =
+    boost::container::small_flat_map<FlowKey<AddressType>, PacketRefBatch, 2, std::greater<FlowKey<AddressType>>>;
 using IP4RefFlow = RefFlowMap<in_addr>;
 using IP6RefFlow = RefFlowMap<in6_addr>;
 
 struct DecapRefBatch {
-    using unrel_type = boost::container::small_vector<iovec, 8>;
+    using unrel_type =
+        boost::container::deque<iovec, void, boost::container::deque_options_t<boost::container::block_size<128u>>>;
     using retpkt_type = boost::container::small_vector<iovec, 8>;
 
     IP4RefFlow tcp4;
@@ -119,6 +130,15 @@ struct DecapRefBatch {
     DecapOutcome push_packet_v6(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
     DecapOutcome push_packet(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
     void aggregate_udp();
+};
+
+struct FlowkeyRefMeta {
+    static constexpr size_t PacketRefBatchSize = sizeof(PacketRefBatch);
+    static constexpr size_t IP4RefFlowSize = sizeof(IP4RefFlow);
+    static constexpr size_t IP6RefFlowSize = sizeof(IP6RefFlow);
+    static constexpr size_t DecapRefUnrelSize = sizeof(DecapRefBatch::unrel_type);
+    static constexpr size_t DecapRefRetpktSize = sizeof(DecapRefBatch::retpkt_type);
+    static constexpr size_t DecapRefBatchSize = sizeof(DecapRefBatch);
 };
 
 } // namespace wireglider::worker_impl

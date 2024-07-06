@@ -3,6 +3,7 @@
 #include <mutex>
 #include <vector>
 #include <deque>
+#include <optional>
 #include <wireguard_ffi.h>
 #include <tdutil/epollman.hpp>
 
@@ -55,15 +56,13 @@ private:
         std::vector<uint8_t> &outbuf);
 
     void do_server_send();
-    void server_send_batch(worker_impl::ServerSendBatch *batch, std::span<uint8_t> data, bool queue_on_eagain);
-    // use when batch is a non-owning batch that contains no data
-    void server_send_batch(worker_impl::ServerSendBatch *batch, std::span<uint8_t> data) {
-        server_send_batch(batch, data, true);
-    }
-    void server_send_batch(worker_impl::ServerSendBatch *batch) {
-        server_send_batch(batch, batch->buf, false);
-    }
+    std::optional<std::span<uint8_t>> server_send_batch(
+        worker_impl::ServerSendBatch *batch,
+        std::span<uint8_t> data);
     outcome::result<void> server_send_list(worker_impl::ServerSendList *list);
+    std::optional<std::span<const iovec>> server_send_reflist(
+        const boost::container::small_vector_base<iovec> &pkts,
+        ClientEndpoint ep);
     outcome::result<void> do_server_send_step(worker_impl::ServerSendBase *send);
 
     void do_server(epoll_event *ev);
@@ -81,6 +80,7 @@ private:
 
     void do_tun_write();
     outcome::result<void> do_tun_write_batch(worker_impl::DecapBatch &batch);
+    outcome::result<void> do_tun_write_batch(worker_impl::DecapRefBatch &batch);
 
     void tun_disable(uint32_t events) {
         auto newevents = _poll_tun & ~events;

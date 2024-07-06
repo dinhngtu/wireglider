@@ -2,7 +2,7 @@
 #include <csignal>
 #include <unistd.h>
 #include <sys/uio.h>
-#include <fmt/format.h>
+#include <tdutil/io.hpp>
 
 #include "worker.hpp"
 #include "netutil.hpp"
@@ -11,14 +11,9 @@ namespace wireglider {
 
 namespace worker_impl {
 
-outcome::result<void> write_opb(int fd, OwnedPacketBatch &opb) {
-    std::array<iovec, 3> iov = {
-        iovec{&opb.flags.vnethdr, sizeof(opb.flags.vnethdr)},
-        iovec{opb.hdrbuf.data(), opb.hdrbuf.size()},
-        iovec{},
-    };
-    while (!opb.buf.empty()) {
-        iov[2] = {opb.buf.data(), opb.buf.size()};
+outcome::result<void> write_opb(int fd, PacketRefBatch &opb) {
+    while (opb.bytes) {
+        std::span<iovec> iov(opb.iov);
         auto written = writev(fd, iov.data(), iov.size());
         if (written < 0) {
             if (is_eagain())
@@ -33,13 +28,17 @@ outcome::result<void> write_opb(int fd, OwnedPacketBatch &opb) {
             // return std::error_code(EAGAIN, std::system_category());
             throw std::system_error(EAGAIN, std::system_category(), "unexpectedly short tun write");
         }
-        opb.buf.erase(opb.buf.begin(), opb.buf.begin() + (written - sizeof(opb.flags.vnethdr) - opb.hdrbuf.size()));
+        auto toadvance = written - sizeof(opb.flags.vnethdr) - opb.hdrbuf.size();
+        tdutil::advance_iov(iov.subspan(2), toadvance);
+        opb.bytes -= toadvance;
+        if (iov.size() != opb.iov.size())
+            std::copy_backward(iov.begin(), iov.end(), opb.iov.begin() + 2);
     }
     return outcome::success();
 }
 
 template <typename T>
-static outcome::result<void> do_tun_write_flowmap(int fd, FlowMap<T> &flows) {
+static outcome::result<void> do_tun_write_flowmap(int fd, RefFlowMap<T> &flows) {
     auto it = flows.begin();
     outcome::result<void> ret = outcome::success();
     for (; it != flows.end(); it++) {
@@ -52,14 +51,15 @@ static outcome::result<void> do_tun_write_flowmap(int fd, FlowMap<T> &flows) {
     return ret;
 }
 
-outcome::result<void> do_tun_write_unrel(int fd, std::deque<std::vector<uint8_t>> &pkts) {
+outcome::result<void> do_tun_write_unrel(int fd, DecapRefBatch::unrel_type &pkts) {
     virtio_net_hdr vnethdr{};
     vnethdr.flags = 0;
     vnethdr.gso_type = VIRTIO_NET_HDR_GSO_NONE;
     while (!pkts.empty()) {
+        assert(pkts.front().iov_len);
         std::array<iovec, 2> iov = {
             iovec{&vnethdr, sizeof(vnethdr)},
-            iovec{pkts.front().data(), pkts.front().size()},
+            pkts.front(),
         };
         auto written = writev(fd, iov.data(), iov.size());
         if (written < 0) {
@@ -70,7 +70,7 @@ outcome::result<void> do_tun_write_unrel(int fd, std::deque<std::vector<uint8_t>
             else
                 throw std::system_error(errno, std::system_category(), "do_tun_write_unrel writev");
         }
-        if (std::cmp_less(written, sizeof(vnethdr) + pkts.front().size())) {
+        if (std::cmp_less(written, sizeof(vnethdr) + pkts.front().iov_len)) {
             // this shouldn't happen but add the handling just in case
             // return std::error_code(EAGAIN, std::system_category());
             throw std::system_error(EAGAIN, std::system_category(), "unexpectedly short tun write");
@@ -80,7 +80,7 @@ outcome::result<void> do_tun_write_unrel(int fd, std::deque<std::vector<uint8_t>
     return outcome::success();
 }
 
-static outcome::result<void> do_tun_write_batch(int fd, DecapBatch &batch) {
+static outcome::result<void> do_tun_write_batch(int fd, DecapRefBatch &batch) {
     BOOST_OUTCOME_TRY(do_tun_write_unrel(fd, batch.unrel));
     BOOST_OUTCOME_TRY(do_tun_write_flowmap(fd, batch.tcp4));
     BOOST_OUTCOME_TRY(do_tun_write_flowmap(fd, batch.udp4));
@@ -91,24 +91,26 @@ static outcome::result<void> do_tun_write_batch(int fd, DecapBatch &batch) {
 
 } // namespace worker_impl
 
-outcome::result<void> Worker::do_tun_write_batch(worker_impl::DecapBatch &batch) {
+outcome::result<void> Worker::do_tun_write_batch(worker_impl::DecapRefBatch &batch) {
     auto ret = worker_impl::do_tun_write_batch(_arg.tun->fd(), batch);
     if (!ret) {
         while (!batch.unrel.empty()) {
-            _tununrel.push_back(std::move(batch.unrel.front()));
+            _tununrel.emplace_back(
+                static_cast<const uint8_t *>(batch.unrel.front().iov_base),
+                batch.unrel.front().iov_len);
             batch.unrel.pop_front();
         }
         for (auto &flow : batch.tcp4)
-            if (flow.second.count)
+            if (flow.second.bytes)
                 _tunwrite.emplace_back(std::move(flow.second));
         for (auto &flow : batch.udp4)
-            if (flow.second.count)
+            if (flow.second.bytes)
                 _tunwrite.emplace_back(std::move(flow.second));
         for (auto &flow : batch.tcp6)
-            if (flow.second.count)
+            if (flow.second.bytes)
                 _tunwrite.emplace_back(std::move(flow.second));
         for (auto &flow : batch.udp6)
-            if (flow.second.count)
+            if (flow.second.bytes)
                 _tunwrite.emplace_back(std::move(flow.second));
         tun_enable(EPOLLOUT);
     }

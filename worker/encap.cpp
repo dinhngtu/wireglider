@@ -11,7 +11,6 @@
 #include <netinet/udp.h>
 #include <boost/endian.hpp>
 #include <tdutil/util.hpp>
-#include <fmt/format.h>
 
 #include "worker.hpp"
 
@@ -43,7 +42,13 @@ void Worker::do_tun(epoll_event *ev) {
         batch.ep = crypt->second;
         batch.segment_size = crypt->first.segment_size;
         batch.ecn = crypt->first.ecn;
-        server_send_batch(&batch, crypt->first.data);
+
+        auto ret = server_send_batch(&batch, crypt->first.data);
+        if (ret.has_value()) {
+            auto tosend = new ServerSendBatch(ret.value(), batch.segment_size, batch.ep);
+            _serversend.push_back(*tosend);
+            server_enable(EPOLLOUT);
+        }
     }
 }
 

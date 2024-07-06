@@ -41,14 +41,18 @@ struct ServerSendBatch : public ServerSendBase {
 
 struct ServerSendList : public ServerSendBase {
     using packet_list = std::deque<std::vector<uint8_t>>;
+    explicit ServerSendList(ClientEndpoint _ep) : ep(_ep) {
+    }
     explicit ServerSendList(packet_list &&pkts, ClientEndpoint _ep);
     virtual ~ServerSendList() {
     }
+    void push_back(iovec pkt);
+    void finalize();
     packet_list packets;
     ClientEndpoint ep;
     std::vector<iovec> iovecs;
     std::vector<mmsghdr> mh;
-    size_t pos;
+    size_t pos = 0;
 };
 
 using ServerSendQueue = boost::intrusive::list<worker_impl::ServerSendBase, boost::intrusive::constant_time_size<true>>;
