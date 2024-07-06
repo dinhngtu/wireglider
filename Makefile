@@ -157,6 +157,7 @@ OBJECTS=\
 	worker/flowkey_ref.o \
 	worker/send.o \
 	worker/write.o \
+	worker/write_ref.o \
 	control.o \
 	timer.o \
 	netutil.o \

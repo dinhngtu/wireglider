@@ -43,9 +43,9 @@ void Worker::do_tun(epoll_event *ev) {
         batch.segment_size = crypt->first.segment_size;
         batch.ecn = crypt->first.ecn;
 
-        auto ret = server_send_batch(&batch, crypt->first.data);
-        if (ret.has_value()) {
-            auto tosend = new ServerSendBatch(ret.value(), batch.segment_size, batch.ep);
+        auto batch_ret = server_send_batch(&batch, crypt->first.data);
+        if (batch_ret.has_value()) {
+            auto tosend = new ServerSendBatch(batch_ret.value(), batch.segment_size, batch.ep);
             _serversend.push_back(*tosend);
             server_enable(EPOLLOUT);
         }

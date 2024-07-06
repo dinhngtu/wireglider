@@ -67,7 +67,8 @@ ServerSendList::ServerSendList(ServerSendList::packet_list &&pkts, ClientEndpoin
 }
 
 void ServerSendList::push_back(iovec pkt) {
-    packets.emplace_back(static_cast<const uint8_t *>(pkt.iov_base), pkt.iov_len);
+    auto base = static_cast<const uint8_t *>(pkt.iov_base);
+    packets.emplace_back(base, base + pkt.iov_len);
     iovecs.push_back({packets.back().data(), packets.back().size()});
 }
 
@@ -159,7 +160,7 @@ std::optional<std::span<const iovec>> Worker::server_send_reflist(
 outcome::result<void> Worker::do_server_send_step(ServerSendBase *send) {
     if (typeid(*send) == typeid(ServerSendBatch)) {
         auto batch = static_cast<ServerSendBatch *>(send);
-        server_send_batch(batch);
+        server_send_batch(batch, batch->buf);
         return outcome::success();
         // TODO: update send position for this batch
     } else if (typeid(*send) == typeid(ServerSendList)) {

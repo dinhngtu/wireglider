@@ -44,7 +44,7 @@ static outcome::result<void> do_tun_write_flowmap(int fd, RefFlowMap<T> &flows) 
     auto it = flows.begin();
     outcome::result<void> ret = outcome::success();
     for (; it != flows.end(); it++) {
-        ret = write_opb(fd, it->second);
+        ret = write_opb(fd, *it->second);
         if (!ret)
             break;
     }
@@ -97,43 +97,25 @@ outcome::result<void> Worker::do_tun_write_batch(worker_impl::DecapRefBatch &bat
     auto ret = worker_impl::do_tun_write_batch(_arg.tun->fd(), batch);
     if (!ret) {
         while (!batch.unrel.empty()) {
-            _tununrel.emplace_back(
-                static_cast<const uint8_t *>(batch.unrel.front().iov_base),
-                batch.unrel.front().iov_len);
+            auto base = static_cast<const uint8_t *>(batch.unrel.front().iov_base);
+            _tununrel.emplace_back(base, base + batch.unrel.front().iov_len);
             batch.unrel.pop_front();
         }
         for (auto &flow : batch.tcp4)
-            if (flow.second.bytes)
-                _tunwrite.emplace_back(flow.second);
+            if (flow.second->bytes)
+                _tunwrite.emplace_back(*flow.second);
         for (auto &flow : batch.udp4)
-            if (flow.second.bytes)
-                _tunwrite.emplace_back(flow.second);
+            if (flow.second->bytes)
+                _tunwrite.emplace_back(*flow.second);
         for (auto &flow : batch.tcp6)
-            if (flow.second.bytes)
-                _tunwrite.emplace_back(flow.second);
+            if (flow.second->bytes)
+                _tunwrite.emplace_back(*flow.second);
         for (auto &flow : batch.udp6)
-            if (flow.second.bytes)
-                _tunwrite.emplace_back(flow.second);
+            if (flow.second->bytes)
+                _tunwrite.emplace_back(*flow.second);
         tun_enable(EPOLLOUT);
     }
     return ret;
-}
-
-void Worker::do_tun_write() {
-    if (worker_impl::do_tun_write_unrel(_arg.tun->fd(), _tununrel)) {
-        while (!_tunwrite.empty()) {
-            auto ret = write_opb(_arg.tun->fd(), _tunwrite.front());
-            if (!ret)
-                break;
-            _tunwrite.pop_front();
-        }
-    }
-    if (_tunwrite.empty() && _tununrel.empty())
-        tun_disable(EPOLLOUT);
-    else if ((_tunwrite.size() + _tununrel.size()) < 64)
-        server_enable(EPOLLIN);
-    else
-        server_disable(EPOLLIN);
 }
 
 } // namespace wireglider

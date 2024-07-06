@@ -45,7 +45,8 @@ void Worker::do_server(epoll_event *ev) {
             auto ret = server_send_reflist(batch->retpkt, crypt->second);
             if (ret.has_value()) {
                 auto tosend = new ServerSendList(crypt->second);
-                std::copy(ret->begin(), ret->end(), std::back_inserter(tosend));
+                for (auto &iov : ret.value())
+                    tosend->push_back(iov);
                 tosend->finalize();
                 _serversend.push_back(*tosend);
                 server_enable(EPOLLOUT);
@@ -150,7 +151,6 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
     DecapBatch batch;
     {
         std::lock_guard client_lock(it->mutex);
-        auto rest = pb.data;
         for (auto pkt : pb) {
             auto result = wireguard_read_raw(it->tunnel, pkt.data(), pkt.size(), scratch.data(), scratch.size());
             switch (result.op) {

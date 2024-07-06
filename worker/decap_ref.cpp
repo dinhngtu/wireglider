@@ -15,13 +15,13 @@ static std::span<uint8_t> tunnel_flush(
     boost::container::small_vector_base<iovec> &serversend,
     wireguard_tunnel_raw *tunnel,
     std::span<uint8_t> scratch) {
-    auto rest = scratch;
+    auto remain = scratch;
     while (1) {
-        auto result = wireguard_read_raw(tunnel, nullptr, 0, rest.data(), rest.size());
+        auto result = wireguard_read_raw(tunnel, nullptr, 0, remain.data(), remain.size());
         switch (result.op) {
         case WRITE_TO_NETWORK:
-            serversend.emplace_back(&rest[0], &rest[result.size]);
-            rest = rest.subspan(result.size);
+            serversend.push_back({&remain[0], result.size});
+            remain = remain.subspan(result.size);
             break;
         case WIREGUARD_DONE:
             break;
@@ -31,7 +31,7 @@ static std::span<uint8_t> tunnel_flush(
             break;
         }
     }
-    return rest;
+    return remain;
 }
 
 std::optional<DecapRefBatch> Worker::do_server_decap_ref(
@@ -46,27 +46,26 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
     DecapRefBatch batch;
     {
         std::lock_guard client_lock(it->mutex);
-        auto rest = pb.data;
-        std::span rest(_scratch);
+        std::span remain(_scratch);
         for (auto pkt : pb) {
-            auto result = wireguard_read_raw(it->tunnel, pkt.data(), pkt.size(), rest.data(), rest.size());
+            auto result = wireguard_read_raw(it->tunnel, pkt.data(), pkt.size(), remain.data(), remain.size());
             switch (result.op) {
             case WRITE_TO_TUNNEL_IPV4: {
-                auto outpkt = rest.subspan(0, result.size);
-                rest = rest.subspan(result.size);
+                auto outpkt = remain.subspan(0, result.size);
+                remain = remain.subspan(result.size);
                 batch.push_packet_v4(outpkt, pb.ecn);
                 break;
             }
             case WRITE_TO_TUNNEL_IPV6: {
-                auto outpkt = rest.subspan(0, result.size);
-                rest = rest.subspan(result.size);
+                auto outpkt = remain.subspan(0, result.size);
+                remain = remain.subspan(result.size);
                 batch.push_packet_v6(outpkt, pb.ecn);
                 break;
             }
             case WRITE_TO_NETWORK: {
-                batch.retpkt.push_back({rest.data(), result.size});
-                rest = rest.subspan(result.size);
-                rest = tunnel_flush(rcu, client_lock, batch.retpkt, it->tunnel, rest);
+                batch.retpkt.push_back({remain.data(), result.size});
+                remain = remain.subspan(result.size);
+                remain = tunnel_flush(rcu, client_lock, batch.retpkt, it->tunnel, remain);
                 break;
             }
             case WIREGUARD_ERROR:
