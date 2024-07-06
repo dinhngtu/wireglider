@@ -89,6 +89,7 @@
         "charconv": "cpp",
         "complex": "cpp",
         "coroutine": "cpp",
-        "csignal": "cpp"
+        "csignal": "cpp",
+        "cassert": "cpp"
     }
 }

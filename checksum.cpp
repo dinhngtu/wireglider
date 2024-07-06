@@ -18,7 +18,7 @@ uint16_t calc_l4_checksum(std::span<const uint8_t> ippkt, bool isv6, bool istcp,
             dstaddr,
             ippkt.size() - csum_start);
     } else {
-        const auto addroff = offsetof(ip, ip_src);
+        const auto addroff = offsetof(struct ip, ip_src);
         const auto addrsize = sizeof(in_addr);
         std::span<const uint8_t, addrsize> srcaddr = ippkt.subspan<addroff, addrsize>();
         std::span<const uint8_t, addrsize> dstaddr = ippkt.subspan<addroff + addrsize, addrsize>();

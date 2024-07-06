@@ -60,7 +60,7 @@ TEST_CASE("do_tun_gso_split udp4") {
         .hdr_len = hdrlen ? hdrlen : static_cast<__virtio16>(pkt_bytes.size()),
         .gso_size = 100,
         .csum_start = 20,
-        .csum_offset = offsetof(struct udphdr, check),
+        .csum_offset = offsetof(udphdr, check),
     };
     std::vector<uint8_t> vec(131072);
     auto pb = worker_impl::do_tun_gso_split(pkt_bytes, vec, vnethdr);
@@ -77,7 +77,7 @@ TEST_CASE("do_tun_gso_split udp6") {
         .hdr_len = hdrlen ? hdrlen : static_cast<__virtio16>(pkt_bytes.size()),
         .gso_size = 100,
         .csum_start = 40,
-        .csum_offset = offsetof(struct udphdr, check),
+        .csum_offset = offsetof(udphdr, check),
     };
     std::vector<uint8_t> vec(131072);
     auto pb = worker_impl::do_tun_gso_split(pkt_bytes, vec, vnethdr);

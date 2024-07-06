@@ -60,11 +60,11 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
         if (vnethdr.flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) {
             // clear ipv4 header checksum
             if (!isv6)
-                reinterpret_cast<ip *>(inbuf.data())->ip_sum = 0;
+                reinterpret_cast<struct ip *>(inbuf.data())->ip_sum = 0;
             // clear tcp/udp checksum
             store_big_u16(&inbuf[l4_csum_offset], 0);
 
-            auto istcp = reinterpret_cast<ip *>(inbuf.data())->ip_p == IPPROTO_TCP;
+            auto istcp = reinterpret_cast<struct ip *>(inbuf.data())->ip_p == IPPROTO_TCP;
             auto l4_csum = calc_l4_checksum(inbuf, isv6, istcp, vnethdr.csum_start);
             store_big_u16(&inbuf[l4_csum_offset], l4_csum);
         }
@@ -141,7 +141,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
 
     // clear ipv4 header checksum
     if (!isv6)
-        reinterpret_cast<ip *>(prefix.data())->ip_sum = 0;
+        reinterpret_cast<struct ip *>(prefix.data())->ip_sum = 0;
     // clear tcp/udp checksum
     store_big_u16(&prefix[l4_csum_offset], 0);
 

@@ -1,2 +1,3 @@
 --not-match-f=maple_tree|xarray|kernel_compat
+--not-match-d=vscode_compat_dont_include
 --include-ext=cpp,hpp

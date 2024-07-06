@@ -28,7 +28,7 @@ void Worker::do_tun(epoll_event *ev) {
     if (ev->events & EPOLLIN) {
         virtio_net_hdr vnethdr;
         auto ret = do_tun_recv(_recvbuf, vnethdr);
-        if (!ret)
+        if (!ret || ret.value().empty())
             return;
         auto read_pb = ret.value();
 

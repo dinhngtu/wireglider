@@ -204,12 +204,15 @@ check: tests
 		false; \
 	fi
 
+cloc:
+	cloc --config .clocconfig .
+
 clean:
 	$(RM) $(TARGETS) $(TESTS)
 	$(RM) $(OBJECTS)
 	$(RM) $(DEPS)
 	find . -name '*.[od]' -print -delete
 
-.PHONY: $(TESTS_RUN) run debug check clean
+.PHONY: $(TESTS_RUN) run debug check cloc clean
 
 -include $(DEPS) $(wildcard tests/*.d)

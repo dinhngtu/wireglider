@@ -24,8 +24,8 @@ Worker::Worker(const WorkerArg &arg) : _arg(arg) {
     _overhead = calc_overhead();
     _recvbuf.resize(65536 + sizeof(virtio_net_hdr));
     // max 64 segments
-    _pktbuf.resize(65536 + 64 * (sizeof(ip) + sizeof(tcphdr)));
-    _sendbuf.resize(65536 + 64 * (sizeof(ip) + sizeof(tcphdr)) + 64 * _overhead);
+    _pktbuf.resize(65536 + 64 * (sizeof(struct ip) + sizeof(tcphdr)));
+    _sendbuf.resize(65536 + 64 * (sizeof(struct ip) + sizeof(tcphdr)) + 64 * _overhead);
 }
 
 void Worker::run() {
