@@ -106,7 +106,7 @@ struct PacketRefBatch {
 
 template <typename AddressType>
 using RefFlowMap = boost::container::
-    small_flat_map<FlowKey<AddressType>, std::unique_ptr<PacketRefBatch>, 2, std::greater<FlowKey<AddressType>>>;
+    small_flat_map<FlowKey<AddressType>, std::unique_ptr<PacketRefBatch>, 3, std::greater<FlowKey<AddressType>>>;
 using IP4RefFlow = RefFlowMap<in_addr>;
 using IP6RefFlow = RefFlowMap<in6_addr>;
 
