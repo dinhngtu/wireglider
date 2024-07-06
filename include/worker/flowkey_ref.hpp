@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <memory>
 #include <bitset>
 #include <vector>
 #include <span>
@@ -16,7 +17,7 @@
 #include <boost/container/flat_map.hpp>
 #include <boost/container/small_vector.hpp>
 
-#include "flowkey.hpp"
+#include "worker/flowkey.hpp"
 
 namespace wireglider::worker_impl {
 
@@ -104,8 +105,8 @@ struct PacketRefBatch {
 };
 
 template <typename AddressType>
-using RefFlowMap =
-    boost::container::small_flat_map<FlowKey<AddressType>, PacketRefBatch, 2, std::greater<FlowKey<AddressType>>>;
+using RefFlowMap = boost::container::
+    small_flat_map<FlowKey<AddressType>, std::unique_ptr<PacketRefBatch>, 2, std::greater<FlowKey<AddressType>>>;
 using IP4RefFlow = RefFlowMap<in_addr>;
 using IP6RefFlow = RefFlowMap<in6_addr>;
 
@@ -137,8 +138,10 @@ struct FlowkeyRefMeta {
     static constexpr size_t PacketRefBatchSize = sizeof(PacketRefBatch);
     static constexpr size_t IP4RefFlowSize = sizeof(IP4RefFlow);
     static constexpr size_t IP4FlowKeySize = sizeof(IP4RefFlow::key_type);
+    static constexpr size_t IP4FlowValueSize = sizeof(IP4RefFlow::value_type);
     static constexpr size_t IP6RefFlowSize = sizeof(IP6RefFlow);
     static constexpr size_t IP6FlowKeySize = sizeof(IP6RefFlow::key_type);
+    static constexpr size_t IP6FlowValueSize = sizeof(IP6RefFlow::value_type);
     static constexpr size_t DecapRefUnrelSize = sizeof(DecapRefBatch::unrel_type);
     static constexpr size_t DecapRefRetpktSize = sizeof(DecapRefBatch::retpkt_type);
     static constexpr size_t DecapRefBatchSize = sizeof(DecapRefBatch);

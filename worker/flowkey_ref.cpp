@@ -24,11 +24,11 @@ static std::pair<typename RefFlowMap<T>::iterator, bool> find_flow(
     auto it = flow.lower_bound(fk);
     if (it == flow.end())
         return {it, false};
-    if (!it->second.is_appendable(pktdata.size()))
+    if (!it->second->is_appendable(pktdata.size()))
         return {it, false};
     if (flags.istcp() ? !it->first.is_consecutive_with(fk, pktdata.size()) : !it->first.matches(fk))
         return {it, false};
-    if (flags.istcp() && it->second.flags.ispsh())
+    if (flags.istcp() && it->second->flags.ispsh())
         return {it, false};
     return {it, true};
 }
@@ -38,15 +38,15 @@ template <typename T>
 static bool merge_next_flow(RefFlowMap<T> &flow, const typename RefFlowMap<T>::iterator &it) {
     if (it == flow.begin())
         return false;
-    if (it->second.flags.ispsh())
+    if (it->second->flags.ispsh())
         return false;
     auto next = it - 1;
-    if (!it->second.is_mergeable(next->second))
+    if (!it->second->is_mergeable(*next->second))
         return false;
-    if (it->second.flags.istcp() ? !it->first.is_consecutive_with(next->first, it->second.bytes)
-                                 : !it->first.matches(next->first))
+    if (it->second->flags.istcp() ? !it->first.is_consecutive_with(next->first, it->second->bytes)
+                                  : !it->first.matches(next->first))
         return false;
-    it->second.extend(next->second);
+    it->second->extend(*next->second);
     flow.erase(next);
     return true;
 }
@@ -57,14 +57,14 @@ static bool merge_prev_flow(RefFlowMap<T> &flow, const typename RefFlowMap<T>::i
     auto prev = it + 1;
     if (prev == flow.end())
         return false;
-    if (!prev->second.is_mergeable(it->second))
+    if (!prev->second->is_mergeable(*it->second))
         return false;
-    if (it->second.flags.istcp() ? !prev->first.is_consecutive_with(it->first, prev->second.bytes)
-                                 : !prev->first.matches(it->first))
+    if (it->second->flags.istcp() ? !prev->first.is_consecutive_with(it->first, prev->second->bytes)
+                                  : !prev->first.matches(it->first))
         return false;
-    if (prev->second.flags.ispsh())
+    if (prev->second->flags.ispsh())
         return false;
-    prev->second.extend(it->second);
+    prev->second->extend(*it->second);
     flow.erase(it);
     return true;
 }
@@ -91,35 +91,28 @@ static void append_flow(
         } else {
             flags.vnethdr.gso_type = VIRTIO_NET_HDR_GSO_UDP_L4;
         }
-        std::tie(it, created) = flow.emplace(fk, PacketRefBatch(pkthdr, flags));
+        std::tie(it, created) = flow.emplace(fk, std::make_unique<PacketRefBatch>(pkthdr, flags));
         assert(created);
     }
-    it->second.append(pktdata);
-    if (it->second.flags.isv6()) {
-        auto ip6 = it->second.ip6hdr();
+    it->second->append(pktdata);
+    if (it->second->flags.isv6()) {
+        auto ip6 = it->second->ip6hdr();
         big_to_native_inplace(ip6->ip6_flow);
         ip6->ip6_flow &= ~0xFF00000;
         ip6->ip6_flow |= static_cast<uint32_t>(fk.tos) << 20;
         native_to_big_inplace(ip6->ip6_flow);
     } else {
-        it->second.ip4hdr()->ip_tos = fk.tos;
+        it->second->ip4hdr()->ip_tos = fk.tos;
     }
     if (flags.istcp() && flags.ispsh()) {
-        it->second.tcphdr()->psh |= 1;
-        it->second.flags.ispsh() = true;
+        it->second->tcphdr()->psh |= 1;
+        it->second->flags.ispsh() = true;
     }
 
-    /*
-     * There are only two possibilities:
-     * - Appending to an existing flow, bridging a gap (flow1-newdata->flow2)
-     * - Creating a new flow, bridging with next flow (newdata->flow)
-     * with `-` being a simple flow append and `->` being a flow merge.
-     * IOW, merge_next_flow and merge_prev_flow can't happen at the same time.
-     * Therefore there's no need to worry about iterator invalidation.
-     */
-    [[maybe_unused]] bool next_merged = merge_next_flow(flow, it);
-    [[maybe_unused]] bool prev_merged = merge_prev_flow(flow, it);
-    assert(!(next_merged && prev_merged));
+    if (merge_next_flow(flow, it))
+        return;
+    if (merge_prev_flow(flow, it))
+        return;
 }
 
 static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
