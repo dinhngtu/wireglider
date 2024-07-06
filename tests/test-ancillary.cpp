@@ -29,13 +29,15 @@ TEST_CASE("ancillary") {
     cm->cmsg_level = SOL_UDP;
     cm->cmsg_type = UDP_SEGMENT;
     cm->cmsg_len = CMSG_LEN(sizeof(uint16_t));
-    *reinterpret_cast<uint16_t *>(CMSG_DATA(cm)) = 1234;
+    uint16_t val16 = 1234;
+    memcpy(CMSG_DATA(cm), &val16, sizeof(val16));
 
     cm = CMSG_NXTHDR(&mh, cm);
     cm->cmsg_level = SOL_IP;
     cm->cmsg_type = IP_TOS;
     cm->cmsg_len = CMSG_LEN(sizeof(uint8_t));
-    *reinterpret_cast<uint8_t *>(CMSG_DATA(cm)) = 1;
+    uint8_t val8 = 1;
+    memcpy(CMSG_DATA(cm), &val8, sizeof(val8));
 
     AncillaryData<uint16_t, uint8_t> cm2(mh);
     cm2.set<0>(SOL_UDP, UDP_SEGMENT, 1234);

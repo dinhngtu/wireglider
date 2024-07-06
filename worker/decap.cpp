@@ -86,10 +86,13 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
     size_t gro_size = static_cast<size_t>(bytes);
     uint8_t ecn = 0;
     for (auto cm = CMSG_FIRSTHDR(&mh); cm; cm = CMSG_NXTHDR(&mh, cm)) {
-        if (cm->cmsg_type == UDP_GRO)
-            gro_size = *reinterpret_cast<const int *>(CMSG_DATA(cm));
-        else if (cm->cmsg_type == IP_TOS)
-            ecn = *reinterpret_cast<const uint8_t *>(CMSG_DATA(cm));
+        if (cm->cmsg_type == UDP_GRO) {
+            int tmp;
+            memcpy(&tmp, CMSG_DATA(cm), sizeof(tmp));
+            gro_size = tmp;
+        } else if (cm->cmsg_type == IP_TOS) {
+            memcpy(&ecn, CMSG_DATA(cm), sizeof(ecn));
+        }
     }
 
     ClientEndpoint ep;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstring>
 #include <array>
 #include <tuple>
 #include <utility>
@@ -54,11 +55,13 @@ public:
     template <size_t Idx>
     void set(int level, int type, const type_at<Idx> &val) {
         size_t off = calc_off<Idx>();
-        cmsghdr *cm = reinterpret_cast<cmsghdr *>(&_storage[off]);
-        cm->cmsg_level = level;
-        cm->cmsg_type = type;
-        cm->cmsg_len = len_one<type_at<Idx>>();
-        *reinterpret_cast<type_at<Idx> *>(CMSG_DATA(cm)) = val;
+        cmsghdr cm{
+            .cmsg_len = len_one<type_at<Idx>>(),
+            .cmsg_level = level,
+            .cmsg_type = type,
+        };
+        memcpy(&_storage[off], &cm, sizeof(cm));
+        memcpy(CMSG_DATA(reinterpret_cast<cmsghdr *>(&_storage[off])), &val, sizeof(val));
     }
 
     constexpr std::array<uint8_t, space()>::const_iterator begin() const {

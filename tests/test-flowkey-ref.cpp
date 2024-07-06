@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <tdutil/util.hpp>
 
 #include "worker/flowkey_ref.hpp"
 #include "packet_tests.hpp"
@@ -42,8 +43,11 @@ static void check_flow_udp(
 
 template <typename IPType, typename L4Type>
 static std::vector<uint8_t> flip_l4_csum(std::vector<uint8_t> pkt) {
-    auto l4hdr = reinterpret_cast<L4Type *>(&pkt[sizeof(IPType)]);
-    l4hdr->check = ~l4hdr->check;
+    decltype(L4Type::check) tmp;
+    auto chk = &pkt[sizeof(IPType) + offsetof(L4Type, check)];
+    memcpy(&tmp, chk, sizeof(tmp));
+    tmp = ~tmp;
+    memcpy(chk, &tmp, sizeof(tmp));
     return pkt;
 }
 
@@ -519,17 +523,17 @@ TEST_CASE("DecapRefBatch invalid packets") {
     }
     SECTION("invalid IP header len") {
         std::vector<uint8_t> pkt(tcp4);
-        reinterpret_cast<struct ip *>(pkt.data())->ip_hl = 6;
+        pkt[0] |= 0xf;
         REQUIRE(batch.push_packet(std::span(pkt), 0) == GRO_NOADD);
     }
     SECTION("ip4 invalid protocol") {
         std::vector<uint8_t> pkt(tcp4);
-        reinterpret_cast<struct ip *>(pkt.data())->ip_p = IPPROTO_GRE;
+        pkt[9] = IPPROTO_GRE;
         REQUIRE(batch.push_packet(std::span(pkt), 0) == GRO_NOADD);
     }
     SECTION("ip6 invalid protocol") {
         std::vector<uint8_t> pkt(tcp6);
-        reinterpret_cast<ip6_hdr *>(pkt.data())->ip6_nxt = IPPROTO_GRE;
+        pkt[6] = IPPROTO_GRE;
         REQUIRE(batch.push_packet(std::span(pkt), 0) == GRO_NOADD);
     }
 }

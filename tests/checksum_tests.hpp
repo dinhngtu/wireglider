@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <climits>
+#include <cstring>
 #include <vector>
 #include <random>
 
@@ -12,7 +13,8 @@ static uint16_t checksum_ref1(const uint8_t *data, size_t size) {
     uint64_t csum = 0;
     size_t i = size;
     while (i > 1) {
-        auto word = *reinterpret_cast<const uint16_t *>(data + (size - i));
+        uint16_t word;
+        memcpy(&word, data + (size - i), sizeof(word));
         csum += word;
         i -= 2;
     }
@@ -35,11 +37,11 @@ static uint16_t checksum_ref2(const uint16_t *buffer, int size) {
         size -= sizeof(uint16_t);
     }
     if (size)
-        cksum += *(const uint8_t *)buffer;
+        cksum += *reinterpret_cast<const uint8_t *>(buffer);
 
     cksum = (cksum >> 16) + (cksum & 0xffff);
     cksum += (cksum >> 16);
-    return (uint16_t)(~cksum);
+    return static_cast<uint16_t>(~cksum);
 }
 
 static std::vector<uint8_t> create_packet(size_t size) {

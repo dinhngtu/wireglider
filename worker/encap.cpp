@@ -71,8 +71,8 @@ outcome::result<std::span<uint8_t>> Worker::do_tun_recv(std::vector<uint8_t> &ou
 
     if (rest.size() < sizeof(virtio_net_hdr))
         return fail(EIO);
-    vnethdr = *reinterpret_cast<virtio_net_hdr *>(rest.data());
-    rest = rest.subspan(sizeof(virtio_net_hdr));
+    memcpy(&vnethdr, rest.data(), sizeof(vnethdr));
+    rest = rest.subspan(sizeof(vnethdr));
     // rest now contains iphdr+l4hdr+giant payload
 
     return rest;
@@ -95,11 +95,11 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     in_addr dstip4;
     in6_addr dstip6;
     if (pb.isv6) {
-        dstip6 = reinterpret_cast<const ip6_hdr *>(pb.data.data())->ip6_dst;
+        memcpy(&dstip6, pb.data.data() + offsetof(ip6_hdr, ip6_dst), sizeof(dstip6));
         unsigned long ipkey = config->prefix6.reduce(dstip6);
         client = static_cast<Client *>(mtree_load(_arg.allowed_ip6, ipkey));
     } else {
-        dstip4 = reinterpret_cast<const ip *>(pb.data.data())->ip_dst;
+        memcpy(&dstip4, pb.data.data() + offsetof(struct ip, ip_dst), sizeof(dstip4));
         unsigned long ipkey = config->prefix4.reduce(dstip4);
         client = static_cast<Client *>(mtree_load(_arg.allowed_ip4, ipkey));
     }

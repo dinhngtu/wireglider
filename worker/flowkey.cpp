@@ -315,11 +315,12 @@ DecapOutcome DecapBatch::push_packet_v6(std::span<const uint8_t> ippkt, uint8_t 
 DecapOutcome DecapBatch::push_packet(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
     if (ippkt.size() < sizeof(struct ip))
         return GRO_NOADD;
-    auto ip = reinterpret_cast<const struct ip *>(ippkt.data());
-    if (ip->ip_v == 4)
+    if ((ippkt[0] >> 4) == 4)
         return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel, udpid, ecn_outer);
-    else
+    else if ((ippkt[0] >> 4) == 6)
         return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel, udpid, ecn_outer);
+    else
+        return GRO_NOADD;
 }
 
 void DecapBatch::aggregate_udp() {
