@@ -15,6 +15,18 @@ using enum DecapOutcome;
 
 namespace wireglider::worker_impl {
 
+OwnedPacketBatch::OwnedPacketBatch(const PacketRefBatch &prb)
+    : hdrbuf(prb.hdrbuf.begin(), prb.hdrbuf.end()), flags(prb.flags) {
+    size_t totsize = 0;
+    std::span pkts = std::span(prb.iov).subspan(2);
+    for (const auto &pkt : pkts) {
+        totsize += pkt.iov_len;
+        count++;
+    }
+    buf.resize(totsize);
+    tdutil::memgather(buf.data(), totsize, pkts);
+}
+
 template <typename T>
 static std::pair<typename FlowMap<T>::iterator, bool> find_flow(
     FlowMap<T> &flow,
@@ -26,7 +38,7 @@ static std::pair<typename FlowMap<T>::iterator, bool> find_flow(
         return {it, false};
     if (!it->second.is_appendable(pktdata.size()))
         return {it, false};
-    if (flags.istcp() ? !it->first.is_consecutive_with(fk, 1, pktdata.size()) : !it->first.matches(fk))
+    if (flags.istcp() ? !it->first.is_consecutive_with(fk, pktdata.size()) : !it->first.matches(fk))
         return {it, false};
     if (flags.istcp() && it->second.flags.ispsh())
         return {it, false};
@@ -43,7 +55,7 @@ static bool merge_next_flow(FlowMap<T> &flow, const typename FlowMap<T>::iterato
     auto next = it - 1;
     if (!it->second.is_mergeable(next->second))
         return false;
-    if (it->second.flags.istcp() ? !it->first.is_consecutive_with(next->first, it->second.count, it->second.buf.size())
+    if (it->second.flags.istcp() ? !it->first.is_consecutive_with(next->first, it->second.buf.size())
                                  : !it->first.matches(next->first))
         return false;
     it->second.extend(next->second);
@@ -59,9 +71,8 @@ static bool merge_prev_flow(FlowMap<T> &flow, const typename FlowMap<T>::iterato
         return false;
     if (!prev->second.is_mergeable(it->second))
         return false;
-    if (it->second.flags.istcp()
-            ? !prev->first.is_consecutive_with(it->first, prev->second.count, prev->second.buf.size())
-            : !prev->first.matches(it->first))
+    if (it->second.flags.istcp() ? !prev->first.is_consecutive_with(it->first, prev->second.buf.size())
+                                 : !prev->first.matches(it->first))
         return false;
     if (prev->second.flags.ispsh())
         return false;

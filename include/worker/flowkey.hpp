@@ -13,6 +13,7 @@
 #include "virtio_net.hpp"
 #include <boost/endian.hpp>
 #include <boost/container/flat_map.hpp>
+#include <tdutil/io.hpp>
 
 namespace wireglider::worker_impl {
 
@@ -41,9 +42,11 @@ struct PacketFlags {
 };
 
 // TODO: investigate arenas for OPBs to reduce allocator pressure
+struct PacketRefBatch;
 struct OwnedPacketBatch {
-    explicit OwnedPacketBatch() {
+    OwnedPacketBatch() {
     }
+    explicit OwnedPacketBatch(const PacketRefBatch &prb);
     explicit OwnedPacketBatch(std::span<const uint8_t> hdr, size_t cap, const PacketFlags &_flags)
         : hdrbuf(hdr.begin(), hdr.end()), flags(_flags) {
         buf.reserve(cap);
@@ -135,7 +138,7 @@ struct FlowKey {
         return !memcmp(this, &other, variable_offset);
     }
 
-    bool is_consecutive_with(const FlowKey &other, [[maybe_unused]] size_t count, size_t size) const {
+    bool is_consecutive_with(const FlowKey &other, size_t size) const {
         return this->matches(other) && this->seq + size == other.seq;
     }
 };

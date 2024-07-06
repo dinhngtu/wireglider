@@ -12,9 +12,9 @@ namespace wireglider {
 namespace worker_impl {
 
 outcome::result<void> write_opb(int fd, PacketRefBatch &opb) {
+    opb.finalize();
     while (opb.bytes) {
-        std::span<iovec> iov(opb.iov);
-        auto written = writev(fd, iov.data(), iov.size());
+        auto written = writev(fd, opb.iov.data(), opb.iov.size());
         if (written < 0) {
             if (is_eagain())
                 return fail(EAGAIN);
@@ -29,10 +29,12 @@ outcome::result<void> write_opb(int fd, PacketRefBatch &opb) {
             throw std::system_error(EAGAIN, std::system_category(), "unexpectedly short tun write");
         }
         auto toadvance = written - sizeof(opb.flags.vnethdr) - opb.hdrbuf.size();
-        tdutil::advance_iov(iov.subspan(2), toadvance);
+        auto next_pkt_iov = tdutil::advance_iov(std::span(opb.iov).subspan(2), toadvance);
+        if (next_pkt_iov.size() != opb.iov.size() - 2) {
+            std::copy_backward(next_pkt_iov.begin(), next_pkt_iov.end(), opb.iov.begin() + 2);
+            opb.iov.resize(next_pkt_iov.size() + 2);
+        }
         opb.bytes -= toadvance;
-        if (iov.size() != opb.iov.size())
-            std::copy_backward(iov.begin(), iov.end(), opb.iov.begin() + 2);
     }
     return outcome::success();
 }
@@ -102,16 +104,16 @@ outcome::result<void> Worker::do_tun_write_batch(worker_impl::DecapRefBatch &bat
         }
         for (auto &flow : batch.tcp4)
             if (flow.second.bytes)
-                _tunwrite.emplace_back(std::move(flow.second));
+                _tunwrite.emplace_back(flow.second);
         for (auto &flow : batch.udp4)
             if (flow.second.bytes)
-                _tunwrite.emplace_back(std::move(flow.second));
+                _tunwrite.emplace_back(flow.second);
         for (auto &flow : batch.tcp6)
             if (flow.second.bytes)
-                _tunwrite.emplace_back(std::move(flow.second));
+                _tunwrite.emplace_back(flow.second);
         for (auto &flow : batch.udp6)
             if (flow.second.bytes)
-                _tunwrite.emplace_back(std::move(flow.second));
+                _tunwrite.emplace_back(flow.second);
         tun_enable(EPOLLOUT);
     }
     return ret;

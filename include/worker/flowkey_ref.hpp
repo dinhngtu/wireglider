@@ -55,14 +55,14 @@ struct PacketRefBatch {
     ~PacketRefBatch() = default;
 
     void append(std::span<const uint8_t> data) {
-        if (data.data() == iov.back().iov_base + iov.back().iov_len)
+        if (!iov.empty() && data.data() == static_cast<uint8_t *>(iov.back().iov_base) + iov.back().iov_len)
             iov.back().iov_len += data.size();
         else
             iov.push_back({const_cast<uint8_t *>(data.data()), data.size()});
         bytes += data.size();
     }
     void extend(PacketRefBatch &other) {
-        iov.insert(iov.end(), other.iov.begin() + 2, other.iov.end());
+        std::copy(other.iov.begin() + 2, other.iov.end(), std::back_inserter(iov));
         bytes += other.bytes;
         other.iov.clear();
         other.bytes = 0;
@@ -97,7 +97,8 @@ struct PacketRefBatch {
     }
 
     boost::container::small_vector<uint8_t, 64> hdrbuf;
-    boost::container::small_vector<iovec, 16> iov;
+    // the two first iovecs are reserved for vnethdr and hdrbuf
+    boost::container::small_vector<iovec, 16> iov = boost::container::small_vector<iovec, 16>(2);
     size_t bytes = 0;
     PacketFlags flags;
 };
@@ -135,7 +136,9 @@ struct DecapRefBatch {
 struct FlowkeyRefMeta {
     static constexpr size_t PacketRefBatchSize = sizeof(PacketRefBatch);
     static constexpr size_t IP4RefFlowSize = sizeof(IP4RefFlow);
+    static constexpr size_t IP4FlowKeySize = sizeof(IP4RefFlow::key_type);
     static constexpr size_t IP6RefFlowSize = sizeof(IP6RefFlow);
+    static constexpr size_t IP6FlowKeySize = sizeof(IP6RefFlow::key_type);
     static constexpr size_t DecapRefUnrelSize = sizeof(DecapRefBatch::unrel_type);
     static constexpr size_t DecapRefRetpktSize = sizeof(DecapRefBatch::retpkt_type);
     static constexpr size_t DecapRefBatchSize = sizeof(DecapRefBatch);

@@ -45,8 +45,7 @@ void Worker::do_server(epoll_event *ev) {
             auto ret = server_send_reflist(batch->retpkt, crypt->second);
             if (ret.has_value()) {
                 auto tosend = new ServerSendList(crypt->second);
-                for (auto it = ret->begin(); it != ret->end(); it++)
-                    tosend->push_back(*it);
+                std::copy(ret->begin(), ret->end(), std::back_inserter(tosend));
                 tosend->finalize();
                 _serversend.push_back(*tosend);
                 server_enable(EPOLLOUT);

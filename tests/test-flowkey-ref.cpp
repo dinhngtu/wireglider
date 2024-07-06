@@ -32,7 +32,6 @@ static void check_flow(
     REQUIRE(it->first.dstip == to_addr(dst));
     REQUIRE(it->first.segment_size == segment_size);
     REQUIRE(it->first.seq == seq);
-    REQUIRE(it->second.iov.size() == count);
     REQUIRE(it->second.bytes == count * segment_size);
 }
 
@@ -47,7 +46,6 @@ static void check_flow_udp(
     REQUIRE(it->first.srcip == to_addr(src));
     REQUIRE(it->first.dstip == to_addr(dst));
     REQUIRE(it->first.segment_size == segment_size);
-    REQUIRE(it->second.iov.size() == count);
     REQUIRE(it->second.bytes == count * segment_size);
 }
 

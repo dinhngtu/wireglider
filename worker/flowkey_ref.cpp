@@ -26,7 +26,7 @@ static std::pair<typename RefFlowMap<T>::iterator, bool> find_flow(
         return {it, false};
     if (!it->second.is_appendable(pktdata.size()))
         return {it, false};
-    if (flags.istcp() ? !it->first.is_consecutive_with(fk, 1, pktdata.size()) : !it->first.matches(fk))
+    if (flags.istcp() ? !it->first.is_consecutive_with(fk, pktdata.size()) : !it->first.matches(fk))
         return {it, false};
     if (flags.istcp() && it->second.flags.ispsh())
         return {it, false};
@@ -43,7 +43,7 @@ static bool merge_next_flow(RefFlowMap<T> &flow, const typename RefFlowMap<T>::i
     auto next = it - 1;
     if (!it->second.is_mergeable(next->second))
         return false;
-    if (it->second.flags.istcp() ? !it->first.is_consecutive_with(next->first, it->second.iov.size(), it->second.bytes)
+    if (it->second.flags.istcp() ? !it->first.is_consecutive_with(next->first, it->second.bytes)
                                  : !it->first.matches(next->first))
         return false;
     it->second.extend(next->second);
@@ -59,9 +59,8 @@ static bool merge_prev_flow(RefFlowMap<T> &flow, const typename RefFlowMap<T>::i
         return false;
     if (!prev->second.is_mergeable(it->second))
         return false;
-    if (it->second.flags.istcp()
-            ? !prev->first.is_consecutive_with(it->first, prev->second.iov.size(), prev->second.bytes)
-            : !prev->first.matches(it->first))
+    if (it->second.flags.istcp() ? !prev->first.is_consecutive_with(it->first, prev->second.bytes)
+                                 : !prev->first.matches(it->first))
         return false;
     if (prev->second.flags.ispsh())
         return false;
