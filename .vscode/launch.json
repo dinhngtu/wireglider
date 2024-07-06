@@ -8,7 +8,7 @@
             "name": "tests/offload",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/tests/offload",
+            "program": "${workspaceFolder}/tests/test-offload",
             "args": [
                 "-b"
             ],
@@ -38,7 +38,37 @@
             "name": "tests/flowkey",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/tests/flowkey",
+            "program": "${workspaceFolder}/tests/test-flowkey",
+            "args": [
+                "-b"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                },
+                {
+                    "text": "-exec skip -rfu Catch",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "tests/flowkey-ref",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/test-flowkey-ref",
             "args": [
                 "-b"
             ],
