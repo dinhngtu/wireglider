@@ -506,6 +506,7 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
                 .pubkey = cmd.public_key,
                 .lasttime = 0,
                 .nexttime = 0, // top of the timer queue
+                .handle = timer_impl::ClientTimer::ClientTimerQueue::handle_type(nullptr),
             };
 #pragma GCC diagnostic pop
             auto handle = tq->queue.push(tmr);
