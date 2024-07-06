@@ -121,17 +121,10 @@ static void append_flow(
         it->second.flags.ispsh() = true;
     }
 
-    /*
-     * There are only two possibilities:
-     * - Appending to an existing flow, bridging a gap (flow1-newdata->flow2)
-     * - Creating a new flow, bridging with next flow (newdata->flow)
-     * with `-` being a simple flow append and `->` being a flow merge.
-     * IOW, merge_next_flow and merge_prev_flow can't happen at the same time.
-     * Therefore there's no need to worry about iterator invalidation.
-     */
-    [[maybe_unused]] bool next_merged = merge_next_flow(flow, it);
-    [[maybe_unused]] bool prev_merged = merge_prev_flow(flow, it);
-    assert(!(next_merged && prev_merged));
+    if (merge_next_flow(flow, it))
+        return;
+    if (merge_prev_flow(flow, it))
+        return;
 }
 
 static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
