@@ -1,13 +1,13 @@
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
 CPPFLAGS+=-Iinclude
 CFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -std=c11 -fwrapv
-CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -std=c++20 -fwrapv -fconcepts-diagnostics-depth=2
+CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -Wold-style-cast -std=c++20 -fwrapv -fconcepts-diagnostics-depth=2
 
 CPPFLAGS+=-pthread
 LDLIBS+=-pthread
 
 # NOTE: customize kernel header include paths if needed
-CPPFLAGS+=-I/lib/modules/$(shell uname -r)/build/usr/include
+CPPFLAGS+=-isystem /lib/modules/$(shell uname -r)/build/usr/include
 
 # NOTE: customize processor features as desired
 CFLAGS+=-march=native
@@ -15,39 +15,39 @@ CXXFLAGS+=-march=native
 
 # make
 TDUTIL_ROOT?=$(realpath ../tdutil)
-CPPFLAGS+=-I$(TDUTIL_ROOT)/include
+CPPFLAGS+=-isystem $(TDUTIL_ROOT)/include
 LDFLAGS+=-L$(TDUTIL_ROOT)
 LDLIBS+=-ltdutil
 
-LIBURING_ROOT?=$(realpath ../liburing)
-CPPFLAGS+=-I$(LIBURING_ROOT)/src/include
-LDFLAGS+=-L$(LIBURING_ROOT)/src
-LDLIBS+=-l:liburing.a
+#LIBURING_ROOT?=$(realpath ../liburing)
+#CPPFLAGS+=-isystem $(LIBURING_ROOT)/src/include
+#LDFLAGS+=-L$(LIBURING_ROOT)/src
+#LDLIBS+=-l:liburing.a
 
 # ./b2 variant=release link=static runtime-link=shared stage
 BOOST_ROOT?=$(realpath ../boost_1_85_0)
-CPPFLAGS+=-I$(BOOST_ROOT)
+CPPFLAGS+=-isystem $(BOOST_ROOT)
 LDFLAGS+=-L$(BOOST_ROOT)/stage/lib
 LDLIBS+=
 
 CXXOPTS_ROOT?=$(realpath ../cxxopts)
-CPPFLAGS+=-I$(CXXOPTS_ROOT)/include
+CPPFLAGS+=-isystem $(CXXOPTS_ROOT)/include
 
 # cargo build --lib --release --features "device ffi-bindings"
 BORINGTUN_ROOT?=$(realpath ../boringtun)
-CPPFLAGS+=-I$(BORINGTUN_ROOT)/boringtun/src
+CPPFLAGS+=-isystem $(BORINGTUN_ROOT)/boringtun/src
 LDFLAGS+=-L$(BORINGTUN_ROOT)/target/release
 LDLIBS+=-l:libboringtun.a
 
 # mkdir build; cd build; cmake ..; make
 FMT_ROOT?=$(realpath ../fmt)
-CPPFLAGS+=-I$(FMT_ROOT)/include
+CPPFLAGS+=-isystem $(FMT_ROOT)/include
 LDFLAGS+=-L$(FMT_ROOT)/build
 LDLIBS+=-lfmt
 
 # mkdir -p out/release; cd out/release; cmake ../..; make
 MIMALLOC_ROOT?=$(realpath ../mimalloc)
-CPPFLAGS+=-I$(MIMALLOC_ROOT)/include
+CPPFLAGS+=-isystem $(MIMALLOC_ROOT)/include
 LDFLAGS+=-L$(MIMALLOC_ROOT)/out/release
 LDLIBS+=-l:libmimalloc.a
 
@@ -65,29 +65,29 @@ endif
 endif
 
 XXHASH_ROOT?=$(realpath ../xxHash)
-CPPFLAGS+=-I$(XXHASH_ROOT) -DXXH_INLINE_ALL
+CPPFLAGS+=-isystem $(XXHASH_ROOT) -DXXH_INLINE_ALL
 
 URCU_ROOT?=$(realpath ../userspace-rcu)
-CPPFLAGS+=-I$(URCU_ROOT)/include -D_LGPL_SOURCE
+CPPFLAGS+=-isystem $(URCU_ROOT)/include -D_LGPL_SOURCE
 LDFLAGS+=-L$(URCU_ROOT)/src
 LDLIBS+=-l:liburcu-qsbr.a -l:liburcu-cds.a
 
 # mkdir build; cd build; cmake .. -DLIBTINS_BUILD_SHARED=0 -DLIBTINS_ENABLE_CXX11=1; make
 TINS_ROOT?=$(realpath ../libtins)
-TINS_CPPFLAGS+=-I$(TINS_ROOT)/include
+TINS_CPPFLAGS+=-isystem $(TINS_ROOT)/include
 TINS_LDFLAGS+=-L$(TINS_ROOT)/build/lib
 TINS_LDLIBS+=-ltins
 
 # mkdir build; cd build; cmake ..; make
 CATCH_ROOT?=$(realpath ../Catch2)
-CATCH_CPPFLAGS+=-I$(CATCH_ROOT)/src -I$(CATCH_ROOT)/build/generated-includes
+CATCH_CPPFLAGS+=-isystem $(CATCH_ROOT)/src -isystem $(CATCH_ROOT)/build/generated-includes
 CATCH_LDFLAGS+=-L$(CATCH_ROOT)/build/src
 CATCH_LDLIBS+=-lCatch2Main -lCatch2
 
 # NOTE: customize processor features as desired
 # make ENABLE_AVX=1 MARCH=native; make check
 FASTCSUM_ROOT?=$(realpath ../fastcsum)
-CPPFLAGS+=-I$(FASTCSUM_ROOT)/include
+CPPFLAGS+=-isystem $(FASTCSUM_ROOT)/include
 LDFLAGS+=-L$(FASTCSUM_ROOT)
 LDLIBS+=-lfastcsum
 
@@ -188,9 +188,7 @@ tests/test-flowkey: worker/flowkey.o checksum.o
 
 tests/test-flowkey-ref: worker/flowkey_ref.o checksum.o
 
-liblinux/xarray.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
-
-liblinux/maple_tree.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing
+liblinux/maple_tree.o liblinux/kernel_compat.o: CXXFLAGS+=-Wno-volatile -Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing -Wno-old-style-cast
 
 run: wireglider
 	sudo ./$< -a 0.0.0.0:51820 -A 10.77.44.1/24 -j 1 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM=
