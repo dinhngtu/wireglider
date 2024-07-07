@@ -15,7 +15,7 @@ CPPFLAGS+=-pthread
 LDLIBS+=-pthread
 
 # NOTE: customize kernel header include paths if needed
-CPPFLAGS+=-isystem /lib/modules/$(shell uname -r)/build/usr/include
+#CPPFLAGS+=-isystem /lib/modules/$(shell uname -r)/build/usr/include
 
 # NOTE: customize processor features as desired
 CFLAGS+=-march=native
@@ -41,6 +41,7 @@ LDLIBS+=
 CXXOPTS_ROOT?=$(realpath ../cxxopts)
 CPPFLAGS+=-isystem $(CXXOPTS_ROOT)/include
 
+# requires cargo
 # cargo build --lib --release --features "device ffi-bindings"
 BORINGTUN_ROOT?=$(realpath ../boringtun)
 CPPFLAGS+=-isystem $(BORINGTUN_ROOT)/boringtun/src
@@ -75,6 +76,8 @@ endif
 XXHASH_ROOT?=$(realpath ../xxHash)
 CPPFLAGS+=-isystem $(XXHASH_ROOT) -DXXH_INLINE_ALL
 
+# requires libtool
+# ./bootstrap; ./configure; make
 URCU_ROOT?=$(realpath ../userspace-rcu)
 CPPFLAGS+=-isystem $(URCU_ROOT)/include -D_LGPL_SOURCE
 LDFLAGS+=-L$(URCU_ROOT)/src
