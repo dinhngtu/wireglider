@@ -104,7 +104,7 @@ public:
         set_address6(sin6, prefixlen);
     }
 
-    bool set_offload() {
+    bool set_offloads() {
         int vnethdrsz = sizeof(virtio_net_hdr);
         if (ioctl(_tun, TUNSETVNETHDRSZ, &vnethdrsz) < 0)
             throw std::system_error(errno, std::system_category(), "ioctl(TUNSETVNETHDRSZ)");

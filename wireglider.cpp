@@ -99,7 +99,7 @@ static void doit(Args &args) {
     } else {
         throw std::runtime_error("cannot get tunnel address");
     }
-    bool has_uso = tun[0].set_offload();
+    bool has_uso = tun[0].set_offloads();
     if (has_uso)
         fmt::print("TUN USO enabled on {}\n", tunname);
     else
