@@ -105,7 +105,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
         vnethdr.hdr_len = vnethdr.csum_start + thlen;
         break;
     }
-    case VIRTIO_NET_HDR_GSO_UDP_L4:
+    case WIREGLIDER_VIRTIO_NET_HDR_GSO_UDP_L4:
         vnethdr.hdr_len = vnethdr.csum_start + sizeof(udphdr);
         break;
     default:

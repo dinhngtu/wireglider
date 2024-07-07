@@ -8,6 +8,18 @@
 #include <tdutil/fildes.hpp>
 #include "netutil.hpp"
 
+#ifdef TUN_F_USO4
+#define WIREGLIDER_TUN_F_USO4 TUN_F_USO4
+#else
+#define WIREGLIDER_TUN_F_USO4 0x20
+#endif
+
+#ifdef TUN_F_USO6
+#define WIREGLIDER_TUN_F_USO6 TUN_F_USO6
+#else
+#define WIREGLIDER_TUN_F_USO6 0x40
+#endif
+
 namespace wireglider {
 
 class Tun {
@@ -38,7 +50,7 @@ public:
         unsigned long offload = TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6 | TUN_F_TSO_ECN;
         if (ioctl(_tun, TUNSETOFFLOAD, offload) < 0)
             throw std::system_error(errno, std::system_category(), "ioctl(TUNSETOFFLOAD)");
-        offload |= TUN_F_USO4 | TUN_F_USO6;
+        offload |= WIREGLIDER_TUN_F_USO4 | WIREGLIDER_TUN_F_USO6;
         if (ioctl(_tun, TUNSETOFFLOAD, offload) == 0)
             _has_uso = true;
 

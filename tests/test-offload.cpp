@@ -56,7 +56,7 @@ TEST_CASE("do_tun_gso_split udp4") {
     __virtio16 hdrlen = GENERATE(28, 0);
     virtio_net_hdr vnethdr{
         .flags = VIRTIO_NET_HDR_F_NEEDS_CSUM,
-        .gso_type = VIRTIO_NET_HDR_GSO_UDP_L4,
+        .gso_type = WIREGLIDER_VIRTIO_NET_HDR_GSO_UDP_L4,
         .hdr_len = hdrlen ? hdrlen : static_cast<__virtio16>(pkt_bytes.size()),
         .gso_size = 100,
         .csum_start = 20,
@@ -73,7 +73,7 @@ TEST_CASE("do_tun_gso_split udp6") {
     __virtio16 hdrlen = GENERATE(48, 0);
     virtio_net_hdr vnethdr{
         .flags = VIRTIO_NET_HDR_F_NEEDS_CSUM,
-        .gso_type = VIRTIO_NET_HDR_GSO_UDP_L4,
+        .gso_type = WIREGLIDER_VIRTIO_NET_HDR_GSO_UDP_L4,
         .hdr_len = hdrlen ? hdrlen : static_cast<__virtio16>(pkt_bytes.size()),
         .gso_size = 100,
         .csum_start = 40,

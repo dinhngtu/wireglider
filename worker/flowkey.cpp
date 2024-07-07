@@ -101,7 +101,8 @@ static void append_flow(
             if (IPTOS_ECN(fk.tos) == IPTOS_ECN_CE)
                 flags.vnethdr.gso_type |= VIRTIO_NET_HDR_GSO_ECN;
         } else {
-            flags.vnethdr.gso_type = VIRTIO_NET_HDR_GSO_UDP_L4;
+            // will never be called without has_uso
+            flags.vnethdr.gso_type = WIREGLIDER_VIRTIO_NET_HDR_GSO_UDP_L4;
         }
         std::tie(it, created) = flow.emplace(fk, OwnedPacketBatch(pkthdr, size_t(4) * fk.segment_size, flags));
         assert(created);

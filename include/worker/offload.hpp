@@ -3,6 +3,13 @@
 #include <iterator>
 #include <vector>
 #include <span>
+#include "virtio_net.hpp"
+
+#ifdef VIRTIO_NET_HDR_GSO_UDP_L4
+#define WIREGLIDER_VIRTIO_NET_HDR_GSO_UDP_L4 VIRTIO_NET_HDR_GSO_UDP_L4
+#else
+#define WIREGLIDER_VIRTIO_NET_HDR_GSO_UDP_L4 5
+#endif
 
 namespace wireglider::worker_impl {
 
