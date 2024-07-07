@@ -116,10 +116,10 @@ public:
     }
     constexpr CdsHashtable(const CdsHashtable &) = delete;
     constexpr CdsHashtable &operator=(const CdsHashtable &) = delete;
-    CdsHashtable(CdsHashtable &&other) {
+    CdsHashtable(CdsHashtable &&other) noexcept {
         swap(*this, other);
     }
-    CdsHashtable &operator=(CdsHashtable &&other) {
+    CdsHashtable &operator=(CdsHashtable &&other) noexcept {
         if (this != &other) {
             dispose();
             swap(*this, other);
@@ -199,7 +199,7 @@ public:
         cds_lfht_resize(_tbl, newsize);
     }
 
-    friend void swap(CdsHashtable &self, CdsHashtable &other) {
+    friend void swap(CdsHashtable &self, CdsHashtable &other) noexcept {
         using std::swap;
         swap(self._tbl, other._tbl);
     }

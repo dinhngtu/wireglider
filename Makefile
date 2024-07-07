@@ -8,7 +8,7 @@ ifeq ($(USE_CLANG),1)
 CC=clang
 CXX=clang++
 else
-CXXFLAGS+=-fconcepts-diagnostics-depth=2
+#CXXFLAGS+=-fconcepts-diagnostics-depth=2
 endif
 
 CPPFLAGS+=-pthread
@@ -225,7 +225,7 @@ cloc:
 	cloc --config .clocconfig .
 
 tidy:
-	clang-tidy $(SOURCES) -- $(CPPFLAGS)
+	clang-tidy $(SOURCES) -- $(CPPFLAGS) $(CXXFLAGS)
 
 clean:
 	$(RM) $(TARGETS) $(TESTS)

@@ -30,13 +30,13 @@ struct PacketRefBatch {
     }
     PacketRefBatch(const PacketRefBatch &) = default;
     PacketRefBatch &operator=(const PacketRefBatch &) = default;
-    PacketRefBatch(PacketRefBatch &&other) {
+    PacketRefBatch(PacketRefBatch &&other) noexcept {
         hdrbuf = std::move(other.hdrbuf);
         iov = std::move(other.iov);
         bytes = std::exchange(other.bytes, 0);
         flags = other.flags;
     }
-    PacketRefBatch &operator=(PacketRefBatch &&other) {
+    PacketRefBatch &operator=(PacketRefBatch &&other) noexcept {
         if (this != &other) {
             hdrbuf = std::move(other.hdrbuf);
             iov = std::move(other.iov);

@@ -23,8 +23,9 @@ void control_func(ControlArg arg) {
     w.run();
 }
 
-ControlWorker::ControlWorker(const ControlArg &arg) : _arg(arg) {
-    _client_idx = MTREE_INIT(client_idx, MT_FLAGS_ALLOC_RANGE | MT_FLAGS_LOCK_EXTERN | MT_FLAGS_ALLOC_WRAPPED);
+ControlWorker::ControlWorker(const ControlArg &arg)
+    : _arg(arg),
+      _client_idx(MTREE_INIT(client_idx, MT_FLAGS_ALLOC_RANGE | MT_FLAGS_LOCK_EXTERN | MT_FLAGS_ALLOC_WRAPPED)) {
 }
 
 void ControlWorker::run() {

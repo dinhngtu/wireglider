@@ -181,7 +181,7 @@ static void doit(Args &args) {
 }
 
 int main(int argc, char **argv) {
-    Args args;
+    Args args{};
 
     auto opts = make_options();
     cxxopts::ParseResult argm;

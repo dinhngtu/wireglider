@@ -53,13 +53,13 @@ struct OwnedPacketBatch {
     }
     OwnedPacketBatch(const OwnedPacketBatch &) = default;
     OwnedPacketBatch &operator=(const OwnedPacketBatch &) = default;
-    OwnedPacketBatch(OwnedPacketBatch &&other) {
+    OwnedPacketBatch(OwnedPacketBatch &&other) noexcept {
         hdrbuf = std::move(other.hdrbuf);
         buf = std::move(other.buf);
         count = std::exchange(other.count, 0);
         flags = other.flags;
     }
-    OwnedPacketBatch &operator=(OwnedPacketBatch &&other) {
+    OwnedPacketBatch &operator=(OwnedPacketBatch &&other) noexcept {
         if (this != &other) {
             hdrbuf = std::move(other.hdrbuf);
             buf = std::move(other.buf);
