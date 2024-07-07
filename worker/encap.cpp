@@ -92,13 +92,13 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     RundownGuard rcu;
     auto config = _arg.config(rcu);
 
-    in_addr dstip4;
-    in6_addr dstip6;
     if (pb.isv6) {
+        in6_addr dstip6;
         memcpy(&dstip6, pb.data.data() + offsetof(ip6_hdr, ip6_dst), sizeof(dstip6));
         unsigned long ipkey = config->prefix6.reduce(dstip6);
         client = static_cast<Client *>(mtree_load(_arg.allowed_ip6, ipkey));
     } else {
+        in_addr dstip4;
         memcpy(&dstip4, pb.data.data() + offsetof(struct ip, ip_dst), sizeof(dstip4));
         unsigned long ipkey = config->prefix4.reduce(dstip4);
         client = static_cast<Client *>(mtree_load(_arg.allowed_ip4, ipkey));
