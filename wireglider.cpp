@@ -100,6 +100,8 @@ static void doit(Args &args) {
         throw std::runtime_error("cannot get tunnel address");
     }
     tun[0].set_up(true);
+    if (tun[0].has_uso())
+        fmt::print("TUN USO enabled on {}\n", tunname);
 
     ClientTable clients(1024, 1024, 0, CDS_LFHT_AUTO_RESIZE, nullptr);
     EndpointTable client_eps(1024, 1024, 0, CDS_LFHT_AUTO_RESIZE, nullptr);
