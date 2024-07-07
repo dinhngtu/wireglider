@@ -76,12 +76,16 @@ endif
 XXHASH_ROOT?=$(realpath ../xxHash)
 CPPFLAGS+=-isystem $(XXHASH_ROOT) -DXXH_INLINE_ALL
 
-# requires libtool
-# ./bootstrap; ./configure; make
-URCU_ROOT?=$(realpath ../userspace-rcu)
-CPPFLAGS+=-isystem $(URCU_ROOT)/include -D_LGPL_SOURCE
-LDFLAGS+=-L$(URCU_ROOT)/src
-LDLIBS+=-l:liburcu-qsbr.a -l:liburcu-cds.a
+# NOTE: customize processor features as desired
+# make ENABLE_AVX=1 MARCH=native; make check
+FASTCSUM_ROOT?=$(realpath ../fastcsum)
+CPPFLAGS+=-isystem $(FASTCSUM_ROOT)/include
+LDFLAGS+=-L$(FASTCSUM_ROOT)
+LDLIBS+=-lfastcsum
+
+# requires liburcu-dev
+CPPFLAGS+=-D_LGPL_SOURCE $(shell pkg-config --cflags liburcu-qsbr liburcu-cds)
+LDLIBS+=-Wl,-Bstatic $(shell pkg-config --libs liburcu-qsbr liburcu-cds) -Wl,-Bdynamic
 
 # mkdir build; cd build; cmake .. -DLIBTINS_BUILD_SHARED=0 -DLIBTINS_ENABLE_CXX11=1; make
 TINS_ROOT?=$(realpath ../libtins)
@@ -94,13 +98,6 @@ CATCH_ROOT?=$(realpath ../Catch2)
 CATCH_CPPFLAGS+=-isystem $(CATCH_ROOT)/src -isystem $(CATCH_ROOT)/build/generated-includes
 CATCH_LDFLAGS+=-L$(CATCH_ROOT)/build/src
 CATCH_LDLIBS+=-lCatch2Main -lCatch2
-
-# NOTE: customize processor features as desired
-# make ENABLE_AVX=1 MARCH=native; make check
-FASTCSUM_ROOT?=$(realpath ../fastcsum)
-CPPFLAGS+=-isystem $(FASTCSUM_ROOT)/include
-LDFLAGS+=-L$(FASTCSUM_ROOT)
-LDLIBS+=-lfastcsum
 
 ifeq ($(DEBUG), 1)
 	CPPFLAGS+=-DDEBUG=1
