@@ -74,8 +74,9 @@ static Config *make_config(const Args &args) {
 static void doit(Args &args) {
     sigset_t sigs, oldsigs;
     make_exit_sigset(sigs);
-    if (pthread_sigmask(SIG_BLOCK, &sigs, &oldsigs) < 0)
-        throw std::system_error(errno, std::system_category(), "pthread_sigmask(sigs)");
+    auto err = pthread_sigmask(SIG_BLOCK, &sigs, &oldsigs);
+    if (err)
+        throw std::system_error(err, std::system_category(), "pthread_sigmask(sigs)");
 
     alignas(ConfigRef::required_alignment) Config *config = make_config(args);
 
