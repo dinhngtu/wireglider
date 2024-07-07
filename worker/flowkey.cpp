@@ -134,10 +134,11 @@ static DecapOutcome do_push_packet(
     FlowMap<address_type_of_t<fill_ip>> &udpflow,
     std::deque<std::vector<uint8_t>> &unrel,
     uint32_t &udpid,
-    uint8_t ecn_outer) {
+    uint8_t ecn_outer,
+    bool has_uso) {
     FlowKey<address_type_of_t<fill_ip>> fk{};
     PacketFlags flags;
-    auto res = evaluate_packet<fill_ip>(ippkt, fk, flags, ecn_outer);
+    auto res = evaluate_packet<fill_ip>(ippkt, fk, flags, ecn_outer, has_uso);
     switch (res) {
     case GRO_ADD: {
         auto pkthdr = ippkt.subspan(0, flags.vnethdr.hdr_len);
@@ -155,20 +156,20 @@ static DecapOutcome do_push_packet(
 }
 
 DecapOutcome DecapBatch::push_packet_v4(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
-    return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel, udpid, ecn_outer);
+    return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel, udpid, ecn_outer, has_uso);
 }
 
 DecapOutcome DecapBatch::push_packet_v6(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
-    return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel, udpid, ecn_outer);
+    return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel, udpid, ecn_outer, has_uso);
 }
 
 DecapOutcome DecapBatch::push_packet(std::span<const uint8_t> ippkt, uint8_t ecn_outer) {
     if (ippkt.size() < sizeof(struct ip))
         return GRO_NOADD;
     if ((ippkt[0] >> 4) == 4)
-        return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel, udpid, ecn_outer);
+        return do_push_packet<fill_fk_ip4>(ippkt, tcp4, udp4, unrel, udpid, ecn_outer, has_uso);
     else if ((ippkt[0] >> 4) == 6)
-        return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel, udpid, ecn_outer);
+        return do_push_packet<fill_fk_ip6>(ippkt, tcp6, udp6, unrel, udpid, ecn_outer, has_uso);
     else
         return GRO_NOADD;
 }

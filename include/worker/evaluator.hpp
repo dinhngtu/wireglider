@@ -132,7 +132,8 @@ static DecapOutcome evaluate_packet(
     std::span<const uint8_t> ippkt,
     FlowKey<address_type_of_t<fill_ip>> &fk,
     PacketFlags &flags,
-    uint8_t ecn_outer) {
+    uint8_t ecn_outer,
+    bool has_uso) {
     if (ippkt.size() < sizeof(ip_header_of_t<fill_ip>))
         return GRO_NOADD;
     else if (ippkt.size() > UINT16_MAX)
@@ -152,7 +153,7 @@ static DecapOutcome evaluate_packet(
         break;
     }
     case IPPROTO_UDP: {
-        if (!fill_fk_udp(fk, ippkt, flags))
+        if (!fill_fk_udp(fk, ippkt, flags) || !has_uso)
             return GRO_NOADD;
         break;
     }

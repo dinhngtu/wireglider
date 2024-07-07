@@ -151,7 +151,7 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
     if (it == _arg.client_eps->end())
         return std::nullopt;
 
-    DecapBatch batch;
+    DecapBatch batch(_arg.tun->has_uso());
     {
         std::lock_guard client_lock(it->mutex);
         for (auto pkt : pb) {

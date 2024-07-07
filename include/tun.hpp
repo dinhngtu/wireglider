@@ -35,9 +35,12 @@ public:
         if (ioctl(_tun, TUNSETVNETHDRSZ, &vnethdrsz) < 0)
             throw std::system_error(errno, std::system_category(), "ioctl(TUNSETVNETHDRSZ)");
 
-        unsigned long offload = TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6 | TUN_F_TSO_ECN | TUN_F_USO4 | TUN_F_USO6;
+        unsigned long offload = TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6 | TUN_F_TSO_ECN;
         if (ioctl(_tun, TUNSETOFFLOAD, offload) < 0)
             throw std::system_error(errno, std::system_category(), "ioctl(TUNSETOFFLOAD)");
+        offload |= TUN_F_USO4 | TUN_F_USO6;
+        if (ioctl(_tun, TUNSETOFFLOAD, offload) == 0)
+            _has_uso = true;
 
         _name = get_name();
     }
@@ -52,6 +55,10 @@ public:
 
     constexpr short features() const {
         return _feat;
+    }
+
+    constexpr bool has_uso() const {
+        return _has_uso;
     }
 
     void set_address(sockaddr_in sin, uint32_t prefixlen) {
@@ -140,6 +147,7 @@ private:
     unsigned int _feat;
     tdutil::FileDescriptor _tun;
     std::string _name;
+    bool _has_uso = false;
 };
 
 } // namespace wireglider

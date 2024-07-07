@@ -107,6 +107,11 @@ struct DecapRefBatch {
         boost::container::deque<iovec, void, boost::container::deque_options_t<boost::container::block_size<128u>>>;
     using retpkt_type = boost::container::small_vector<iovec, 8>;
 
+    [[deprecated("must specify has_uso")]] DecapRefBatch() : has_uso(true) {
+    }
+    explicit DecapRefBatch(bool _has_uso) : has_uso(_has_uso) {
+    }
+
     IP4RefFlow tcp4;
     IP4RefFlow udp4;
     IP6RefFlow tcp6;
@@ -119,6 +124,7 @@ struct DecapRefBatch {
 
     // unique udp flow number
     uint32_t udpid = 0;
+    bool has_uso;
 
     DecapOutcome push_packet_v4(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
     DecapOutcome push_packet_v6(std::span<const uint8_t> ippkt, uint8_t ecn_outer);

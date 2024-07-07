@@ -189,7 +189,7 @@ $(TARGETS): %: %.cpp $(OBJ_MIMALLOC)
 $(TESTS): %: %.cpp
 	$(LINK.cpp) $< $(filter %.o,$^) $(LOADLIBES) $(LDLIBS) -o $@
 
-$(TESTS): CXXFLAGS+=-Wno-unused-parameter
+$(TESTS): CXXFLAGS+=-Wno-unused-parameter -Wno-deprecated-declarations
 
 tests/test-checksum: checksum.o
 

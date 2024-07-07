@@ -178,6 +178,11 @@ static inline auto format_as(DecapOutcome o) {
 }
 
 struct DecapBatch {
+    [[deprecated("must specify has_uso")]] DecapBatch() : has_uso(true) {
+    }
+    explicit DecapBatch(bool _has_uso) : has_uso(_has_uso) {
+    }
+
     IP4Flow tcp4;
     IP4Flow udp4;
     IP6Flow tcp6;
@@ -190,6 +195,7 @@ struct DecapBatch {
 
     // unique udp flow number
     uint32_t udpid = 0;
+    bool has_uso;
 
     DecapOutcome push_packet_v4(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
     DecapOutcome push_packet_v6(std::span<const uint8_t> ippkt, uint8_t ecn_outer);

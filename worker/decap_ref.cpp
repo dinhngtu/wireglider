@@ -43,7 +43,7 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
     if (it == _arg.client_eps->end())
         return std::nullopt;
 
-    DecapRefBatch batch;
+    DecapRefBatch batch(_arg.tun->has_uso());
     {
         std::lock_guard client_lock(it->mutex);
         std::span remain(_scratch);
