@@ -118,9 +118,9 @@ else
 		CXXFLAGS+=-flto=thin
 		LDFLAGS+=-flto=thin
 	else
-		CFLAGS+=-flto -fuse-linker-plugin
-		CXXFLAGS+=-flto -fuse-linker-plugin
-		LDFLAGS+=-flto -fuse-linker-plugin
+		CFLAGS+=-flto=auto -fuse-linker-plugin
+		CXXFLAGS+=-flto=auto -fuse-linker-plugin
+		LDFLAGS+=-flto=auto -fuse-linker-plugin
 	endif
 endif
 
