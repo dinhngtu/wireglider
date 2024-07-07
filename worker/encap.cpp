@@ -84,7 +84,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     Client *client = nullptr;
 
     // be conservative
-    [[maybe_unused]] auto reserve_size = pb.data.size() + _overhead * pb.nr_segments();
+    [[maybe_unused]] auto reserve_size = pb.data.size() + calc_overhead() * pb.nr_segments();
     // if (outbuf.size() < reserve_size)
     // outbuf.resize(reserve_size);
     assert(outbuf.size() >= reserve_size);

@@ -120,7 +120,6 @@ private:
     uint32_t _poll_tun = 0;
     uint32_t _poll_server = 0;
     WorkerArg _arg;
-    size_t _overhead;
     // fits at least 64 KB
     std::vector<uint8_t> _recvbuf;
     std::vector<uint8_t> _pktbuf, _sendbuf;
