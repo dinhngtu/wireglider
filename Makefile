@@ -39,6 +39,7 @@ LDFLAGS+=-L$(BOOST_ROOT)/stage/lib
 LDLIBS+=
 
 # requires libcxxopts-dev
+CPPFLAGS+=$(shell pkg-config --cflags cxxopts)
 
 # requires cargo
 # cargo build --lib --release --features "device ffi-bindings"
@@ -72,8 +73,8 @@ ifeq ($(USE_MIMALLOC), 1)
 endif
 endif
 
-XXHASH_ROOT?=$(realpath ../xxHash)
-CPPFLAGS+=-isystem $(XXHASH_ROOT) -DXXH_INLINE_ALL
+# requires libxxhash-dev
+CPPFLAGS+=-DXXH_INLINE_ALL $(shell pkg-config --cflags libxxhash)
 
 # NOTE: customize processor features as desired
 # make ENABLE_AVX=1 MARCH=native; make check
