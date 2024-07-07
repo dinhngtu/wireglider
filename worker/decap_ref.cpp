@@ -8,7 +8,6 @@ using namespace wireglider::worker_impl;
 
 namespace wireglider {
 
-// TODO
 static std::span<uint8_t> tunnel_flush(
     [[maybe_unused]] RundownGuard &rcu,
     [[maybe_unused]] std::lock_guard<std::mutex> &lock,
@@ -26,7 +25,6 @@ static std::span<uint8_t> tunnel_flush(
         case WIREGUARD_DONE:
             break;
         case WIREGUARD_ERROR:
-        // TODO
         default:
             break;
         }
@@ -37,7 +35,7 @@ static std::span<uint8_t> tunnel_flush(
 std::optional<DecapRefBatch> Worker::do_server_decap_ref(
     PacketBatch pb,
     ClientEndpoint ep,
-    std::vector<uint8_t> &_scratch) {
+    std::vector<uint8_t> &memory) {
     RundownGuard rcu;
     auto it = _arg.client_eps->find(rcu, ep);
     if (it == _arg.client_eps->end())
@@ -46,7 +44,7 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
     DecapRefBatch batch(_arg.tun_has_uso);
     {
         std::lock_guard client_lock(it->mutex);
-        std::span remain(_scratch);
+        std::span remain(memory);
         for (auto pkt : pb) {
             auto result = wireguard_read_raw(it->tunnel, pkt.data(), pkt.size(), remain.data(), remain.size());
             switch (result.op) {
@@ -69,7 +67,6 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
                 break;
             }
             case WIREGUARD_ERROR:
-            // TODO
             case WIREGUARD_DONE:
                 break;
             }

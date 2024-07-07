@@ -89,7 +89,7 @@ static void append_flow(
             if (IPTOS_ECN(fk.tos) == IPTOS_ECN_CE)
                 flags.vnethdr.gso_type |= VIRTIO_NET_HDR_GSO_ECN;
         } else {
-            // will never be called without has_uso
+            // append_flow will never be called without has_uso
             flags.vnethdr.gso_type = WIREGLIDER_VIRTIO_NET_HDR_GSO_UDP_L4;
         }
         std::tie(it, created) = flow.emplace(fk, std::make_unique<PacketRefBatch>(pkthdr, flags));

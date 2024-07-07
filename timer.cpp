@@ -54,7 +54,6 @@ void TimerWorker::run() {
     _poll.add(_sigfd, EPOLLIN);
     _poll.add(_timer, EPOLLIN | EPOLLET);
     _poll.add(_arg.server->fd(), 0);
-    // TODO: add udp socket for sending
 
     itimerspec tmrspec{
         to_timespec(_period),

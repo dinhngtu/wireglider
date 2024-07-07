@@ -130,7 +130,6 @@ static void tunnel_flush(
         case WIREGUARD_DONE:
             return;
         case WIREGUARD_ERROR:
-        // TODO
         default:
             break;
         }
@@ -173,7 +172,6 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
                 break;
             }
             case WIREGUARD_ERROR:
-            // TODO
             case WIREGUARD_DONE:
                 break;
             }
@@ -181,7 +179,6 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
     }
 
     batch.aggregate_udp();
-
     return batch;
 }
 

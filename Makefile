@@ -226,6 +226,13 @@ cloc:
 tidy:
 	clang-tidy $(SOURCES) -- $(CPPFLAGS) $(CXXFLAGS)
 
+format:
+	clang-format --dry-run $(SOURCES)
+	@echo "use make format-commit to save changes"
+
+format-commit:
+	clang-format -i $(SOURCES)
+
 clean:
 	$(RM) $(TARGETS) $(TESTS)
 	$(RM) $(OBJECTS)

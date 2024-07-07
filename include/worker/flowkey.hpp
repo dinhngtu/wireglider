@@ -127,7 +127,7 @@ struct FlowKey {
     // variable part
     uint32_t seq;
 
-    // TODO: reordering to tcpack-tos-ttl-segment_size breaks our tests
+    // NOTE: reordering to tcpack-tos-ttl-segment_size breaks our tests
     // need to see what's happening and why we needed to reorder in the first place
     // normally we only depend on ordering of `seq` so the reordering shouldn't have broken anything...
 
