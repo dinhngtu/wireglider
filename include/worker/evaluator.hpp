@@ -92,7 +92,7 @@ static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
         return nullptr;
     if (calc_l4_checksum(ippkt, flags.isv6(), true, iphsize))
         return nullptr;
-    auto tcp = reinterpret_cast<const tcphdr *>(&ippkt[iphsize]);
+    auto tcp = tdutil::start_lifetime_as<tcphdr>(&ippkt[iphsize]);
     if (tcp->doff != 5)
         return nullptr;
     if (tcp->fin || tcp->syn || tcp->rst || tcp->urg || tcp->res2)
@@ -115,7 +115,7 @@ static const udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
         return nullptr;
     if (calc_l4_checksum(ippkt, flags.isv6(), false, iphsize))
         return nullptr;
-    auto udp = reinterpret_cast<const udphdr *>(&ippkt[iphsize]);
+    auto udp = tdutil::start_lifetime_as<udphdr>(&ippkt[iphsize]);
     flags.istcp() = false;
     flags.ispsh() = false;
     flags.vnethdr.hdr_len += sizeof(udphdr);
