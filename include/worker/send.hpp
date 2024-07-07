@@ -36,6 +36,7 @@ struct ServerSendBatch : public ServerSendBase {
     ClientEndpoint ep;
     std::vector<uint8_t> buf;
     size_t segment_size;
+    size_t pos = 0;
     uint8_t ecn;
 };
 

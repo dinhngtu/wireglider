@@ -57,10 +57,11 @@ private:
         std::vector<uint8_t> &outbuf);
 
     void do_server_send();
-    std::optional<std::span<uint8_t>> server_send_batch(
+    outcome::result<void> server_send_batch(
         worker_impl::ServerSendBatch *batch,
         std::span<uint8_t> data);
     outcome::result<void> server_send_list(worker_impl::ServerSendList *list);
+    // returns remaining iovecs if EAGAIN
     std::optional<std::span<const iovec>> server_send_reflist(
         const boost::container::small_vector_base<iovec> &pkts,
         ClientEndpoint ep);
@@ -74,10 +75,11 @@ private:
         worker_impl::PacketBatch pb,
         ClientEndpoint ep,
         std::vector<uint8_t> &scratch);
+    // memory must live for the duration of the DecapRefBatch
     std::optional<worker_impl::DecapRefBatch> do_server_decap_ref(
         worker_impl::PacketBatch pb,
         ClientEndpoint ep,
-        std::vector<uint8_t> &scratch);
+        std::vector<uint8_t> &memory);
 
     void do_tun_write();
     outcome::result<void> do_tun_write_batch(worker_impl::DecapBatch &batch);

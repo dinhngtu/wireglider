@@ -12,7 +12,9 @@ namespace wireglider {
 void Worker::do_server_send() {
     while (!_serversend.empty()) {
         auto ret = do_server_send_step(&_serversend.front());
-        if (!ret)
+        if (ret)
+            _serversend.pop_front_and_dispose(ServerSendBase::deleter{});
+        else
             break;
     }
     if (_serversend.empty())
@@ -23,7 +25,7 @@ void Worker::do_server_send() {
         tun_disable(EPOLLIN);
 }
 
-std::optional<std::span<uint8_t>> Worker::server_send_batch(ServerSendBatch *batch, std::span<uint8_t> data) {
+outcome::result<void> Worker::server_send_batch(ServerSendBatch *batch, std::span<uint8_t> data) {
     msghdr mh;
     memset(&mh, 0, sizeof(mh));
     if (auto sin6 = std::get_if<sockaddr_in6>(&batch->ep)) {
@@ -43,18 +45,15 @@ std::optional<std::span<uint8_t>> Worker::server_send_batch(ServerSendBatch *bat
     // it only contains the lower ECN bits and not DSCP per WG spec
     cm.set<1>(SOL_IP, IP_TOS, batch->ecn);
 
-    while (!data.empty()) {
-        iov = {data.data(), data.size()};
+    while (batch->pos < data.size()) {
+        iov = {&data[batch->pos], data.size() - batch->pos};
         auto ret = sendmsg(_arg.server->fd(), &mh, 0);
-        if (ret < 0) {
-            if (is_eagain())
-                return data;
-            else
-                throw std::system_error(errno, std::system_category(), "server_send_batch sendmsg");
-        }
-        data = data.subspan(ret);
+        if (ret < 0)
+            return check_eagain(errno, "server_send_batch sendmsg");
+        else
+            batch->pos += ret;
     }
-    return std::nullopt;
+    return outcome::success();
 }
 
 ServerSendList::ServerSendList(ServerSendList::packet_list &&pkts, ClientEndpoint _ep)
@@ -160,9 +159,7 @@ std::optional<std::span<const iovec>> Worker::server_send_reflist(
 outcome::result<void> Worker::do_server_send_step(ServerSendBase *send) {
     if (typeid(*send) == typeid(ServerSendBatch)) {
         auto batch = static_cast<ServerSendBatch *>(send);
-        server_send_batch(batch, batch->buf);
-        return outcome::success();
-        // TODO: update send position for this batch
+        return server_send_batch(batch, batch->buf);
     } else if (typeid(*send) == typeid(ServerSendList)) {
         auto list = static_cast<ServerSendList *>(send);
         return server_send_list(list);
