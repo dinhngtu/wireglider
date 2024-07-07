@@ -24,6 +24,7 @@ namespace wireglider {
 
 struct WorkerArg {
     unsigned int id;
+    bool tun_has_uso;
     Tun *tun;
     UdpServer *server;
     ConfigRef _config;

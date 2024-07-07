@@ -99,9 +99,12 @@ static void doit(Args &args) {
     } else {
         throw std::runtime_error("cannot get tunnel address");
     }
-    tun[0].set_up(true);
-    if (tun[0].has_uso())
+    bool has_uso = tun[0].set_offload();
+    if (has_uso)
         fmt::print("TUN USO enabled on {}\n", tunname);
+    else
+        fmt::print("TUN USO is not available on {}\n", tunname);
+    tun[0].set_up(true);
 
     ClientTable clients(1024, 1024, 0, CDS_LFHT_AUTO_RESIZE, nullptr);
     EndpointTable client_eps(1024, 1024, 0, CDS_LFHT_AUTO_RESIZE, nullptr);
@@ -132,6 +135,7 @@ static void doit(Args &args) {
         worker_func,
         WorkerArg{
             .id = 0,
+            .tun_has_uso = has_uso,
             .tun = &tun[0],
             .server = &server[0],
             ._config = ConfigRef(config),
@@ -151,6 +155,7 @@ static void doit(Args &args) {
                 worker_func,
                 WorkerArg{
                     .id = i,
+                    .tun_has_uso = has_uso,
                     .tun = &tun[i],
                     .server = &server[i],
                     ._config = ConfigRef(config),
