@@ -38,8 +38,7 @@ CPPFLAGS+=-isystem $(BOOST_ROOT)
 LDFLAGS+=-L$(BOOST_ROOT)/stage/lib
 LDLIBS+=
 
-CXXOPTS_ROOT?=$(realpath ../cxxopts)
-CPPFLAGS+=-isystem $(CXXOPTS_ROOT)/include
+# requires libcxxopts-dev
 
 # requires cargo
 # cargo build --lib --release --features "device ffi-bindings"
@@ -85,13 +84,11 @@ LDLIBS+=-lfastcsum
 
 # requires liburcu-dev
 CPPFLAGS+=-D_LGPL_SOURCE $(shell pkg-config --cflags liburcu-qsbr liburcu-cds)
-LDLIBS+=-Wl,-Bstatic $(shell pkg-config --libs liburcu-qsbr liburcu-cds) -Wl,-Bdynamic
+LDLIBS+=$(shell pkg-config --libs liburcu-qsbr liburcu-cds)
 
-# mkdir build; cd build; cmake .. -DLIBTINS_BUILD_SHARED=0 -DLIBTINS_ENABLE_CXX11=1; make
-TINS_ROOT?=$(realpath ../libtins)
-TINS_CPPFLAGS+=-isystem $(TINS_ROOT)/include
-TINS_LDFLAGS+=-L$(TINS_ROOT)/build/lib
-TINS_LDLIBS+=-ltins
+# requires libtins-dev
+TINS_CPPFLAGS+=$(shell pkg-config --cflags libtins)
+TINS_LDLIBS+=$(shell pkg-config --libs libtins)
 
 # mkdir build; cd build; cmake ..; make
 CATCH_ROOT?=$(realpath ../Catch2)
