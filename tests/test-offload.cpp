@@ -1,6 +1,7 @@
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include "virtio_net.hpp"
+#include <boost/endian.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <tins/tins.h>
@@ -11,6 +12,7 @@
 #include "netutil.hpp"
 
 using namespace wireglider;
+using namespace boost::endian;
 using namespace Tins;
 
 static const IPv4Address ip4a("192.0.2.1"), ip4b("192.0.2.2"), ip4c("192.0.2.3");
@@ -38,7 +40,7 @@ TEST_CASE("do_tun_gso_split tcp4") {
         REQUIRE(tcp.seq() == 9999);
         auto oldcsum = tcp.checksum();
         tcp.serialize();
-        REQUIRE(oldcsum == tcp.checksum());
+        REQUIRE(big_to_native(oldcsum) == tcp.checksum());
     }
     {
         auto pkt2 = Tins::IP(&pb.data[140], 140);
@@ -46,7 +48,7 @@ TEST_CASE("do_tun_gso_split tcp4") {
         REQUIRE(tcp.seq() == 9999 + 100);
         auto oldcsum = tcp.checksum();
         tcp.serialize();
-        REQUIRE(oldcsum == tcp.checksum());
+        REQUIRE(big_to_native(oldcsum) == tcp.checksum());
     }
 }
 
@@ -72,7 +74,7 @@ TEST_CASE("do_tun_gso_split tcp4 unrel") {
         REQUIRE(tcp.seq() == 9999);
         auto oldcsum = tcp.checksum();
         tcp.serialize();
-        REQUIRE(oldcsum == tcp.checksum());
+        REQUIRE(big_to_native(oldcsum) == tcp.checksum());
     }
 }
 
@@ -92,20 +94,20 @@ TEST_CASE("do_tun_gso_split tcp6") {
     REQUIRE(pb.segment_size == 160);
     REQUIRE(pb.data.size() == 2 * 160);
     {
-        auto pkt1 = Tins::IP(&pb.data[0], 160);
+        auto pkt1 = Tins::IPv6(&pb.data[0], 160);
         auto &tcp = pkt1.rfind_pdu<TCP>();
         REQUIRE(tcp.seq() == 9999);
         auto oldcsum = tcp.checksum();
         tcp.serialize();
-        REQUIRE(oldcsum == tcp.checksum());
+        REQUIRE(big_to_native(oldcsum) == tcp.checksum());
     }
     {
-        auto pkt2 = Tins::IP(&pb.data[160], 160);
+        auto pkt2 = Tins::IPv6(&pb.data[160], 160);
         auto &tcp = pkt2.rfind_pdu<TCP>();
         REQUIRE(tcp.seq() == 9999 + 100);
         auto oldcsum = tcp.checksum();
         tcp.serialize();
-        REQUIRE(oldcsum == tcp.checksum());
+        REQUIRE(big_to_native(oldcsum) == tcp.checksum());
     }
 }
 
@@ -125,12 +127,12 @@ TEST_CASE("do_tun_gso_split tcp6 unrel") {
     REQUIRE(pb.segment_size == 160);
     REQUIRE(pb.data.size() == 160);
     {
-        auto pkt1 = Tins::IP(&pb.data[0], 160);
+        auto pkt1 = Tins::IPv6(&pb.data[0], 160);
         auto &tcp = pkt1.rfind_pdu<TCP>();
         REQUIRE(tcp.seq() == 9999);
         auto oldcsum = tcp.checksum();
         tcp.serialize();
-        REQUIRE(oldcsum == tcp.checksum());
+        REQUIRE(big_to_native(oldcsum) == tcp.checksum());
     }
 }
 
@@ -154,14 +156,14 @@ TEST_CASE("do_tun_gso_split udp4") {
         auto &udp = pkt1.rfind_pdu<UDP>();
         auto oldcsum = udp.checksum();
         udp.serialize();
-        REQUIRE(oldcsum == udp.checksum());
+        REQUIRE(big_to_native(oldcsum) == udp.checksum());
     }
     {
         auto pkt2 = Tins::IP(&pb.data[128], 128);
         auto &udp = pkt2.rfind_pdu<UDP>();
         auto oldcsum = udp.checksum();
         udp.serialize();
-        REQUIRE(oldcsum == udp.checksum());
+        REQUIRE(big_to_native(oldcsum) == udp.checksum());
     }
 }
 
@@ -181,20 +183,20 @@ TEST_CASE("do_tun_gso_split udp6") {
     REQUIRE(pb.segment_size == 148);
     REQUIRE(pb.data.size() == 2 * 148);
     {
-        auto pkt1 = Tins::IP(&pb.data[0], 148);
+        auto pkt1 = Tins::IPv6(&pb.data[0], 148);
         REQUIRE(pkt1.find_pdu<UDP>());
         auto &udp = pkt1.rfind_pdu<UDP>();
         auto oldcsum = udp.checksum();
         udp.serialize();
-        REQUIRE(oldcsum == udp.checksum());
+        REQUIRE(big_to_native(oldcsum) == udp.checksum());
     }
     {
-        auto pkt2 = Tins::IP(&pb.data[148], 148);
+        auto pkt2 = Tins::IPv6(&pb.data[148], 148);
         REQUIRE(pkt2.find_pdu<UDP>());
         auto &udp = pkt2.rfind_pdu<UDP>();
         auto oldcsum = udp.checksum();
         udp.serialize();
-        REQUIRE(oldcsum == udp.checksum());
+        REQUIRE(big_to_native(oldcsum) == udp.checksum());
     }
 }
 
