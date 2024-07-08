@@ -11,13 +11,13 @@
 namespace wireglider {
 
 template <typename TDest, typename TSrc>
-constexpr void assign_big_from_native(TDest &lhs, TSrc &&rhs) noexcept {
-    lhs = boost::endian::native_to_big(static_cast<TDest>(std::forward<TSrc>(rhs)));
+constexpr void assign_big_from_native(TDest &lhs, TSrc rhs) noexcept {
+    lhs = boost::endian::native_to_big(static_cast<TDest>(rhs));
 }
 
 template <typename TDest, typename TSrc>
-constexpr void assign_little_from_native(TDest &lhs, TSrc &&rhs) noexcept {
-    lhs = boost::endian::native_to_little(static_cast<TDest>(std::forward<TSrc>(rhs)));
+constexpr void assign_little_from_native(TDest &lhs, TSrc rhs) noexcept {
+    lhs = boost::endian::native_to_little(static_cast<TDest>(rhs));
 }
 
 template <boost::endian::order Endian, typename T>
