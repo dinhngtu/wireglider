@@ -148,7 +148,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
     bool istcp = vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV4 || vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV6;
     uint32_t tcpseq0 = 0;
     if (istcp)
-        tcpseq0 = big_to_native(tdutil::start_lifetime_as<tcphdr>(&rest[vnethdr.csum_start])->seq);
+        tcpseq0 = big_to_native(tdutil::start_lifetime_as<tcphdr>(&prefix[vnethdr.csum_start])->seq);
 
     size_t i = 0, pbsize = 0;
     for (; !rest.empty(); i++) {
