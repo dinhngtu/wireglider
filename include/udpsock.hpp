@@ -11,11 +11,16 @@ namespace wireglider {
 
 class UdpServer {
 public:
-    UdpServer(sockaddr_in sin, bool nonblock) : _sin(sin) {
+    UdpServer(sockaddr_in sin, bool offload, bool nonblock) : _sin(sin) {
         _sock = tdutil::FileDescriptor(socket(AF_INET, SOCK_DGRAM, 0));
         _sock.check();
 
-        set_offloads();
+        int rup = 1;
+        if (setsockopt(_sock, SOL_SOCKET, SO_REUSEPORT, &rup, sizeof(rup)) < 0)
+            throw std::system_error(errno, std::system_category(), "setsockopt(SO_REUSEPORT)");
+
+        if (offload)
+            set_offloads();
 
         if (bind(_sock, reinterpret_cast<sockaddr *>(&sin), sizeof(sin)) < 0)
             throw std::system_error(errno, std::system_category(), "bind");
@@ -24,11 +29,16 @@ public:
             _sock.set_nonblock();
     }
 
-    UdpServer(sockaddr_in6 sin6, bool nonblock) : _sin(sin6) {
+    UdpServer(sockaddr_in6 sin6, bool offload, bool nonblock) : _sin(sin6) {
         _sock = tdutil::FileDescriptor(socket(AF_INET6, SOCK_DGRAM, 0));
         _sock.check();
 
-        set_offloads();
+        int rup = 1;
+        if (setsockopt(_sock, SOL_SOCKET, SO_REUSEPORT, &rup, sizeof(rup)) < 0)
+            throw std::system_error(errno, std::system_category(), "setsockopt(SO_REUSEPORT)");
+
+        if (offload)
+            set_offloads();
 
         if (bind(_sock, reinterpret_cast<sockaddr *>(&sin6), sizeof(sin6)) < 0)
             throw std::system_error(errno, std::system_category(), "bind");
@@ -43,10 +53,6 @@ public:
 
 private:
     void set_offloads() {
-        int rup = 1;
-        if (setsockopt(_sock, SOL_SOCKET, SO_REUSEPORT, &rup, sizeof(rup)) < 0)
-            throw std::system_error(errno, std::system_category(), "setsockopt(SO_REUSEPORT)");
-
         int gro = 1;
         if (setsockopt(_sock, SOL_UDP, UDP_GRO, &gro, sizeof(gro)) < 0)
             throw std::system_error(errno, std::system_category(), "setsockopt(UDP_GRO)");

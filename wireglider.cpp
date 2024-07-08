@@ -82,9 +82,9 @@ static void doit(Args &args) {
 
     boost::container::stable_vector<UdpServer> server;
     if (auto sin = std::get_if<sockaddr_in>(&args.listen_addr))
-        server.emplace_back(*sin, true);
+        server.emplace_back(*sin, true, true);
     else if (auto sin6 = std::get_if<sockaddr_in6>(&args.listen_addr))
-        server.emplace_back(*sin6, true);
+        server.emplace_back(*sin6, true, true);
     else
         throw std::runtime_error("cannot get server address");
 
@@ -117,9 +117,9 @@ static void doit(Args &args) {
     for (unsigned int i = 0; i < args.ntimers; i++) {
         timerq.emplace_back();
         if (auto sin = std::get_if<sockaddr_in>(&args.listen_addr))
-            timer_server.emplace_back(*sin, false);
+            timer_server.emplace_back(*sin, false, false);
         else if (auto sin6 = std::get_if<sockaddr_in6>(&args.listen_addr))
-            timer_server.emplace_back(*sin6, false);
+            timer_server.emplace_back(*sin6, false, false);
         timers.emplace_back(
             timer_func,
             TimerArg{
@@ -148,9 +148,9 @@ static void doit(Args &args) {
         for (unsigned int i = 1; i < args.njobs; i++) {
             tun.emplace_back(tun[0].clone());
             if (auto sin = std::get_if<sockaddr_in>(&args.listen_addr))
-                server.emplace_back(*sin, true);
+                server.emplace_back(*sin, true, true);
             else if (auto sin6 = std::get_if<sockaddr_in6>(&args.listen_addr))
-                server.emplace_back(*sin6, true);
+                server.emplace_back(*sin6, true, true);
             workers.emplace_back(
                 worker_func,
                 WorkerArg{
