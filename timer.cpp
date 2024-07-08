@@ -85,6 +85,41 @@ void TimerWorker::run() {
     }
 }
 
+void TimerWorker::do_timer_step(ClientTable::iterator &it) {
+    while (1) {
+        auto result = wireguard_tick_raw(it->tunnel, _scratch.data(), _scratch.size());
+        switch (result.op) {
+        case WRITE_TO_NETWORK: {
+            const sockaddr *sa;
+            size_t sz;
+            if (auto sin = std::get_if<sockaddr_in>(&it->epkey)) {
+                sa = reinterpret_cast<const sockaddr *>(sin);
+                sz = sizeof(*sin);
+            } else if (auto sin6 = std::get_if<sockaddr_in6>(&it->epkey)) {
+                sa = reinterpret_cast<const sockaddr *>(sin6);
+                sz = sizeof(*sin6);
+            } else {
+                tdutil::unreachable();
+            }
+            sendto(_arg.server->fd(), _scratch.data(), result.size, 0, sa, sz);
+            break;
+        }
+        case WIREGUARD_DONE:
+            return;
+        case WRITE_TO_TUNNEL_IPV4:
+        case WRITE_TO_TUNNEL_IPV6:
+            // shouldn't happen during timer ticks
+            fmt::print("got unexpected tunnel write during timer tick");
+            return;
+        case WIREGUARD_ERROR:
+            // TODO: ignore for now
+            return;
+        default:
+            throw std::runtime_error(fmt::format("unexpected wireguard_tick return {}", static_cast<int>(result.op)));
+        }
+    }
+}
+
 void TimerWorker::do_timer(epoll_event *ev) {
     if (!(ev->events & EPOLLIN))
         return;
@@ -106,37 +141,7 @@ void TimerWorker::do_timer(epoll_event *ev) {
             auto it = _arg.clients->find(rcu, top.pubkey);
             if (it != _arg.clients->end()) {
                 std::lock_guard client_lock(it->mutex);
-                auto result = wireguard_tick_raw(it->tunnel, _scratch.data(), _scratch.size());
-                switch (result.op) {
-                case WRITE_TO_NETWORK: {
-                    const sockaddr *sa;
-                    size_t sz;
-                    if (auto sin = std::get_if<sockaddr_in>(&it->epkey)) {
-                        sa = reinterpret_cast<const sockaddr *>(sin);
-                        sz = sizeof(*sin);
-                    } else if (auto sin6 = std::get_if<sockaddr_in6>(&it->epkey)) {
-                        sa = reinterpret_cast<const sockaddr *>(sin6);
-                        sz = sizeof(*sin6);
-                    } else {
-                        tdutil::unreachable();
-                    }
-                    sendto(_arg.server->fd(), _scratch.data(), result.size, 0, sa, sz);
-                    break;
-                }
-                case WIREGUARD_DONE:
-                    break;
-                case WRITE_TO_TUNNEL_IPV4:
-                case WRITE_TO_TUNNEL_IPV6:
-                    // shouldn't happen during timer ticks
-                    fmt::print("got unexpected tunnel write during timer tick");
-                    break;
-                case WIREGUARD_ERROR:
-                    // TODO: ignore for now
-                    break;
-                default:
-                    throw std::runtime_error(
-                        fmt::format("unexpected wireguard_tick return {}", static_cast<int>(result.op)));
-                }
+                do_timer_step(it);
             } else {
                 expired = true;
             }

@@ -54,6 +54,7 @@ public:
 
 private:
     void do_timer(epoll_event *ev);
+    void do_timer_step(ClientTable::iterator &it);
     // void update_period(bool overloaded, uint64_t elapsed);
 
     // const uint64_t min_period = 100'000'000ull;
