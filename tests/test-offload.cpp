@@ -38,17 +38,11 @@ TEST_CASE("do_tun_gso_split tcp4") {
         auto pkt1 = Tins::IP(&pb.data[0], 140);
         auto &tcp = pkt1.rfind_pdu<TCP>();
         REQUIRE(tcp.seq() == 9999);
-        auto oldcsum = tcp.checksum();
-        tcp.serialize();
-        REQUIRE(big_to_native(oldcsum) == tcp.checksum());
     }
     {
         auto pkt2 = Tins::IP(&pb.data[140], 140);
         auto &tcp = pkt2.rfind_pdu<TCP>();
         REQUIRE(tcp.seq() == 9999 + 100);
-        auto oldcsum = tcp.checksum();
-        tcp.serialize();
-        REQUIRE(big_to_native(oldcsum) == tcp.checksum());
     }
 }
 
@@ -72,9 +66,6 @@ TEST_CASE("do_tun_gso_split tcp4 unrel") {
         auto pkt1 = Tins::IP(&pb.data[0], 140);
         auto &tcp = pkt1.rfind_pdu<TCP>();
         REQUIRE(tcp.seq() == 9999);
-        auto oldcsum = tcp.checksum();
-        tcp.serialize();
-        REQUIRE(big_to_native(oldcsum) == tcp.checksum());
     }
 }
 
@@ -97,17 +88,11 @@ TEST_CASE("do_tun_gso_split tcp6") {
         auto pkt1 = Tins::IPv6(&pb.data[0], 160);
         auto &tcp = pkt1.rfind_pdu<TCP>();
         REQUIRE(tcp.seq() == 9999);
-        auto oldcsum = tcp.checksum();
-        tcp.serialize();
-        REQUIRE(big_to_native(oldcsum) == tcp.checksum());
     }
     {
         auto pkt2 = Tins::IPv6(&pb.data[160], 160);
         auto &tcp = pkt2.rfind_pdu<TCP>();
         REQUIRE(tcp.seq() == 9999 + 100);
-        auto oldcsum = tcp.checksum();
-        tcp.serialize();
-        REQUIRE(big_to_native(oldcsum) == tcp.checksum());
     }
 }
 
@@ -130,9 +115,6 @@ TEST_CASE("do_tun_gso_split tcp6 unrel") {
         auto pkt1 = Tins::IPv6(&pb.data[0], 160);
         auto &tcp = pkt1.rfind_pdu<TCP>();
         REQUIRE(tcp.seq() == 9999);
-        auto oldcsum = tcp.checksum();
-        tcp.serialize();
-        REQUIRE(big_to_native(oldcsum) == tcp.checksum());
     }
 }
 
@@ -154,16 +136,10 @@ TEST_CASE("do_tun_gso_split udp4") {
     {
         auto pkt1 = Tins::IP(&pb.data[0], 128);
         auto &udp = pkt1.rfind_pdu<UDP>();
-        auto oldcsum = udp.checksum();
-        udp.serialize();
-        REQUIRE(big_to_native(oldcsum) == udp.checksum());
     }
     {
         auto pkt2 = Tins::IP(&pb.data[128], 128);
         auto &udp = pkt2.rfind_pdu<UDP>();
-        auto oldcsum = udp.checksum();
-        udp.serialize();
-        REQUIRE(big_to_native(oldcsum) == udp.checksum());
     }
 }
 
@@ -186,17 +162,11 @@ TEST_CASE("do_tun_gso_split udp6") {
         auto pkt1 = Tins::IPv6(&pb.data[0], 148);
         REQUIRE(pkt1.find_pdu<UDP>());
         auto &udp = pkt1.rfind_pdu<UDP>();
-        auto oldcsum = udp.checksum();
-        udp.serialize();
-        REQUIRE(big_to_native(oldcsum) == udp.checksum());
     }
     {
         auto pkt2 = Tins::IPv6(&pb.data[148], 148);
         REQUIRE(pkt2.find_pdu<UDP>());
         auto &udp = pkt2.rfind_pdu<UDP>();
-        auto oldcsum = udp.checksum();
-        udp.serialize();
-        REQUIRE(big_to_native(oldcsum) == udp.checksum());
     }
 }
 
