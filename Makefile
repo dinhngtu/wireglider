@@ -207,8 +207,7 @@ liblinux/maple_tree.o liblinux/kernel_compat.o: CXXFLAGS+=-Wno-volatile
 endif
 
 run: wireglider
-	@echo remember to run: sudo ethtool -K wg0 rx-gro-list off rx-udp-gro-forwarding on
-	sudo ./$< -a 0.0.0.0:51820 -A 10.77.44.1/24 -j 1 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM=
+	sudo ./run.sh
 
 debug: wireglider
 	sudo gdb -ex "start -a 0.0.0.0:51820 -A 10.77.44.1/24 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM=" ./$<
