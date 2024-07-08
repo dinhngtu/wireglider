@@ -13,6 +13,10 @@
 
 namespace wireglider::worker_impl {
 
+// TODO: explore mi_heap_destroy_stl_allocator or boost::pool as alternative allocators for send queues
+// TODO: explore buffer ring-based arena allocators for our need which is FIFO allocations
+// (multiple arena allocators in a circular ring)
+
 struct ServerSendBase : public boost::intrusive::list_base_hook<> {
     virtual ~ServerSendBase() {
     }

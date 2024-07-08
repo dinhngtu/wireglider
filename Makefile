@@ -142,7 +142,7 @@ TESTS=\
 	tests/test-checksum \
 	tests/test-offload \
 	tests/test-endian \
-	tests/test-flowkey \
+	tests/test-flowkey-own \
 	tests/test-flowkey-ref \
 	tests/test-ancillary \
 	tests/test-sizes \
@@ -156,13 +156,14 @@ $(TESTS): LDLIBS=-ltdutil -lfmt -lfastcsum $(CATCH_LDLIBS) $(TINS_LDLIBS)
 OBJECTS=\
 	worker.o \
 	worker/decap.o \
+	worker/decap_own.o \
 	worker/decap_ref.o \
 	worker/encap.o \
 	worker/offload.o \
-	worker/flowkey.o \
+	worker/flowkey_own.o \
 	worker/flowkey_ref.o \
 	worker/send.o \
-	worker/write.o \
+	worker/write_own.o \
 	worker/write_ref.o \
 	control.o \
 	timer.o \
@@ -193,7 +194,7 @@ tests/test-checksum: checksum.o
 
 tests/test-offload: worker/offload.o checksum.o
 
-tests/test-flowkey: worker/flowkey.o checksum.o
+tests/test-flowkey-own: worker/flowkey_own.o checksum.o
 
 tests/test-flowkey-ref: worker/flowkey_ref.o checksum.o
 

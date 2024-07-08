@@ -448,6 +448,7 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
             newclient->allowed_ips = oldclient->allowed_ips;
             newclient->allowed_ips.insert(cmd.allowed_ip.begin(), cmd.allowed_ip.end());
         }
+        fmt::print("adding peer endpoint {} = {}\n", newclient->epkey, static_cast<void *>(newclient));
         newclient->tunnel = new_tunnel_raw_ex(
             &config->privkey,
             &cmd.public_key,
@@ -519,6 +520,10 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
         delete newclient;
         throw;
     }
+    fmt::print(
+        "add ok, newclient={}, oldclient={}\n",
+        static_cast<void *>(newclient),
+        static_cast<const void *>(oldclient));
 
     return oldclient;
 }

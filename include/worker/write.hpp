@@ -2,7 +2,7 @@
 
 #include <deque>
 
-#include "worker/flowkey.hpp"
+#include "worker/flowkey_own.hpp"
 #include "worker/flowkey_ref.hpp"
 
 namespace wireglider::worker_impl {

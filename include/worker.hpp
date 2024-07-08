@@ -16,6 +16,7 @@
 #include "endpoint.hpp"
 #include "worker/offload.hpp"
 #include "worker/flowkey.hpp"
+#include "worker/flowkey_own.hpp"
 #include "worker/flowkey_ref.hpp"
 #include "worker/send.hpp"
 #include "worker/write.hpp"

@@ -5,6 +5,7 @@
 #include <netinet/udp.h>
 #include <boost/endian.hpp>
 #include <tdutil/util.hpp>
+#include <tdutil/io.hpp>
 
 #include "worker.hpp"
 #include "worker/evaluator.hpp"
@@ -18,7 +19,7 @@ namespace wireglider::worker_impl {
 OwnedPacketBatch::OwnedPacketBatch(const PacketRefBatch &prb)
     : hdrbuf(prb.hdrbuf.begin(), prb.hdrbuf.end()), flags(prb.flags) {
     size_t totsize = 0;
-    std::span pkts = std::span(prb.iov).subspan(2);
+    auto pkts = std::span(prb.iov).subspan(2);
     for (const auto &pkt : pkts) {
         totsize += pkt.iov_len;
         count++;

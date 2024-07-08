@@ -1,20 +1,11 @@
 #pragma once
 
-#include <cassert>
 #include <memory>
-#include <bitset>
-#include <vector>
-#include <span>
-#include <deque>
-#include <type_traits>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
-#include "virtio_net.hpp"
-#include <boost/endian.hpp>
 #include <boost/container/deque.hpp>
-#include <boost/container/flat_map.hpp>
 #include <boost/container/small_vector.hpp>
 #include <tdutil/util.hpp>
 

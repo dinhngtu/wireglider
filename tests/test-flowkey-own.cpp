@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <tdutil/util.hpp>
 
-#include "worker/flowkey.hpp"
+#include "worker/flowkey_own.hpp"
 #include "packet_tests.hpp"
 #include "netutil.hpp"
 
