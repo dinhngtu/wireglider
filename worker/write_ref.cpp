@@ -55,6 +55,7 @@ static outcome::result<void> do_tun_write_flowmap(int fd, RefFlowMap<T> &flows) 
 
 outcome::result<void> do_tun_write_unrel(int fd, DecapRefBatch::unrel_type &pkts) {
     virtio_net_hdr vnethdr{};
+    // the peer should have checksummed this packet for us so no need to set NEEDS CSUM
     vnethdr.flags = 0;
     vnethdr.gso_type = VIRTIO_NET_HDR_GSO_NONE;
     while (!pkts.empty()) {

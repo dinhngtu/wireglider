@@ -228,7 +228,8 @@ static void append_flow(
             // append_flow will never be called without has_uso
             flags.vnethdr.gso_type = WIREGLIDER_VIRTIO_NET_HDR_GSO_UDP_L4;
         }
-        std::tie(it, created) = flow.emplace(fk, FlowMapTraits<T, FlowMap>::create_batch(pkthdr, fk.segment_size, flags));
+        std::tie(it, created) =
+            flow.emplace(fk, FlowMapTraits<T, FlowMap>::create_batch(pkthdr, fk.segment_size, flags));
         assert(created);
     }
     it->second->append(pktdata);
