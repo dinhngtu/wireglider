@@ -310,6 +310,12 @@ void ControlWorker::do_cmd_set(ControlClient *cc) {
         RundownGuard rcu;
 
         if (iface_cmd.replace_peers) {
+            MA_STATE(mas, &_client_idx, 0, 0);
+            void *entry;
+            mas_for_each(&mas, entry, ULONG_MAX) {
+                todelete.push_back(static_cast<Client *>(entry));
+            }
+
             do_cmd_flush_tables(rcu);
             for (auto &tq : *_arg.timerq) {
                 std::lock_guard lock(tq.mutex);
@@ -331,20 +337,11 @@ void ControlWorker::do_cmd_set(ControlClient *cc) {
         ret = ex.err;
     }
 
-    synchronize_rcu();
-    if (iface_cmd.replace_peers) {
-        MA_STATE(mas, &_client_idx, 0, 0);
-        void *entry;
-        mas_for_each(&mas, entry, ULONG_MAX) {
-            delete static_cast<Client *>(entry);
-        }
-
-        mas.index = 0;
-        mas.last = ULONG_MAX;
-        mas_store(&mas, nullptr);
-    } else if (!todelete.empty()) {
+    if (!todelete.empty()) {
+        synchronize_rcu();
         for (auto p : todelete) {
-            free_client_id(p->index);
+            if (!iface_cmd.replace_peers)
+                free_client_id(p->index);
             delete p;
         }
     }
@@ -368,6 +365,9 @@ void ControlWorker::do_cmd_set_privkey(const InterfaceCommand &iface_cmd) {
 }
 
 void ControlWorker::do_cmd_flush_tables(RundownGuard &rcu) {
+    MA_STATE(mas, &_client_idx, 0, ULONG_MAX);
+    mas_store(&mas, nullptr);
+
     int ret;
     ret = mtree_store_range(_arg.allowed_ip4, 0, ULONG_MAX, nullptr, 0);
     if (ret < 0)
