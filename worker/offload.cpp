@@ -58,14 +58,22 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
     switch (vnethdr.gso_type & ~VIRTIO_NET_HDR_GSO_ECN) {
     case VIRTIO_NET_HDR_GSO_NONE:
         if (vnethdr.flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) {
+            auto ip = tdutil::start_lifetime_as<struct ip>(inbuf.data());
+
             // clear ipv4 header checksum
             if (!isv6)
-                tdutil::start_lifetime_as<struct ip>(inbuf.data())->ip_sum = 0;
+                ip->ip_sum = 0;
             // clear tcp/udp checksum
             store_big_u16(&inbuf[l4_csum_offset], 0);
 
-            auto istcp = tdutil::start_lifetime_as<struct ip>(inbuf.data())->ip_p == IPPROTO_TCP;
-            auto l4_csum = calc_l4_checksum(inbuf, isv6, istcp, vnethdr.csum_start);
+            bool istcp;
+            if (isv6) {
+                istcp = tdutil::start_lifetime_as<ip6_hdr>(inbuf.data())->ip6_nxt == IPPROTO_TCP;
+            } else {
+                istcp = ip->ip_p == IPPROTO_TCP;
+                assign_big_from_native(ip->ip_sum, checksum(inbuf.subspan(0, vnethdr.csum_start), 0));
+            }
+            auto l4_csum = calc_l4_checksum(inbuf, isv6, istcp, vnethdr.csum_start, true);
             store_big_u16(&inbuf[l4_csum_offset], l4_csum);
         }
         return PacketBatch{
@@ -194,7 +202,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
             assign_big_from_native(udp->len, thispkt.size() - vnethdr.csum_start);
         }
 
-        auto l4_csum = calc_l4_checksum(thispkt, isv6, istcp, vnethdr.csum_start);
+        auto l4_csum = calc_l4_checksum(thispkt, isv6, istcp, vnethdr.csum_start, true);
         store_big_u16(&thispkt[l4_csum_offset], l4_csum);
 
         // to next packet
