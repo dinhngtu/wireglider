@@ -71,10 +71,13 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
                 istcp = tdutil::start_lifetime_as<ip6_hdr>(inbuf.data())->ip6_nxt == IPPROTO_TCP;
             } else {
                 istcp = ip->ip_p == IPPROTO_TCP;
-                assign_big_from_native(ip->ip_sum, checksum(inbuf.subspan(0, vnethdr.csum_start), 0));
+                auto ip_csum = checksum(inbuf.subspan(0, vnethdr.csum_start), 0);
+                // for some reason, need to put native byte order csum here
+                memcpy(&ip->ip_sum, &ip_csum, sizeof(ip_csum));
             }
             auto l4_csum = calc_l4_checksum(inbuf, isv6, istcp, vnethdr.csum_start);
-            store_big_u16(&inbuf[l4_csum_offset], l4_csum);
+            // native order
+            memcpy(&inbuf[l4_csum_offset], &l4_csum, sizeof(l4_csum));
         }
         return PacketBatch{
             .prefix = {},
@@ -151,7 +154,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
     if (!isv6)
         tdutil::start_lifetime_as<struct ip>(prefix.data())->ip_sum = 0;
     // clear tcp/udp checksum
-    store_big_u16(&prefix[l4_csum_offset], 0);
+    memset(&prefix[l4_csum_offset], 0, 2);
 
     bool istcp = vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV4 || vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV6;
     uint32_t tcpseq0 = 0;
@@ -186,7 +189,9 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
                 native_to_big_inplace(ip->ip_id);
             }
             assign_big_from_native(ip->ip_len, thispkt.size());
-            assign_big_from_native(ip->ip_sum, checksum(thispkt.subspan(0, vnethdr.csum_start), 0));
+            auto ip_csum = checksum(thispkt.subspan(0, vnethdr.csum_start), 0);
+            // native order
+            memcpy(&ip->ip_sum, &ip_csum, sizeof(ip_csum));
         }
 
         if (istcp) {
@@ -203,7 +208,8 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
         }
 
         auto l4_csum = calc_l4_checksum(thispkt, isv6, istcp, vnethdr.csum_start);
-        store_big_u16(&thispkt[l4_csum_offset], l4_csum);
+        // native order
+        memcpy(&thispkt[l4_csum_offset], &l4_csum, sizeof(l4_csum));
 
         // to next packet
         rest = rest.subspan(datalen);
