@@ -37,13 +37,11 @@ static std::pair<typename FlowMap<T>::iterator, bool> find_flow(
     auto it = flow.lower_bound(fk);
     if (it == flow.end())
         return {it, false};
+    if (it->second.flags.ispsh() || it->second.flags.issealed())
+        return {it, false};
     if (!it->second.is_appendable(pktdata.size()))
         return {it, false};
     if (flags.istcp() ? !it->first.matches_tcp(fk, pktdata.size()) : !it->first.matches_udp(fk))
-        return {it, false};
-    if (it->second.flags.issealed())
-        return {it, false};
-    if (flags.istcp() && it->second.flags.ispsh())
         return {it, false};
     return {it, true};
 }
@@ -111,6 +109,8 @@ static void append_flow(
         assert(created);
     }
     it->second.append(pktdata);
+    if (pktdata.size() != fk.segment_size)
+        it->second.flags.issealed() = true;
     if (it->second.flags.isv6()) {
         auto ip6 = it->second.ip6hdr();
         big_to_native_inplace(ip6->ip6_flow);
@@ -125,9 +125,9 @@ static void append_flow(
         it->second.flags.ispsh() = true;
     }
 
-    if (merge_next_flow(flow, it))
+    if (!it->second.flags.issealed() && merge_next_flow(flow, it))
         return;
-    if (merge_prev_flow(flow, it))
+    else if (merge_prev_flow(flow, it))
         return;
 }
 

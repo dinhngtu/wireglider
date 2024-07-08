@@ -63,10 +63,6 @@ struct FlowKey {
     uint16_t segment_size;
     uint32_t seq;
 
-    // NOTE: reordering to tcpack-tos-ttl-segment_size breaks our tests
-    // need to see what's happening and why we needed to reorder in the first place
-    // normally we only depend on ordering of `seq` so the reordering shouldn't have broken anything...
-
     static constexpr size_t variable_offset = offsetof(FlowKey, segment_size);
 
     bool matches(const FlowKey &other) const {
@@ -75,7 +71,7 @@ struct FlowKey {
     }
 
     bool matches_tcp(const FlowKey &other, size_t size) const {
-        return matches(other) && segment_size == other.segment_size && seq + size == other.seq;
+        return matches(other) && segment_size <= other.segment_size && seq + size == other.seq;
     }
 
     bool matches_udp(const FlowKey &other) const {
