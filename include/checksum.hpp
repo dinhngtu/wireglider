@@ -120,6 +120,11 @@ static inline uint16_t checksum(std::span<const uint8_t> b, uint64_t initial) {
     return fastcsum::fold_complement_checksum64(ac);
 }
 
-uint16_t calc_l4_checksum(std::span<const uint8_t> thispkt, bool isv6, bool istcp, uint16_t csum_start);
+uint16_t calc_l4_checksum(
+    std::span<const uint8_t> thispkt,
+    bool isv6,
+    bool istcp,
+    uint16_t csum_start,
+    bool generating = false);
 
 } // namespace wireglider

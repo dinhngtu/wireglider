@@ -5,7 +5,12 @@
 
 namespace wireglider {
 
-uint16_t calc_l4_checksum(std::span<const uint8_t> ippkt, bool isv6, bool istcp, uint16_t csum_start) {
+uint16_t calc_l4_checksum(
+    std::span<const uint8_t> ippkt,
+    bool isv6,
+    bool istcp,
+    uint16_t csum_start,
+    bool generating) {
     uint64_t l4_csum_tmp;
     if (isv6) {
         const auto addroff = offsetof(ip6_hdr, ip6_src);
@@ -28,7 +33,12 @@ uint16_t calc_l4_checksum(std::span<const uint8_t> ippkt, bool isv6, bool istcp,
             dstaddr,
             ippkt.size() - csum_start);
     }
-    return checksum(ippkt.subspan(csum_start), l4_csum_tmp);
+    auto csum = checksum(ippkt.subspan(csum_start), l4_csum_tmp);
+    if (generating && !istcp && csum == 0)
+        csum = 0xffff;
+    else if (!generating && !istcp && csum == 0xffff)
+        csum = 0;
+    return csum;
 }
 
 } // namespace wireglider
