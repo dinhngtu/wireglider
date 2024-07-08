@@ -33,6 +33,17 @@ struct OwnedPacketBatch {
     }
     ~OwnedPacketBatch() = default;
 
+    // for compatibility with PacketRefBatch
+    constexpr OwnedPacketBatch *operator->() {
+        return this;
+    }
+    constexpr OwnedPacketBatch &operator*() {
+        return *this;
+    }
+
+    size_t size_bytes() const {
+        return buf.size();
+    }
     void append(std::span<const uint8_t> data) {
         buf.insert(buf.end(), data.begin(), data.end());
         count++;
@@ -74,9 +85,10 @@ struct OwnedPacketBatch {
 };
 
 template <typename AddressType>
-using FlowMap = boost::container::flat_map<FlowKey<AddressType>, OwnedPacketBatch, std::greater<FlowKey<AddressType>>>;
-using IP4Flow = FlowMap<in_addr>;
-using IP6Flow = FlowMap<in6_addr>;
+using OwnFlowMap =
+    boost::container::flat_map<FlowKey<AddressType>, OwnedPacketBatch, std::greater<FlowKey<AddressType>>>;
+using IP4Flow = OwnFlowMap<in_addr>;
+using IP6Flow = OwnFlowMap<in6_addr>;
 
 struct DecapBatch {
     [[deprecated("must specify has_uso")]] DecapBatch() : has_uso(true) {

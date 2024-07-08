@@ -38,6 +38,9 @@ struct PacketRefBatch {
     }
     ~PacketRefBatch() = default;
 
+    size_t size_bytes() const {
+        return bytes;
+    }
     void append(std::span<const uint8_t> data) {
         if (!iov.empty() && data.data() == static_cast<uint8_t *>(iov.back().iov_base) + iov.back().iov_len)
             iov.back().iov_len += data.size();

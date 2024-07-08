@@ -39,7 +39,7 @@ outcome::result<void> write_opb(int fd, OwnedPacketBatch &opb) {
 }
 
 template <typename T>
-static outcome::result<void> do_tun_write_flowmap(int fd, FlowMap<T> &flows) {
+static outcome::result<void> do_tun_write_flowmap(int fd, OwnFlowMap<T> &flows) {
     auto it = flows.begin();
     outcome::result<void> ret = outcome::success();
     for (; it != flows.end(); it++) {

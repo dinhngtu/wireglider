@@ -14,6 +14,11 @@
 
 namespace wireglider::worker_impl {
 
+template <auto F>
+using ip_header_of_t = std::remove_pointer_t<typename tdutil::result_type_t<decltype(F)>::first_type>;
+template <auto F>
+using address_type_of_t = typename std::remove_cvref_t<tdutil::first_argument_t<decltype(F)>>::address_type;
+
 static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
     FlowKey<in_addr> &fk,
     std::span<const uint8_t> ippkt,
@@ -55,11 +60,6 @@ static std::pair<const ip6_hdr *, uint8_t> fill_fk_ip6(
     fk.ttl = ip->ip6_hlim;
     return std::make_pair(ip, ip->ip6_nxt);
 }
-
-template <auto F>
-using ip_header_of_t = std::remove_pointer_t<typename tdutil::result_type_t<decltype(F)>::first_type>;
-template <auto F>
-using address_type_of_t = typename std::remove_cvref_t<tdutil::first_argument_t<decltype(F)>>::address_type;
 
 template <typename T>
 static bool fill_fk_ecn(FlowKey<T> &fk, uint8_t ecn_outer) {
@@ -123,6 +123,7 @@ static const udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
     fk.srcport = boost::endian::big_to_native(udp->source);
     fk.dstport = boost::endian::big_to_native(udp->dest);
     fk.tcpack = 0;
+    // position the packet last in its own flow
     fk.seq = UINT32_MAX;
     return udp;
 }
@@ -163,6 +164,94 @@ static DecapOutcome evaluate_packet(
     fk.segment_size = ippkt.size() - sizeof(*ip) - (flags.istcp() ? sizeof(tcphdr) : sizeof(udphdr));
 
     return GRO_ADD;
+}
+
+// returns true if the next flow was merged and erased
+template <typename T, template <typename> typename FlowMap>
+static bool merge_next_flow(FlowMap<T> &flow, const typename FlowMap<T>::iterator &it) {
+    if (it == flow.begin())
+        return false;
+    if (it->second->flags.ispsh() || it->second->flags.issealed())
+        return false;
+    auto next = it - 1;
+    if (!it->second->is_mergeable(*next->second))
+        return false;
+    if (it->second->flags.istcp() ? !it->first.matches_tcp(next->first, it->second->size_bytes())
+                                  : !it->first.matches_udp(next->first))
+        return false;
+    it->second->extend(*next->second);
+    flow.erase(next);
+    return true;
+}
+
+// returns true if this flow was merged with the previous flow and erased
+template <typename T, template <typename> typename FlowMap>
+static bool merge_prev_flow(FlowMap<T> &flow, const typename FlowMap<T>::iterator &it) {
+    auto prev = it + 1;
+    if (prev == flow.end())
+        return false;
+    if (prev->second->flags.ispsh() || prev->second->flags.issealed())
+        return false;
+    if (!prev->second->is_mergeable(*it->second))
+        return false;
+    if (it->second->flags.istcp() ? !prev->first.matches_tcp(it->first, prev->second->size_bytes())
+                                  : !prev->first.matches_udp(it->first))
+        return false;
+    prev->second->extend(*it->second);
+    flow.erase(it);
+    return true;
+}
+
+template <typename T, template <typename> typename FlowMap>
+struct FlowMapTraits {};
+
+template <typename T, template <typename> typename FlowMap>
+static void append_flow(
+    FlowMap<T> &flow,
+    FlowKey<T> &fk,
+    std::span<const uint8_t> pkthdr,
+    std::span<const uint8_t> pktdata,
+    PacketFlags &flags,
+    uint32_t &udpid) {
+    auto [it, usable] = find_flow<T, FlowMap>(flow, fk, pktdata, flags);
+    bool created;
+    if (!usable) {
+        // create a new flow
+        if (!flags.istcp())
+            fk.seq = udpid++;
+        flags.vnethdr.flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
+        if (flags.istcp()) {
+            flags.vnethdr.gso_type = flags.isv6() ? VIRTIO_NET_HDR_GSO_TCPV6 : VIRTIO_NET_HDR_GSO_TCPV4;
+            if (IPTOS_ECN(fk.tos) == IPTOS_ECN_CE)
+                flags.vnethdr.gso_type |= VIRTIO_NET_HDR_GSO_ECN;
+        } else {
+            // append_flow will never be called without has_uso
+            flags.vnethdr.gso_type = WIREGLIDER_VIRTIO_NET_HDR_GSO_UDP_L4;
+        }
+        std::tie(it, created) = flow.emplace(fk, FlowMapTraits<T, FlowMap>::create_batch(pkthdr, fk.segment_size, flags));
+        assert(created);
+    }
+    it->second->append(pktdata);
+    if (pktdata.size() != fk.segment_size)
+        it->second->flags.issealed() = true;
+    if (it->second->flags.isv6()) {
+        auto ip6 = it->second->ip6hdr();
+        boost::endian::big_to_native_inplace(ip6->ip6_flow);
+        ip6->ip6_flow &= ~0xFF00000;
+        ip6->ip6_flow |= static_cast<uint32_t>(fk.tos) << 20;
+        boost::endian::native_to_big_inplace(ip6->ip6_flow);
+    } else {
+        it->second->ip4hdr()->ip_tos = fk.tos;
+    }
+    if (flags.istcp() && flags.ispsh()) {
+        it->second->tcphdr()->psh |= 1;
+        it->second->flags.ispsh() = true;
+    }
+
+    if (merge_next_flow<T, FlowMap>(flow, it))
+        return;
+    if (merge_prev_flow<T, FlowMap>(flow, it))
+        return;
 }
 
 } // namespace wireglider::worker_impl

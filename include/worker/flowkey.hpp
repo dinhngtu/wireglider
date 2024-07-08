@@ -110,4 +110,22 @@ static inline auto format_as(DecapOutcome o) {
     return outcomes[o];
 }
 
+template <typename T, template <typename> typename FlowMap>
+static std::pair<typename FlowMap<T>::iterator, bool> find_flow(
+    FlowMap<T> &flow,
+    const FlowKey<T> &fk,
+    std::span<const uint8_t> pktdata,
+    const PacketFlags &flags) {
+    auto it = flow.lower_bound(fk);
+    if (it == flow.end())
+        return {it, false};
+    if (it->second->flags.ispsh() || it->second->flags.issealed())
+        return {it, false};
+    if (!it->second->is_appendable(pktdata.size()))
+        return {it, false};
+    if (flags.istcp() ? !it->first.matches_tcp(fk, pktdata.size()) : !it->first.matches_udp(fk))
+        return {it, false};
+    return {it, true};
+}
+
 } // namespace wireglider::worker_impl
