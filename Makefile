@@ -220,7 +220,7 @@ debug: wireglider
 	#false; \
 #fi
 check: tests
-	for test in $(TESTS); do $$test; done
+	@for test in $(TESTS); do $$test; done
 
 cloc:
 	cloc --config .clocconfig .
