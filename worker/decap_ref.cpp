@@ -23,13 +23,12 @@ static std::span<uint8_t> tunnel_flush(
             remain = remain.subspan(result.size);
             break;
         case WIREGUARD_DONE:
-            break;
+            return remain;
         case WIREGUARD_ERROR:
         default:
-            break;
+            return remain;
         }
     }
-    return remain;
 }
 
 std::optional<DecapRefBatch> Worker::do_server_decap_ref(

@@ -24,7 +24,7 @@ static void tunnel_flush(
             return;
         case WIREGUARD_ERROR:
         default:
-            break;
+            return;
         }
     }
 }
