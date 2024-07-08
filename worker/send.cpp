@@ -46,7 +46,7 @@ outcome::result<void> Worker::server_send_batch(ServerSendBatch *batch, std::spa
     cm.set<1>(SOL_IP, IP_TOS, batch->ecn);
 
     while (batch->pos < data.size()) {
-        iov = {&data[batch->pos], data.size() - batch->pos};
+        iov = {&data[batch->pos], std::min(batch->max_send, data.size() - batch->pos)};
         auto ret = sendmsg(_arg.server->fd(), &mh, 0);
         if (ret < 0)
             return check_eagain(errno, "server_send_batch sendmsg");

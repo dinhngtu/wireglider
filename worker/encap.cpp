@@ -38,13 +38,10 @@ void Worker::do_tun(epoll_event *ev) {
         if (!crypt)
             return;
 
-        ServerSendBatch batch;
-        batch.ep = crypt->second;
-        batch.segment_size = crypt->first.segment_size;
-        batch.ecn = crypt->first.ecn;
-
+        ServerSendBatch batch(crypt->first.segment_size, crypt->second, crypt->first.ecn);
         if (!server_send_batch(&batch, crypt->first.data)) {
-            auto tosend = new ServerSendBatch(crypt->first.data.subspan(batch.pos), batch.segment_size, batch.ep);
+            auto tosend =
+                new ServerSendBatch(crypt->first.data.subspan(batch.pos), batch.segment_size, batch.ep, batch.ecn);
             _serversend.push_back(*tosend);
             server_enable(EPOLLOUT);
         }

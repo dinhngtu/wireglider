@@ -29,10 +29,13 @@ struct ServerSendBase : public boost::intrusive::list_base_hook<> {
 };
 
 struct ServerSendBatch : public ServerSendBase {
-    ServerSendBatch() {
+    explicit ServerSendBatch(std::span<uint8_t> data, size_t _segment_size, ClientEndpoint _ep, uint8_t _ecn)
+        : ep(_ep), buf(data.begin(), data.end()), segment_size(_segment_size), max_send(65535 - 65535 % segment_size),
+          ecn(_ecn) {
     }
-    explicit ServerSendBatch(std::span<uint8_t> data, size_t _segment_size, ClientEndpoint _ep)
-        : ep(_ep), buf(data.begin(), data.end()), segment_size(_segment_size) {
+    explicit ServerSendBatch(size_t _segment_size, ClientEndpoint _ep, uint8_t _ecn)
+        : ep(_ep), segment_size(_segment_size), max_send(65535 - 65535 % segment_size),
+          ecn(_ecn) {
     }
     virtual ~ServerSendBatch() {
     }
@@ -40,6 +43,7 @@ struct ServerSendBatch : public ServerSendBase {
     ClientEndpoint ep;
     std::vector<uint8_t> buf;
     size_t segment_size;
+    size_t max_send;
     size_t pos = 0;
     uint8_t ecn;
 };
