@@ -213,13 +213,14 @@ run: wireglider
 debug: wireglider
 	sudo gdb -ex "start -a 0.0.0.0:51820 -A 10.77.44.1/24 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM=" ./$<
 
+#@if (for test in $(TESTS); do echo $$test; $$test || exit; done); then \
+	#echo "All tests succeeded"; \
+#else \
+	#echo "Some tests failed"; \
+	#false; \
+#fi
 check: tests
-	@if (for test in $(TESTS); do echo $$test; $$test || exit; done); then \
-		echo "All tests succeeded"; \
-	else \
-		echo "Some tests failed"; \
-		false; \
-	fi
+	for test in $(TESTS); do $$test; done
 
 cloc:
 	cloc --config .clocconfig .

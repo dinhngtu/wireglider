@@ -35,10 +35,10 @@
             ]
         },
         {
-            "name": "tests/flowkey",
+            "name": "tests/flowkey-own",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/tests/test-flowkey",
+            "program": "${workspaceFolder}/tests/test-flowkey-own",
             "args": [
                 "-b"
             ],

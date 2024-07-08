@@ -62,42 +62,6 @@ static std::vector<uint8_t> flip_l4_csum(std::vector<uint8_t> pkt) {
     return pkt;
 }
 
-static inline wireglider::worker_impl::FlowKey<in_addr> make_fk(
-    Tins::IPv4Address ipsrc,
-    Tins::IPv4Address ipdst,
-    uint32_t seq = 0,
-    uint16_t segment_size = 100) {
-    return {
-        to_addr(ipsrc),
-        to_addr(ipdst),
-        1,
-        1,
-        segment_size,
-        0,
-        64,
-        0,
-        seq,
-    };
-}
-
-static inline wireglider::worker_impl::FlowKey<in6_addr> make_fk(
-    Tins::IPv6Address ipsrc,
-    Tins::IPv6Address ipdst,
-    uint32_t seq = 0,
-    uint16_t segment_size = 100) {
-    return {
-        to_addr(ipsrc),
-        to_addr(ipdst),
-        1,
-        1,
-        segment_size,
-        0,
-        64,
-        0,
-        seq,
-    };
-}
-
 TEST_CASE("DecapBatch multiple protocols and flows") {
     worker_impl::DecapBatch batch;
 

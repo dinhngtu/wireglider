@@ -17,7 +17,7 @@
 namespace wireglider::worker_impl {
 
 struct PacketFlags {
-    using flag_type = std::bitset<3>;
+    using flag_type = std::bitset<4>;
     virtio_net_hdr vnethdr{};
     flag_type storage;
     constexpr bool isv6() const {
@@ -38,6 +38,12 @@ struct PacketFlags {
     flag_type::reference ispsh() {
         return storage[2];
     }
+    constexpr bool issealed() const {
+        return storage[2];
+    }
+    flag_type::reference issealed() {
+        return storage[2];
+    }
 };
 
 template <typename AddressType>
@@ -49,27 +55,31 @@ struct FlowKey {
     // all below are native order unless otherwise specified
     uint16_t srcport;
     uint16_t dstport;
-    uint16_t segment_size;
+    uint32_t tcpack;
     uint8_t tos;
     uint8_t ttl;
-    uint32_t tcpack;
 
     // variable part
+    uint16_t segment_size;
     uint32_t seq;
 
     // NOTE: reordering to tcpack-tos-ttl-segment_size breaks our tests
     // need to see what's happening and why we needed to reorder in the first place
     // normally we only depend on ordering of `seq` so the reordering shouldn't have broken anything...
 
-    static constexpr size_t variable_offset = offsetof(FlowKey, seq);
+    static constexpr size_t variable_offset = offsetof(FlowKey, segment_size);
 
     bool matches(const FlowKey &other) const {
         static_assert(std::has_unique_object_representations_v<FlowKey>);
         return !memcmp(this, &other, variable_offset);
     }
 
-    bool is_consecutive_with(const FlowKey &other, size_t size) const {
-        return this->matches(other) && this->seq + size == other.seq;
+    bool matches_tcp(const FlowKey &other, size_t size) const {
+        return matches(other) && segment_size == other.segment_size && seq + size == other.seq;
+    }
+
+    bool matches_udp(const FlowKey &other) const {
+        return matches(other) && segment_size == other.segment_size;
     }
 };
 
@@ -87,6 +97,8 @@ static inline auto operator<=>(const FlowKey<AddressType> &a, const FlowKey<Addr
         return std::strong_ordering::greater;
     else if (prefix < 0)
         return std::strong_ordering::less;
+    else if (a.segment_size != b.segment_size)
+        return a.segment_size <=> b.segment_size;
     else
         return a.seq <=> b.seq;
 }

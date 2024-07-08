@@ -26,7 +26,9 @@ static std::pair<typename RefFlowMap<T>::iterator, bool> find_flow(
         return {it, false};
     if (!it->second->is_appendable(pktdata.size()))
         return {it, false};
-    if (flags.istcp() ? !it->first.is_consecutive_with(fk, pktdata.size()) : !it->first.matches(fk))
+    if (flags.istcp() ? !it->first.matches_tcp(fk, pktdata.size()) : !it->first.matches_udp(fk))
+        return {it, false};
+    if (it->second->flags.issealed())
         return {it, false};
     if (flags.istcp() && it->second->flags.ispsh())
         return {it, false};
@@ -38,13 +40,13 @@ template <typename T>
 static bool merge_next_flow(RefFlowMap<T> &flow, const typename RefFlowMap<T>::iterator &it) {
     if (it == flow.begin())
         return false;
-    if (it->second->flags.ispsh())
+    if (it->second->flags.ispsh() || it->second->flags.issealed())
         return false;
     auto next = it - 1;
     if (!it->second->is_mergeable(*next->second))
         return false;
-    if (it->second->flags.istcp() ? !it->first.is_consecutive_with(next->first, it->second->bytes)
-                                  : !it->first.matches(next->first))
+    if (it->second->flags.istcp() ? !it->first.matches_tcp(next->first, it->second->bytes)
+                                  : !it->first.matches_udp(next->first))
         return false;
     it->second->extend(*next->second);
     flow.erase(next);
@@ -57,12 +59,12 @@ static bool merge_prev_flow(RefFlowMap<T> &flow, const typename RefFlowMap<T>::i
     auto prev = it + 1;
     if (prev == flow.end())
         return false;
+    if (prev->second->flags.ispsh() || prev->second->flags.issealed())
+        return false;
     if (!prev->second->is_mergeable(*it->second))
         return false;
-    if (it->second->flags.istcp() ? !prev->first.is_consecutive_with(it->first, prev->second->bytes)
-                                  : !prev->first.matches(it->first))
-        return false;
-    if (prev->second->flags.ispsh())
+    if (it->second->flags.istcp() ? !prev->first.matches_tcp(it->first, prev->second->bytes)
+                                  : !prev->first.matches_udp(it->first))
         return false;
     prev->second->extend(*it->second);
     flow.erase(it);

@@ -7,6 +7,8 @@
 #include <netinet/ip6.h>
 #include <tins/tins.h>
 
+#include "worker/flowkey.hpp"
+
 template <typename IPType>
 static std::vector<uint8_t> make_tcp(
     typename IPType::address_type ipsrc,
@@ -63,4 +65,40 @@ static inline in6_addr to_addr(Tins::IPv6Address a) {
     in6_addr ret;
     a.copy(ret.s6_addr);
     return ret;
+}
+
+static inline wireglider::worker_impl::FlowKey<in_addr> make_fk(
+    Tins::IPv4Address ipsrc,
+    Tins::IPv4Address ipdst,
+    uint32_t seq = 0,
+    uint16_t segment_size = 100) {
+    return wireglider::worker_impl::FlowKey<in_addr>{
+        .srcip = to_addr(ipsrc),
+        .dstip = to_addr(ipdst),
+        .srcport = 1,
+        .dstport = 1,
+        .tcpack = 0,
+        .tos = 0,
+        .ttl = 64,
+        .segment_size = segment_size,
+        .seq = seq,
+    };
+}
+
+static inline wireglider::worker_impl::FlowKey<in6_addr> make_fk(
+    Tins::IPv6Address ipsrc,
+    Tins::IPv6Address ipdst,
+    uint32_t seq = 0,
+    uint16_t segment_size = 100) {
+    return wireglider::worker_impl::FlowKey<in6_addr>{
+        .srcip = to_addr(ipsrc),
+        .dstip = to_addr(ipdst),
+        .srcport = 1,
+        .dstport = 1,
+        .tcpack = 0,
+        .tos = 0,
+        .ttl = 64,
+        .segment_size = segment_size,
+        .seq = seq,
+    };
 }
