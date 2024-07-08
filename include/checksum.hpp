@@ -124,7 +124,6 @@ uint16_t calc_l4_checksum(
     std::span<const uint8_t> thispkt,
     bool isv6,
     bool istcp,
-    uint16_t csum_start,
-    bool generating = false);
+    uint16_t csum_start);
 
 } // namespace wireglider

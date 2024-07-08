@@ -73,7 +73,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
                 istcp = ip->ip_p == IPPROTO_TCP;
                 assign_big_from_native(ip->ip_sum, checksum(inbuf.subspan(0, vnethdr.csum_start), 0));
             }
-            auto l4_csum = calc_l4_checksum(inbuf, isv6, istcp, vnethdr.csum_start, true);
+            auto l4_csum = calc_l4_checksum(inbuf, isv6, istcp, vnethdr.csum_start);
             store_big_u16(&inbuf[l4_csum_offset], l4_csum);
         }
         return PacketBatch{
@@ -202,7 +202,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
             assign_big_from_native(udp->len, thispkt.size() - vnethdr.csum_start);
         }
 
-        auto l4_csum = calc_l4_checksum(thispkt, isv6, istcp, vnethdr.csum_start, true);
+        auto l4_csum = calc_l4_checksum(thispkt, isv6, istcp, vnethdr.csum_start);
         store_big_u16(&thispkt[l4_csum_offset], l4_csum);
 
         // to next packet
