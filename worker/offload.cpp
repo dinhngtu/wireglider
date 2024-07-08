@@ -191,7 +191,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
         } else {
             // set UDP header len
             auto udp = tdutil::start_lifetime_as<udphdr>(&thispkt[vnethdr.csum_start]);
-            assign_big_from_native(udp->len, prefix.size() - vnethdr.csum_start);
+            assign_big_from_native(udp->len, thispkt.size() - vnethdr.csum_start);
         }
 
         auto l4_csum = calc_l4_checksum(thispkt, isv6, istcp, vnethdr.csum_start);
