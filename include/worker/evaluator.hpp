@@ -88,20 +88,24 @@ static bool fill_fk_ecn(FlowKey<T> &fk, uint8_t ecn_outer) {
 
 template <typename T>
 static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> ippkt, PacketFlags &flags) {
-    auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
+    auto iphsize = flags.vnethdr.csum_start;
     if (ippkt.size() - iphsize <= sizeof(tcphdr))
         // exclude empty packets as well
         return nullptr;
     if (calc_l4_checksum(ippkt, flags.isv6(), true, iphsize))
         return nullptr;
     auto tcp = tdutil::start_lifetime_as<tcphdr>(&ippkt[iphsize]);
-    if (tcp->doff != 5)
+    auto thlen = 4u * tcp->doff;
+    if (thlen < sizeof(tcphdr) || ippkt.size() - iphsize <= thlen)
         return nullptr;
     if (tcp->fin || tcp->syn || tcp->rst || tcp->urg || tcp->res2)
         return nullptr;
     flags.istcp() = true;
     flags.ispsh() = !!tcp->psh;
-    flags.vnethdr.hdr_len += sizeof(tcphdr);
+    flags.vnethdr.gso_type = flags.isv6() ? VIRTIO_NET_HDR_GSO_TCPV6 : VIRTIO_NET_HDR_GSO_TCPV4;
+    if (IPTOS_ECN(fk.tos) == IPTOS_ECN_CE)
+        flags.vnethdr.gso_type |= VIRTIO_NET_HDR_GSO_ECN;
+    flags.vnethdr.hdr_len += thlen;
     flags.vnethdr.csum_offset = offsetof(tcphdr, check);
     fk.srcport = boost::endian::big_to_native(tcp->source);
     fk.dstport = boost::endian::big_to_native(tcp->dest);
@@ -112,7 +116,7 @@ static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
 
 template <typename T>
 static const udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<const uint8_t> ippkt, PacketFlags &flags) {
-    auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
+    auto iphsize = flags.vnethdr.csum_start;
     if (ippkt.size() - iphsize <= sizeof(udphdr))
         return nullptr;
     if (calc_l4_checksum(ippkt, flags.isv6(), false, iphsize))
@@ -120,6 +124,7 @@ static const udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
     auto udp = tdutil::start_lifetime_as<udphdr>(&ippkt[iphsize]);
     flags.istcp() = false;
     flags.ispsh() = false;
+    flags.vnethdr.gso_type = WIREGLIDER_VIRTIO_NET_HDR_GSO_UDP_L4;
     flags.vnethdr.hdr_len += sizeof(udphdr);
     flags.vnethdr.csum_offset = offsetof(udphdr, check);
     fk.srcport = boost::endian::big_to_native(udp->source);
@@ -156,14 +161,16 @@ static DecapOutcome evaluate_packet(
         break;
     }
     case IPPROTO_UDP: {
-        if (!fill_fk_udp(fk, ippkt, flags) || !has_uso)
+        if (!has_uso || !fill_fk_udp(fk, ippkt, flags))
             return GRO_NOADD;
         break;
     }
     default:
         return GRO_NOADD;
     }
-    fk.segment_size = ippkt.size() - sizeof(*ip) - (flags.istcp() ? sizeof(tcphdr) : sizeof(udphdr));
+
+    flags.vnethdr.flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
+    fk.segment_size = flags.vnethdr.gso_size = ippkt.size() - flags.vnethdr.hdr_len;
 
     return GRO_ADD;
 }
@@ -221,15 +228,6 @@ static void append_flow(
         // create a new flow
         if (!flags.istcp())
             fk.seq = udpid++;
-        flags.vnethdr.flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
-        if (flags.istcp()) {
-            flags.vnethdr.gso_type = flags.isv6() ? VIRTIO_NET_HDR_GSO_TCPV6 : VIRTIO_NET_HDR_GSO_TCPV4;
-            if (IPTOS_ECN(fk.tos) == IPTOS_ECN_CE)
-                flags.vnethdr.gso_type |= VIRTIO_NET_HDR_GSO_ECN;
-        } else {
-            // append_flow will never be called without has_uso
-            flags.vnethdr.gso_type = WIREGLIDER_VIRTIO_NET_HDR_GSO_UDP_L4;
-        }
         std::tie(it, created) =
             flow.emplace(fk, FlowMapTraits<T, FlowMap>::create_batch(pkthdr, fk.segment_size, flags));
         assert(created);

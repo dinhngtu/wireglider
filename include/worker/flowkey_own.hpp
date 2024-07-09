@@ -70,13 +70,11 @@ struct OwnedPacketBatch {
     }
     struct tcphdr *tcphdr() {
         assert(flags.istcp());
-        auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
-        return tdutil::start_lifetime_as<struct tcphdr>(&hdrbuf[iphsize]);
+        return tdutil::start_lifetime_as<struct tcphdr>(&hdrbuf[flags.vnethdr.csum_start]);
     }
     struct udphdr *udphdr() {
         assert(!flags.istcp());
-        auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
-        return tdutil::start_lifetime_as<struct udphdr>(&hdrbuf[iphsize]);
+        return tdutil::start_lifetime_as<struct udphdr>(&hdrbuf[flags.vnethdr.csum_start]);
     }
     std::vector<uint8_t> hdrbuf;
     std::vector<uint8_t> buf;
