@@ -37,8 +37,10 @@ void Worker::run() {
     make_exit_sigset(sigs);
     _sigfd = FileDescriptor(signalfd(-1, &sigs, SFD_NONBLOCK));
 
-    _poll.add(_arg.tun->fd(), EPOLLIN);
-    _poll.add(_arg.server->fd(), EPOLLIN);
+    _poll_tun = EPOLLIN;
+    _poll.add(_arg.tun->fd(), _poll_tun);
+    _poll_server = EPOLLIN;
+    _poll.add(_arg.server->fd(), _poll_server);
     _poll.add(_sigfd, EPOLLIN);
 
     // there are only 3 file descriptors to watch
