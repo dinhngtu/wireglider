@@ -12,6 +12,7 @@
 #include "control.hpp"
 #include "netutil.hpp"
 #include "rundown.hpp"
+#include "dbgprint.hpp"
 
 using namespace tdutil;
 using namespace wireglider::control_impl;
@@ -29,6 +30,7 @@ ControlWorker::ControlWorker(const ControlArg &arg)
 }
 
 void ControlWorker::run() {
+    DBG_PRINT("control thread {}\n", pthread_self());
     pthread_setname_np(pthread_self(), "control");
 
     rcu_register_thread();
@@ -448,7 +450,7 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
             newclient->allowed_ips = oldclient->allowed_ips;
             newclient->allowed_ips.insert(cmd.allowed_ip.begin(), cmd.allowed_ip.end());
         }
-        fmt::print("adding peer endpoint {} = {}\n", newclient->epkey, static_cast<void *>(newclient));
+        DBG_PRINT("adding peer endpoint {} = {}\n", newclient->epkey, static_cast<void *>(newclient));
         newclient->tunnel = new_tunnel_raw_ex(
             &config->privkey,
             &cmd.public_key,
@@ -478,12 +480,14 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
             for (auto aip : newclient->allowed_ips) {
                 if (auto net4 = std::get_if<IpRange4>(&aip)) {
                     auto [begin, end] = config->prefix4.get_range(net4->first, net4->second);
+                    DBG_PRINT("allowed ip4 range {}-{}\n", begin, end);
                     auto ret = mtree_insert_range(_arg.allowed_ip4, begin, end, newclient, 0);
                     if (ret < 0)
                         throw ControlCommandException(-ret);
                     inserted4.push_back(begin);
                 } else if (auto net6 = std::get_if<IpRange6>(&aip)) {
                     auto [begin, end] = config->prefix6.get_range(net6->first, net6->second);
+                    DBG_PRINT("allowed ip6 range {}-{}\n", begin, end);
                     auto ret = mtree_insert_range(_arg.allowed_ip6, begin, end, newclient, 0);
                     if (ret < 0)
                         throw ControlCommandException(-ret);
@@ -520,7 +524,7 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
         delete newclient;
         throw;
     }
-    fmt::print(
+    DBG_PRINT(
         "add ok, newclient={}, oldclient={}\n",
         static_cast<void *>(newclient),
         static_cast<const void *>(oldclient));
