@@ -80,7 +80,6 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
             memcpy(&inbuf[l4_csum_offset], &l4_csum, sizeof(l4_csum));
         }
         return PacketBatch{
-            .prefix = {},
             .data = inbuf,
             .segment_size = inbuf.size(),
             .isv6 = isv6,
@@ -95,7 +94,6 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
         if (inbuf.size() - vnethdr.csum_start < sizeof(tcphdr)) {
             fmt::print("packet is too short\n");
             return PacketBatch{
-                .prefix = {},
                 .data = inbuf,
                 .segment_size = inbuf.size(),
                 .isv6 = isv6,
@@ -106,7 +104,6 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
         if (thlen < sizeof(tcphdr)) {
             fmt::print("thlen too small: {}\n", thlen);
             return PacketBatch{
-                .prefix = {},
                 .data = inbuf,
                 .segment_size = inbuf.size(),
                 .isv6 = isv6,
@@ -122,7 +119,6 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
     default:
         fmt::print("unknown gso type {}\n", vnethdr.gso_type);
         return PacketBatch{
-            .prefix = {},
             .data = inbuf,
             .segment_size = inbuf.size(),
             .isv6 = isv6,
@@ -133,7 +129,6 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
     if (inbuf.size() < vnethdr.hdr_len) {
         // shouldn't happen but this was a possible crash
         return PacketBatch{
-            .prefix = {},
             .data = inbuf,
             .segment_size = inbuf.size(),
             .isv6 = isv6,
@@ -216,7 +211,6 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
     }
 
     return PacketBatch{
-        .prefix = {},
         .data = std::span(outbuf.begin(), pbsize),
         .segment_size = prefix.size() + vnethdr.gso_size,
         .isv6 = isv6,

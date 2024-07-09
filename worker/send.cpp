@@ -111,9 +111,7 @@ outcome::result<void> Worker::server_send_list(ServerSendList *list) {
     return outcome::success();
 }
 
-std::optional<std::span<const iovec>> Worker::server_send_reflist(
-    const boost::container::small_vector_base<iovec> &pkts,
-    ClientEndpoint ep) {
+std::optional<std::span<const iovec>> Worker::server_send_reflist(std::span<iovec> pkts, ClientEndpoint ep) {
     void *name = nullptr;
     socklen_t namelen;
     if (auto sin6 = std::get_if<sockaddr_in6>(&ep)) {

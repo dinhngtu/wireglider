@@ -3,6 +3,7 @@
 #include <iterator>
 #include <vector>
 #include <span>
+#include <sys/uio.h>
 #include "virtio_net.hpp"
 
 #ifdef VIRTIO_NET_HDR_GSO_UDP_L4
@@ -14,8 +15,9 @@
 namespace wireglider::worker_impl {
 
 struct PacketBatch {
-    std::span<uint8_t> prefix;
+    std::span<uint8_t> prefix{};
     std::span<uint8_t> data;
+    std::span<iovec> unrel{};
     size_t segment_size;
     bool isv6;
     uint8_t ecn;

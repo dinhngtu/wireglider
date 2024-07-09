@@ -45,8 +45,7 @@ public:
     void run();
 
     static constexpr size_t calc_overhead() {
-        size_t ret = sizeof(udphdr) + 32 + sizeof(ip6_hdr);
-        return ret;
+        return sizeof(udphdr) + 32;
     }
 
 private:
@@ -55,17 +54,15 @@ private:
     outcome::result<std::span<uint8_t>> do_tun_recv(std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr);
     std::optional<std::pair<worker_impl::PacketBatch, ClientEndpoint>> do_tun_encap(
         worker_impl::PacketBatch &pb,
-        std::vector<uint8_t> &outbuf);
+        std::vector<uint8_t> &outbuf,
+        std::vector<uint8_t> &unrelbuf,
+        std::vector<iovec> &unreliov);
 
     void do_server_send();
-    outcome::result<void> server_send_batch(
-        worker_impl::ServerSendBatch *batch,
-        std::span<uint8_t> data);
+    outcome::result<void> server_send_batch(worker_impl::ServerSendBatch *batch, std::span<uint8_t> data);
     outcome::result<void> server_send_list(worker_impl::ServerSendList *list);
     // returns remaining iovecs if EAGAIN
-    std::optional<std::span<const iovec>> server_send_reflist(
-        const boost::container::small_vector_base<iovec> &pkts,
-        ClientEndpoint ep);
+    std::optional<std::span<const iovec>> server_send_reflist(std::span<iovec> pkts, ClientEndpoint ep);
     outcome::result<void> do_server_send_step(worker_impl::ServerSendBase *send);
 
     void do_server(epoll_event *ev);
@@ -124,9 +121,10 @@ private:
     uint32_t _poll_tun = 0;
     uint32_t _poll_server = 0;
     WorkerArg _arg;
-    // fits at least 64 KB
+    // fits at least 64 KB, for scratch use
     std::vector<uint8_t> _recvbuf;
-    std::vector<uint8_t> _pktbuf, _sendbuf;
+    std::vector<uint8_t> _pktbuf;
+    // persistent send queues
     worker_impl::ServerSendQueue _serversend;
     worker_impl::TunWriteQueue _tunwrite;
     std::deque<std::vector<uint8_t>> _tununrel;

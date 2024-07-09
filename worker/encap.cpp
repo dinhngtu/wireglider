@@ -20,6 +20,11 @@ using namespace wireglider::worker_impl;
 namespace wireglider {
 
 void Worker::do_tun(epoll_event *ev) {
+    // 60 bytes ipv4 header + 60 bytes tcp header + 40 bytes WG overhead
+    static constexpr size_t sendbuf_size = 65536 + 64 * (60 + 60) + 64 * calc_overhead();
+    static std::vector<uint8_t> sendbuf(sendbuf_size), unrelbuf(sendbuf_size);
+    static std::vector<iovec> unreliov(64);
+
     if (ev->events & (EPOLLHUP | EPOLLERR)) {
         throw QuitException();
     }
@@ -34,14 +39,28 @@ void Worker::do_tun(epoll_event *ev) {
 
         auto tun_pb = do_tun_gso_split(read_pb, _pktbuf, vnethdr);
 
-        auto crypt = do_tun_encap(tun_pb, _sendbuf);
+        unreliov.clear();
+        auto crypt = do_tun_encap(tun_pb, sendbuf, unrelbuf, unreliov);
         if (!crypt)
             return;
+        auto &[pb, ep] = *crypt;
 
-        ServerSendBatch batch(crypt->first.segment_size, crypt->second, crypt->first.ecn);
-        if (!server_send_batch(&batch, crypt->first.data)) {
-            auto tosend =
-                new ServerSendBatch(crypt->first.data.subspan(batch.pos), batch.segment_size, batch.ep, batch.ecn);
+        auto unrel_pending = server_send_reflist(pb.unrel, ep);
+        if (unrel_pending) {
+            auto tosend_unrel = new ServerSendList(ep);
+            for (auto pkt : *unrel_pending)
+                tosend_unrel->push_back(pkt);
+            tosend_unrel->finalize();
+            _serversend.push_back(*tosend_unrel);
+
+            auto tosend = new ServerSendBatch(pb.data, pb.segment_size, ep, pb.ecn);
+            _serversend.push_back(*tosend);
+
+            server_enable(EPOLLOUT);
+        }
+        ServerSendBatch batch(pb.segment_size, ep, pb.ecn);
+        if (!server_send_batch(&batch, pb.data)) {
+            auto tosend = new ServerSendBatch(pb.data.subspan(batch.pos), batch.segment_size, batch.ep, batch.ecn);
             _serversend.push_back(*tosend);
             server_enable(EPOLLOUT);
         }
@@ -76,7 +95,9 @@ outcome::result<std::span<uint8_t>> Worker::do_tun_recv(std::vector<uint8_t> &ou
 
 std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     PacketBatch &pb,
-    std::vector<uint8_t> &outbuf) {
+    std::vector<uint8_t> &outbuf,
+    std::vector<uint8_t> &unrelbuf,
+    std::vector<iovec> &unreliov) {
     Client *client = nullptr;
 
     // be conservative
@@ -106,23 +127,29 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
 
     std::span<const uint8_t> rest(pb.data);
     std::span<uint8_t> remain(outbuf);
-    size_t crypted_segment_size = 0;
+    auto expected_segment_size = pb.segment_size + calc_overhead();
+    size_t unrel_current = 0;
     for (auto pkt : pb) {
         auto res = wireguard_write_raw(client->tunnel, pkt.data(), pkt.size(), remain.data(), remain.size());
         // op: handle error
         if (res.op == WRITE_TO_NETWORK) {
-            remain = remain.subspan(res.size);
-            if (!crypted_segment_size)
-                crypted_segment_size = res.size;
-            else
-                // TODO: handle the case of cached packets
-                assert(rest.empty() || crypted_segment_size == res.size);
+            if (res.size == expected_segment_size) {
+                // admit packets with the expected size into the pb
+                remain = remain.subspan(res.size);
+            } else {
+                // a cached packet
+                assert(unrel_current + res.size <= unrelbuf.size());
+                memcpy(&unrelbuf[unrel_current], &remain[0], res.size);
+                unreliov.push_back({&unrelbuf[unrel_current], res.size});
+                unrel_current += res.size;
+            }
         }
     }
     PacketBatch newpb{
         .prefix = {},
         .data = std::span(outbuf.data(), outbuf.size() - remain.size()),
-        .segment_size = crypted_segment_size,
+        .unrel = std::span(unreliov),
+        .segment_size = expected_segment_size,
         .isv6 = pb.isv6,
         .ecn = pb.ecn,
     };
