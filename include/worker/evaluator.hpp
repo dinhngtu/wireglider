@@ -113,7 +113,7 @@ static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
 template <typename T>
 static const udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<const uint8_t> ippkt, PacketFlags &flags) {
     auto iphsize = flags.isv6() ? sizeof(ip6_hdr) : sizeof(struct ip);
-    if (ippkt.size() - iphsize < sizeof(tcphdr))
+    if (ippkt.size() - iphsize <= sizeof(udphdr))
         return nullptr;
     if (calc_l4_checksum(ippkt, flags.isv6(), false, iphsize))
         return nullptr;
