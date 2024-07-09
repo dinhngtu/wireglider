@@ -30,7 +30,7 @@ static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
     if (ippkt.size() != boost::endian::big_to_native(ip->ip_len))
         return {nullptr, IPPROTO_RAW};
     // no fragmenting of any kind
-    if (boost::endian::big_to_native(ip->ip_off))
+    if (boost::endian::big_to_native(ip->ip_off) & ~IP_DF)
         return {nullptr, IPPROTO_RAW};
     // iph checksum
     if (checksum(ippkt.subspan(0, sizeof(struct ip)), 0))
