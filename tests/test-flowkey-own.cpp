@@ -347,32 +347,20 @@ TEST_CASE("DecapBatch unequal flags more fragments set") {
 }
 
 TEST_CASE("DecapBatch unequal flags DF set") {
-    worker_impl::DecapBatch batch;
+    std::vector<std::vector<uint8_t>> pkts;
+    pkts.emplace_back(make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));
+    pkts.emplace_back(make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 101, [](IP &ip, TCP &tcp) {
+        ip.flags(static_cast<IP::Flags>(ip.flags() | IP::DONT_FRAGMENT));
+    }));
+    pkts.emplace_back(make_udp<IP>(ip4a, 1, ip4b, 1, 100));
+    pkts.emplace_back(make_udp<IP>(ip4a, 1, ip4b, 1, 100, [](IP &ip, UDP &udp) {
+        ip.flags(static_cast<IP::Flags>(ip.flags() | IP::DONT_FRAGMENT));
+    }));
 
-    push_one(batch, make_tcp<IP>(ip4a, 1, ip4b, 1, TCP::ACK, 100, 1));
-    push_one(
-        batch,
-        make_tcp<IP>(
-            ip4a,
-            1,
-            ip4b,
-            1,
-            TCP::ACK,
-            100,
-            101,
-            [](IP &ip, TCP &tcp) { ip.flags(static_cast<IP::Flags>(ip.flags() | IP::DONT_FRAGMENT)); }),
-        GRO_NOADD);
-    push_one(batch, make_udp<IP>(ip4a, 1, ip4b, 1, 100));
-    push_one(
-        batch,
-        make_udp<IP>(
-            ip4a,
-            1,
-            ip4b,
-            1,
-            100,
-            [](IP &ip, UDP &udp) { ip.flags(static_cast<IP::Flags>(ip.flags() | IP::DONT_FRAGMENT)); }),
-        GRO_NOADD);
+    worker_impl::DecapBatch batch;
+    for (auto &pkt : pkts)
+        batch.push_packet(std::span(pkt), 0);
+    REQUIRE(batch.tcp4.size() + batch.udp4.size() + batch.unrel.size() == 4);
 }
 
 TEST_CASE("DecapBatch ipv6 unequal hop limit") {

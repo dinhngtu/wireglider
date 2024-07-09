@@ -355,10 +355,9 @@ TEST_CASE("DecapRefBatch unequal flags DF set") {
     }));
 
     worker_impl::DecapRefBatch batch;
-    batch.push_packet(std::span(pkts[0]), 0);
-    REQUIRE(batch.push_packet(std::span(pkts[1]), 0) == GRO_NOADD);
-    batch.push_packet(std::span(pkts[2]), 0);
-    REQUIRE(batch.push_packet(std::span(pkts[3]), 0) == GRO_NOADD);
+    for (auto &pkt : pkts)
+        batch.push_packet(std::span(pkt), 0);
+    REQUIRE(batch.tcp4.size() + batch.udp4.size() + batch.unrel.size() == 4);
 }
 
 TEST_CASE("DecapRefBatch ipv6 unequal hop limit") {

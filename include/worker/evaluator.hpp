@@ -39,6 +39,7 @@ static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
     flags.isv6() = false;
     fk.srcip = ip->ip_src;
     fk.dstip = ip->ip_dst;
+    fk.frag = ip->ip_off;
     fk.tos = ip->ip_tos;
     fk.ttl = ip->ip_ttl;
     return std::make_pair(ip, ip->ip_p);
@@ -56,6 +57,7 @@ static std::pair<const ip6_hdr *, uint8_t> fill_fk_ip6(
     flags.vnethdr.hdr_len = flags.vnethdr.csum_start = sizeof(ip6_hdr);
     fk.srcip = ip->ip6_src;
     fk.dstip = ip->ip6_dst;
+    fk.frag = 0;
     fk.tos = (boost::endian::big_to_native(ip->ip6_flow) >> 20) & 0xff;
     fk.ttl = ip->ip6_hlim;
     return std::make_pair(ip, ip->ip6_nxt);

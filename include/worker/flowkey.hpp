@@ -50,18 +50,19 @@ template <typename AddressType>
 struct FlowKey {
     using address_type = AddressType;
 
-    AddressType srcip;
-    AddressType dstip;
+    AddressType srcip{};
+    AddressType dstip{};
     // all below are native order unless otherwise specified
-    uint16_t srcport;
-    uint16_t dstport;
-    uint32_t tcpack;
-    uint8_t tos;
-    uint8_t ttl;
+    uint16_t srcport{};
+    uint16_t dstport{};
+    uint32_t tcpack{};
+    uint32_t frag{};
+    uint8_t tos{};
+    uint8_t ttl{};
 
     // variable part
-    uint16_t segment_size;
-    uint32_t seq;
+    uint16_t segment_size{};
+    uint32_t seq{};
 
     static constexpr size_t variable_offset = offsetof(FlowKey, segment_size);
 
