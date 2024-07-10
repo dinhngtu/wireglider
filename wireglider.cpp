@@ -104,6 +104,7 @@ static void doit(Args &args) {
         fmt::print("TUN USO enabled on {}\n", tunname);
     else
         fmt::print("TUN USO is not available on {}\n", tunname);
+    tun[0].set_mtu(sizeof(ip6_hdr) + sizeof(udphdr) + 32);
     tun[0].set_up(true);
 
     ClientTable clients(1024, 1024, 0, CDS_LFHT_AUTO_RESIZE, nullptr);

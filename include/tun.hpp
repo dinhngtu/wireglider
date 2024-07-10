@@ -119,8 +119,22 @@ public:
         return false;
     }
 
+    void set_mtu(int overhead) {
+        auto tunsock = tdutil::FileDescriptor(socket(AF_INET, SOCK_DGRAM, 0));
+        tunsock.check();
+
+        Ifr ifr(_name);
+        if (ioctl(tunsock, SIOCGIFMTU, &ifr) < 0)
+            throw std::system_error(errno, std::system_category(), "ioctl(SIOCGIFMTU)");
+        if (std::cmp_less_equal(ifr->ifr_mtu, overhead))
+            throw std::invalid_argument("invalid mtu overhead");
+        ifr->ifr_mtu -= overhead;
+        if (ioctl(tunsock, SIOCSIFMTU, &ifr) < 0)
+            throw std::system_error(errno, std::system_category(), "ioctl(SIOCSIFMTU)");
+    }
+
     void set_up(bool up) {
-        auto tunsock = tdutil::FileDescriptor(socket(AF_INET6, SOCK_DGRAM, 0));
+        auto tunsock = tdutil::FileDescriptor(socket(AF_INET, SOCK_DGRAM, 0));
         tunsock.check();
 
         Ifr ifr(_name);
