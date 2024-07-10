@@ -38,13 +38,14 @@ void Worker::do_server(epoll_event *ev) {
                 return;
 
         } else {
-            auto batch = do_server_decap_ref(crypt->first, crypt->second, _pktbuf);
+            auto &[pb, ep] = *crypt;
+            auto batch = do_server_decap_ref(pb, ep, _pktbuf);
             if (!batch)
                 return;
 
-            auto ret = server_send_reflist(batch->retpkt, crypt->second);
+            auto ret = server_send_reflist(batch->retpkt, ep);
             if (ret.has_value()) {
-                auto tosend = new ServerSendList(crypt->second);
+                auto tosend = new ServerSendList(ep);
                 for (auto &iov : ret.value())
                     tosend->push_back(iov);
                 tosend->finalize();

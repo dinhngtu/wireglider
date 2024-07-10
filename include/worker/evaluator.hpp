@@ -170,7 +170,7 @@ static DecapOutcome evaluate_packet(
     }
 
     flags.vnethdr.flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
-    fk.segment_size = flags.vnethdr.gso_size = ippkt.size() - flags.vnethdr.hdr_len;
+    flags.vnethdr.gso_size = fk.segment_size = ippkt.size() - flags.vnethdr.hdr_len;
 
     return GRO_ADD;
 }

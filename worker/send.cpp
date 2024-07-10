@@ -128,12 +128,12 @@ std::optional<std::span<const iovec>> Worker::server_send_reflist(std::span<iove
     std::span<const iovec> rest(pkts);
     while (!rest.empty()) {
         mh.clear();
-        for (auto it = rest.begin(); it != rest.end(); it++) {
+        for (auto &iov : rest) {
             mh.push_back({
                 msghdr{
                     .msg_name = name,
                     .msg_namelen = namelen,
-                    .msg_iov = const_cast<iovec *>(&*it),
+                    .msg_iov = const_cast<iovec *>(&iov),
                     .msg_iovlen = 1,
                     .msg_control = nullptr,
                     .msg_controllen = 0,
