@@ -47,9 +47,12 @@ void Worker::run() {
     std::array<epoll_event, 3> evbuf;
 
     while (1) {
-        rcu_thread_offline();
-        auto nevents = _poll.wait(evbuf, -1);
-        rcu_thread_online();
+        auto nevents = _poll.wait(evbuf, 20);
+        if (!nevents) {
+            rcu_thread_offline();
+            nevents = _poll.wait(evbuf, -1);
+            rcu_thread_online();
+        }
         if (nevents < 0) {
             if (errno == EINTR)
                 return;
