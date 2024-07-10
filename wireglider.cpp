@@ -41,18 +41,19 @@ static cxxopts::Options make_options() {
     g("X,control-path",
       "control socket path, with %s for interface name",
       cxxopts::value<std::string>()->default_value("/run/wireguard/%s.sock"));
+    g("M,mtu", "tun mtu", cxxopts::value<int>()->default_value("1420"));
     opt.parse_positional({"interface-name"});
     return opt;
 }
 
 struct Args {
     std::variant<std::monostate, sockaddr_in, sockaddr_in6> listen_addr;
-    uint16_t listen_port;
     std::variant<std::monostate, IpRange4, IpRange6> tun_cidr;
-    std::string control_path;
     unsigned int njobs;
     unsigned int ntimers;
     std::string private_key;
+    std::string control_path;
+    int mtu;
     std::string iface_name;
 };
 
@@ -104,7 +105,7 @@ static void doit(Args &args) {
         fmt::print("TUN USO enabled on {}\n", tunname);
     else
         fmt::print("TUN USO is not available on {}\n", tunname);
-    tun[0].set_mtu(sizeof(ip6_hdr) + sizeof(udphdr) + 32);
+    tun[0].set_mtu(args.mtu);
     tun[0].set_up(true);
 
     ClientTable clients(1024, 1024, 0, CDS_LFHT_AUTO_RESIZE, nullptr);
@@ -207,10 +208,11 @@ int main(int argc, char **argv) {
         if (std::holds_alternative<std::monostate>(args.tun_cidr))
             throw std::invalid_argument("invalid tunnel address");
 
-        args.control_path = argm["control-path"].as<std::string>();
         args.njobs = argm["jobs"].as<unsigned int>();
         args.ntimers = argm["timer-jobs"].as<unsigned int>();
         args.private_key = argm["private-key"].as<std::string>();
+        args.control_path = argm["control-path"].as<std::string>();
+        args.mtu = argm["mtu"].as<int>();
         if (argm.count("interface-name"))
             args.iface_name = argm["interface-name"].as<std::string>();
         else
