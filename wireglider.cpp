@@ -113,25 +113,6 @@ static void doit(Args &args) {
     maple_tree allowed_ip4 = MTREE_INIT(allowed_ip4, MT_FLAGS_USE_RCU);
     maple_tree allowed_ip6 = MTREE_INIT(allowed_ip6, MT_FLAGS_USE_RCU);
 
-    std::vector<std::jthread> timers;
-    boost::container::stable_vector<timer_impl::TimerQueue> timerq;
-    boost::container::stable_vector<UdpServer> timer_server;
-    for (unsigned int i = 0; i < args.ntimers; i++) {
-        timerq.emplace_back();
-        if (auto sin = std::get_if<sockaddr_in>(&args.listen_addr))
-            timer_server.emplace_back(*sin, false, false);
-        else if (auto sin6 = std::get_if<sockaddr_in6>(&args.listen_addr))
-            timer_server.emplace_back(*sin6, false, false);
-        timers.emplace_back(
-            timer_func,
-            TimerArg{
-                .id = i,
-                .clients = &clients,
-                .queue = &timerq[i],
-                .server = &timer_server[i],
-            });
-    }
-
     std::vector<std::jthread> workers;
     workers.emplace_back(
         worker_func,
@@ -169,6 +150,20 @@ static void doit(Args &args) {
         }
     } else {
         fmt::print("IFF_MULTI_QUEUE not supported, not spawning more workers\n");
+    }
+
+    std::vector<std::jthread> timers;
+    boost::container::stable_vector<timer_impl::TimerQueue> timerq;
+    for (unsigned int i = 0; i < args.ntimers; i++) {
+        timerq.emplace_back();
+        timers.emplace_back(
+            timer_func,
+            TimerArg{
+                .id = i,
+                .clients = &clients,
+                .queue = &timerq[i],
+                .server = &server[i % server.size()],
+            });
     }
 
     size_t pct = args.control_path.find("%s");
