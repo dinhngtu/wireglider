@@ -45,9 +45,9 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
 
     DecapRefBatch batch(_arg.tun_has_uso);
     {
-        std::lock_guard client_lock(it->mutex);
         std::span remain(memory);
         bool flush = true;
+        std::lock_guard client_lock(it->mutex);
         for (auto pkt : pb) {
             auto result = wireguard_read_raw(it->tunnel, pkt.data(), pkt.size(), remain.data(), remain.size());
             switch (result.op) {

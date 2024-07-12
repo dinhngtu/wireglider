@@ -122,25 +122,27 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
 
     if (!client)
         return std::nullopt;
-    std::lock_guard<std::mutex> client_lock(client->mutex);
 
     std::span<const uint8_t> rest(pb.data);
     std::span<uint8_t> remain(outbuf);
     auto expected_segment_size = pb.segment_size + calc_overhead();
     size_t unrel_current = 0;
-    for (auto pkt : pb) {
-        auto res = wireguard_write_raw(client->tunnel, pkt.data(), pkt.size(), remain.data(), remain.size());
-        // op: handle error
-        if (res.op == WRITE_TO_NETWORK) {
-            if (res.size == expected_segment_size) {
-                // admit packets with the expected size into the pb
-                remain = remain.subspan(res.size);
-            } else {
-                // a cached packet
-                assert(unrel_current + res.size <= unrelbuf.size());
-                memcpy(&unrelbuf[unrel_current], &remain[0], res.size);
-                unreliov.push_back({&unrelbuf[unrel_current], res.size});
-                unrel_current += res.size;
+    {
+        std::lock_guard<std::mutex> client_lock(client->mutex);
+        for (auto pkt : pb) {
+            auto res = wireguard_write_raw(client->tunnel, pkt.data(), pkt.size(), remain.data(), remain.size());
+            // op: handle error
+            if (res.op == WRITE_TO_NETWORK) {
+                if (res.size == expected_segment_size) {
+                    // admit packets with the expected size into the pb
+                    remain = remain.subspan(res.size);
+                } else {
+                    // a cached packet
+                    assert(unrel_current + res.size <= unrelbuf.size());
+                    memcpy(&unrelbuf[unrel_current], &remain[0], res.size);
+                    unreliov.push_back({&unrelbuf[unrel_current], res.size});
+                    unrel_current += res.size;
+                }
             }
         }
     }
