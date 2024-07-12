@@ -73,6 +73,7 @@ struct ServerSendList : public ServerSendBase {
     std::vector<iovec> iovecs;
     std::vector<mmsghdr> mh;
     size_t pos = 0;
+    bool finalized = false;
 };
 
 // separate endpoint per packet, for timer use
@@ -91,6 +92,7 @@ struct ServerSendMultilist : public ServerSendBase {
     std::vector<iovec> iovecs;
     std::vector<mmsghdr> mh;
     size_t pos = 0;
+    bool finalized = false;
 };
 
 using ServerSendQueue = boost::intrusive::list<worker_impl::ServerSendBase, boost::intrusive::constant_time_size<true>>;

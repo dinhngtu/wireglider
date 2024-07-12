@@ -66,6 +66,7 @@ ServerSendList::ServerSendList(ServerSendList::packet_list &&pkts, ClientEndpoin
 }
 
 void ServerSendList::push_back(iovec pkt) {
+    assert(!finalized);
     auto base = static_cast<const uint8_t *>(pkt.iov_base);
     packets.emplace_back(base, base + pkt.iov_len);
     iovecs.push_back({packets.back().data(), packets.back().size()});
@@ -98,9 +99,12 @@ void ServerSendList::finalize() {
             },
             0,
         });
+    finalized = true;
 }
 
 outcome::result<void> ServerSendList::send(int fd) {
+    if (!finalized)
+        throw std::runtime_error("ServerSendList not finalized");
     while (pos < mh.size()) {
         auto ret = sendmmsg(fd, &mh[pos], mh.size() - pos, 0);
         if (ret < 0)
@@ -155,6 +159,7 @@ std::optional<std::span<const iovec>> Worker::server_send_reflist(std::span<iove
 }
 
 void ServerSendMultilist::push_back(iovec pkt, ClientEndpoint ep) {
+    assert(!finalized);
     auto base = static_cast<const uint8_t *>(pkt.iov_base);
     packets.emplace_back(base, base + pkt.iov_len);
     iovecs.push_back({packets.back().data(), packets.back().size()});
@@ -188,9 +193,12 @@ void ServerSendMultilist::finalize() {
             0,
         });
     }
+    finalized = true;
 }
 
 outcome::result<void> ServerSendMultilist::send(int fd) {
+    if (!finalized)
+        throw std::runtime_error("ServerSendMultilist not finalized");
     while (pos < mh.size()) {
         auto ret = sendmmsg(fd, &mh[pos], mh.size() - pos, 0);
         if (ret < 0)

@@ -80,8 +80,4 @@ DecapOutcome DecapRefBatch::push_packet(std::span<const uint8_t> ippkt, uint8_t 
         return GRO_NOADD;
 }
 
-void DecapRefBatch::aggregate_udp() {
-    // TODO
-}
-
 } // namespace wireglider::worker_impl
