@@ -33,8 +33,10 @@ static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
     if (boost::endian::big_to_native(ip->ip_off) & ~IP_DF)
         return {nullptr, IPPROTO_RAW};
     // iph checksum
-    if (checksum(ippkt.subspan(0, sizeof(struct ip)), 0))
+    if (checksum(ippkt.subspan(0, sizeof(struct ip)), 0)) {
+        fmt::print("ip checksum drop\n");
         return {nullptr, IPPROTO_RAW};
+    }
     flags.vnethdr.hdr_len = flags.vnethdr.csum_start = sizeof(struct ip);
     flags.isv6() = false;
     fk.srcip = ip->ip_src;
@@ -92,8 +94,10 @@ static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
     if (ippkt.size() - iphsize <= sizeof(tcphdr))
         // exclude empty packets as well
         return nullptr;
-    if (calc_l4_checksum(ippkt, flags.isv6(), true, iphsize))
+    if (calc_l4_checksum(ippkt, flags.isv6(), true, iphsize)) {
+        fmt::print("tcp checksum drop\n");
         return nullptr;
+    }
     auto tcp = tdutil::start_lifetime_as<tcphdr>(&ippkt[iphsize]);
     auto thlen = 4u * tcp->doff;
     if (thlen < sizeof(tcphdr) || ippkt.size() - iphsize <= thlen)
@@ -119,8 +123,10 @@ static const udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
     auto iphsize = flags.vnethdr.csum_start;
     if (ippkt.size() - iphsize <= sizeof(udphdr))
         return nullptr;
-    if (calc_l4_checksum(ippkt, flags.isv6(), false, iphsize))
+    if (calc_l4_checksum(ippkt, flags.isv6(), false, iphsize)) {
+        fmt::print("udp checksum drop\n");
         return nullptr;
+    }
     auto udp = tdutil::start_lifetime_as<udphdr>(&ippkt[iphsize]);
     flags.istcp() = false;
     flags.ispsh() = false;

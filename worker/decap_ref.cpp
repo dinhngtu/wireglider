@@ -51,25 +51,31 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
             auto result = wireguard_read_raw(it->tunnel, pkt.data(), pkt.size(), remain.data(), remain.size());
             switch (result.op) {
             case WRITE_TO_TUNNEL_IPV4: {
+                // DBG_PRINT("tun write v4 {}\n", result.size);
                 auto outpkt = remain.subspan(0, result.size);
                 remain = remain.subspan(result.size);
                 batch.push_packet_v4(outpkt, pb.ecn);
                 break;
             }
             case WRITE_TO_TUNNEL_IPV6: {
+                // DBG_PRINT("tun write v6 {}\n", result.size);
                 auto outpkt = remain.subspan(0, result.size);
                 remain = remain.subspan(result.size);
                 batch.push_packet_v6(outpkt, pb.ecn);
                 break;
             }
             case WRITE_TO_NETWORK: {
+                DBG_PRINT("decap net write {}\n", result.size);
                 batch.retpkt.push_back({remain.data(), result.size});
                 remain = remain.subspan(result.size);
                 remain = tunnel_flush(rcu, client_lock, batch.retpkt, it->tunnel, remain);
                 break;
             }
-            case WIREGUARD_ERROR:
             case WIREGUARD_DONE:
+                break;
+            case WIREGUARD_ERROR:
+            default:
+                DBG_PRINT("unexpected decap result {}\n", static_cast<int>(result.op));
                 break;
             }
         }

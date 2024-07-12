@@ -18,19 +18,22 @@ outcome::result<void> write_opb(int fd, PacketRefBatch &opb) {
         size_t tot = 0;
         for (auto &iov : opb.iov)
             tot += iov.iov_len;
-        DBG_PRINT("prb {} (orig size {})\n", tot, opb.size_bytes());
-    }
-    while (opb.bytes) {
-        auto written = writev(fd, opb.iov.data(), opb.iov.size());
         DBG_PRINT(
-            "write_prb {}: vnethdr {} {} {} {} {} {}\n",
-            written,
+            "write prb vnethdr+{}+{}={} bytes: vnethdr {} {} {} {} {} {} {}\n",
+            opb.hdrbuf.size(),
+            opb.size_bytes(),
+            tot,
             opb.flags.vnethdr.flags,
             opb.flags.vnethdr.gso_type,
             opb.flags.vnethdr.hdr_len,
             opb.flags.vnethdr.gso_size,
             opb.flags.vnethdr.csum_start,
-            opb.flags.vnethdr.csum_offset);
+            opb.flags.vnethdr.csum_offset,
+            opb.flags.istcp() ? "tcp" : "udp");
+    }
+    while (opb.bytes) {
+        auto written = writev(fd, opb.iov.data(), opb.iov.size());
+        DBG_PRINT("write_prb {}\n", written);
         if (written < 0) {
             if (is_eagain())
                 return fail(EAGAIN);
@@ -60,15 +63,6 @@ static outcome::result<void> do_tun_write_flowmap(int fd, RefFlowMap<T> &flows) 
     auto it = flows.begin();
     outcome::result<void> ret = outcome::success();
     for (; it != flows.end(); it++) {
-        DBG_PRINT(
-            "write prb vnethdr+{}+{} bytes: vnethdr flags {} gso_type {} gso_size {} {} seq {}\n",
-            it->second->hdrbuf.size(),
-            it->second->size_bytes(),
-            it->second->flags.vnethdr.flags,
-            it->second->flags.vnethdr.gso_type,
-            it->second->flags.vnethdr.gso_size,
-            it->second->flags.istcp() ? "tcp" : "udp",
-            it->first.seq);
         ret = write_opb(fd, *it->second);
         if (!ret)
             break;
