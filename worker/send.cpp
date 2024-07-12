@@ -11,7 +11,7 @@ namespace wireglider {
 
 void Worker::do_server_send() {
     while (!_serversend.empty()) {
-        auto ret = do_server_send_step(&_serversend.front());
+        auto ret = _serversend.front().send(_arg.server->fd());
         if (ret)
             _serversend.pop_front_and_dispose(ServerSendBase::deleter{});
         else
@@ -25,13 +25,13 @@ void Worker::do_server_send() {
         tun_disable(EPOLLIN);
 }
 
-outcome::result<void> Worker::server_send_batch(ServerSendBatch *batch, std::span<uint8_t> data) {
+outcome::result<void> ServerSendBatch::send(int fd, std::span<uint8_t> data) {
     msghdr mh;
     memset(&mh, 0, sizeof(mh));
-    if (auto sin6 = std::get_if<sockaddr_in6>(&batch->ep)) {
+    if (auto sin6 = std::get_if<sockaddr_in6>(&ep)) {
         mh.msg_name = sin6;
         mh.msg_namelen = sizeof(sockaddr_in6);
-    } else if (auto sin = std::get_if<sockaddr_in>(&batch->ep)) {
+    } else if (auto sin = std::get_if<sockaddr_in>(&ep)) {
         mh.msg_name = sin;
         mh.msg_namelen = sizeof(sockaddr_in);
     }
@@ -40,18 +40,18 @@ outcome::result<void> Worker::server_send_batch(ServerSendBatch *batch, std::spa
     mh.msg_iovlen = 1;
 
     AncillaryData<uint16_t, uint8_t> cm(mh);
-    cm.set<0>(SOL_UDP, UDP_SEGMENT, batch->segment_size);
-    // batch->ecn is set all the way from do_tun_gso_split()
+    cm.set<0>(SOL_UDP, UDP_SEGMENT, segment_size);
+    // ecn is set all the way from do_tun_gso_split()
     // it only contains the lower ECN bits and not DSCP per WG spec
-    cm.set<1>(SOL_IP, IP_TOS, batch->ecn);
+    cm.set<1>(SOL_IP, IP_TOS, ecn);
 
-    while (batch->pos < data.size()) {
-        iov = {&data[batch->pos], std::min(batch->max_send, data.size() - batch->pos)};
-        auto ret = sendmsg(_arg.server->fd(), &mh, 0);
+    while (pos < data.size()) {
+        iov = {&data[pos], std::min(max_send, data.size() - pos)};
+        auto ret = sendmsg(fd, &mh, 0);
         if (ret < 0)
-            return check_eagain(errno, "server_send_batch sendmsg");
+            return check_eagain(errno, "ServerSendBatch sendmsg");
         else
-            batch->pos += ret;
+            pos += ret;
     }
     return outcome::success();
 }
@@ -100,13 +100,13 @@ void ServerSendList::finalize() {
         });
 }
 
-outcome::result<void> Worker::server_send_list(ServerSendList *list) {
-    while (list->pos < list->mh.size()) {
-        auto ret = sendmmsg(_arg.server->fd(), &list->mh[list->pos], list->mh.size() - list->pos, 0);
+outcome::result<void> ServerSendList::send(int fd) {
+    while (pos < mh.size()) {
+        auto ret = sendmmsg(fd, &mh[pos], mh.size() - pos, 0);
         if (ret < 0)
-            return check_eagain(errno, "server_send_list sendmmsg");
+            return check_eagain(errno, "ServerSendList sendmmsg");
         else
-            list->pos += ret;
+            pos += ret;
     }
     return outcome::success();
 }
@@ -152,18 +152,6 @@ std::optional<std::span<const iovec>> Worker::server_send_reflist(std::span<iove
         rest = rest.subspan(ret);
     }
     return std::nullopt;
-}
-
-outcome::result<void> Worker::do_server_send_step(ServerSendBase *send) {
-    if (typeid(*send) == typeid(ServerSendBatch)) {
-        auto batch = static_cast<ServerSendBatch *>(send);
-        return server_send_batch(batch, batch->buf);
-    } else if (typeid(*send) == typeid(ServerSendList)) {
-        auto list = static_cast<ServerSendList *>(send);
-        return server_send_list(list);
-    } else {
-        tdutil::unreachable();
-    }
 }
 
 } // namespace wireglider

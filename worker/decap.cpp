@@ -25,9 +25,8 @@ void Worker::do_server(epoll_event *ev) {
                 return;
 
             auto sendlist = new ServerSendList(std::move(batch->retpkt), crypt->second);
-            auto ret = server_send_list(sendlist);
+            auto ret = sendlist->send(_arg.server->fd());
             if (ret) {
-                assert(sendlist->pos == sendlist->mh.size());
                 delete sendlist;
             } else {
                 _serversend.push_back(*sendlist);

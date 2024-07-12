@@ -2,7 +2,6 @@
 #include <array>
 #include <utility>
 #include <span>
-#include <typeinfo>
 #include <sys/types.h>
 #include <csignal>
 #include <netinet/ip.h>
@@ -59,7 +58,7 @@ void Worker::do_tun(epoll_event *ev) {
             server_enable(EPOLLOUT);
         }
         ServerSendBatch batch(pb.segment_size, ep, pb.ecn);
-        if (!server_send_batch(&batch, pb.data)) {
+        if (!batch.send(_arg.server->fd(), pb.data)) {
             auto tosend = new ServerSendBatch(pb.data.subspan(batch.pos), batch.segment_size, batch.ep, batch.ecn);
             _serversend.push_back(*tosend);
             server_enable(EPOLLOUT);

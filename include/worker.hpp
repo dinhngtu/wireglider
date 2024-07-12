@@ -59,11 +59,8 @@ private:
         std::vector<iovec> &unreliov);
 
     void do_server_send();
-    outcome::result<void> server_send_batch(worker_impl::ServerSendBatch *batch, std::span<uint8_t> data);
-    outcome::result<void> server_send_list(worker_impl::ServerSendList *list);
     // returns remaining iovecs if EAGAIN
     std::optional<std::span<const iovec>> server_send_reflist(std::span<iovec> pkts, ClientEndpoint ep);
-    outcome::result<void> do_server_send_step(worker_impl::ServerSendBase *send);
 
     void do_server(epoll_event *ev);
     std::optional<std::pair<worker_impl::PacketBatch, ClientEndpoint>> do_server_recv(

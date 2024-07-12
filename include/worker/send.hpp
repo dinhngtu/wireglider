@@ -21,6 +21,8 @@ struct ServerSendBase : public boost::intrusive::list_base_hook<> {
     virtual ~ServerSendBase() {
     }
 
+    virtual outcome::result<void> send(int fd) = 0;
+
     struct deleter {
         void operator()(ServerSendBase *self) {
             delete self;
@@ -34,10 +36,14 @@ struct ServerSendBatch : public ServerSendBase {
           ecn(_ecn) {
     }
     explicit ServerSendBatch(size_t _segment_size, ClientEndpoint _ep, uint8_t _ecn)
-        : ep(_ep), segment_size(_segment_size), max_send(65535 - 65535 % segment_size),
-          ecn(_ecn) {
+        : ep(_ep), segment_size(_segment_size), max_send(65535 - 65535 % segment_size), ecn(_ecn) {
     }
     virtual ~ServerSendBatch() {
+    }
+
+    outcome::result<void> send(int fd, std::span<uint8_t> data);
+    outcome::result<void> send(int fd) override {
+        return send(fd, buf);
     }
 
     ClientEndpoint ep;
@@ -55,8 +61,12 @@ struct ServerSendList : public ServerSendBase {
     explicit ServerSendList(packet_list &&pkts, ClientEndpoint _ep);
     virtual ~ServerSendList() {
     }
+
+    outcome::result<void> send(int fd) override;
+
     void push_back(iovec pkt);
     void finalize();
+
     packet_list packets;
     ClientEndpoint ep;
     std::vector<iovec> iovecs;
