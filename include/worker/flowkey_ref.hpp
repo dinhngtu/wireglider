@@ -9,7 +9,11 @@
 #include <boost/container/small_vector.hpp>
 #include <tdutil/util.hpp>
 
+#include "checksum.hpp"
+#include "endian.hpp"
 #include "worker/flowkey.hpp"
+
+using namespace boost::endian;
 
 namespace wireglider::worker_impl {
 
@@ -79,6 +83,28 @@ struct PacketRefBatch {
     void finalize() {
         iov[0] = {&flags.vnethdr, sizeof(flags.vnethdr)};
         iov[1] = {hdrbuf.data(), hdrbuf.size()};
+
+        auto l4len = hdrbuf.size() - flags.vnethdr.csum_start + size_bytes();
+        if (!flags.istcp()) {
+            auto udp = udphdr();
+            assign_big_from_native(udp->len, l4len);
+        }
+
+        uint16_t l4_csum;
+        if (flags.isv6()) {
+            auto ip6 = ip6hdr();
+            assign_big_from_native(ip6->ip6_plen, l4len);
+            l4_csum = pseudo_header_checksum<in6_addr>(ip6->ip6_nxt, ip6->ip6_src, ip6->ip6_dst, l4len);
+        } else {
+            auto ip = ip4hdr();
+            assign_big_from_native(ip->ip_len, hdrbuf.size() + size_bytes());
+            ip->ip_sum = 0;
+            // can't use hdrbuf since the two pointers alias...
+            ip->ip_sum = checksum(std::span(reinterpret_cast<const uint8_t *>(ip), flags.vnethdr.csum_start), 0);
+            l4_csum = pseudo_header_checksum<in_addr>(ip->ip_p, ip->ip_src, ip->ip_dst, l4len);
+        }
+        // native order
+        memcpy(&hdrbuf[flags.vnethdr.csum_start + flags.vnethdr.csum_offset], &l4_csum, sizeof(l4_csum));
     }
 
     boost::container::small_vector<uint8_t, 64> hdrbuf;
@@ -121,7 +147,6 @@ struct DecapRefBatch {
     DecapOutcome push_packet_v4(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
     DecapOutcome push_packet_v6(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
     DecapOutcome push_packet(std::span<const uint8_t> ippkt, uint8_t ecn_outer);
-    void aggregate_udp();
 };
 
 struct FlowkeyRefMeta {
