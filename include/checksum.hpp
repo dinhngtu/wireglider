@@ -115,15 +115,27 @@ static inline uint16_t pseudo_header_checksum(
     return fastcsum::fold_complement_checksum64(ac);
 }
 
+template <typename TAddress>
+static inline uint16_t pseudo_header_checksum(
+    uint8_t proto,
+    const TAddress &srcAddr,
+    const TAddress &dstAddr,
+    uint16_t l4Len) {
+    std::span<const uint8_t, sizeof(TAddress)> srcAddrBytes(
+        reinterpret_cast<const uint8_t *>(&srcAddr),
+        sizeof(srcAddr));
+    std::span<const uint8_t, sizeof(TAddress)> dstAddrBytes(
+        reinterpret_cast<const uint8_t *>(&dstAddr),
+        sizeof(dstAddr));
+    auto ac = checksum_impl::pseudo_header_checksum_nofold(proto, srcAddrBytes, dstAddrBytes, l4Len);
+    return fastcsum::fold_complement_checksum64(ac);
+}
+
 static inline uint16_t checksum(std::span<const uint8_t> b, uint64_t initial) {
     auto ac = checksum_impl::checksum_nofold(b, initial);
     return fastcsum::fold_complement_checksum64(ac);
 }
 
-uint16_t calc_l4_checksum(
-    std::span<const uint8_t> thispkt,
-    bool isv6,
-    bool istcp,
-    uint16_t csum_start);
+uint16_t calc_l4_checksum(std::span<const uint8_t> thispkt, bool isv6, bool istcp, uint16_t csum_start);
 
 } // namespace wireglider
