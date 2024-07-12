@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <boost/intrusive/list.hpp>
 
+#include "result.hpp"
 #include "endpoint.hpp"
 
 namespace wireglider::worker_impl {
@@ -69,6 +70,24 @@ struct ServerSendList : public ServerSendBase {
 
     packet_list packets;
     ClientEndpoint ep;
+    std::vector<iovec> iovecs;
+    std::vector<mmsghdr> mh;
+    size_t pos = 0;
+};
+
+// separate endpoint per packet, for timer use
+struct ServerSendMultilist : public ServerSendBase {
+    using packet_list = std::deque<std::vector<uint8_t>>;
+    virtual ~ServerSendMultilist() {
+    }
+
+    outcome::result<void> send(int fd) override;
+
+    void push_back(iovec pkt, ClientEndpoint _ep);
+    void finalize();
+
+    packet_list packets;
+    std::vector<ClientEndpoint> eps;
     std::vector<iovec> iovecs;
     std::vector<mmsghdr> mh;
     size_t pos = 0;

@@ -14,6 +14,7 @@
 #include "client.hpp"
 #include "maple_tree.hpp"
 #include "udpsock.hpp"
+#include "worker/send.hpp"
 
 namespace wireglider {
 
@@ -57,8 +58,26 @@ private:
     void do_timer_step(ClientTable::iterator &it);
     // void update_period(bool overloaded, uint64_t elapsed);
 
+    void do_server(epoll_event *ev);
+
     // const uint64_t min_period = 100'000'000ull;
     // const uint64_t max_period = 800'000'000ull;
+
+    void server_disable(uint32_t events) {
+        auto newevents = _poll_server & ~events;
+        if (newevents != _poll_server) {
+            _poll.set_events(_arg.server->fd(), newevents);
+            _poll_server = newevents;
+        }
+    }
+
+    void server_enable(uint32_t events) {
+        auto newevents = _poll_server | events;
+        if (newevents != _poll_server) {
+            _poll.set_events(_arg.server->fd(), newevents);
+            _poll_server = newevents;
+        }
+    }
 
 private:
     TimerArg _arg;
@@ -67,6 +86,8 @@ private:
     uint64_t _period = 100'000'000ull;
     tdutil::EpollManager<> _poll;
     std::vector<uint8_t> _scratch;
+    worker_impl::ServerSendQueue _sendq;
+    uint32_t _poll_server = 0;
 };
 
 void timer_func(TimerArg arg);

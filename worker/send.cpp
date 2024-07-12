@@ -154,4 +154,51 @@ std::optional<std::span<const iovec>> Worker::server_send_reflist(std::span<iove
     return std::nullopt;
 }
 
+void ServerSendMultilist::push_back(iovec pkt, ClientEndpoint ep) {
+    auto base = static_cast<const uint8_t *>(pkt.iov_base);
+    packets.emplace_back(base, base + pkt.iov_len);
+    iovecs.push_back({packets.back().data(), packets.back().size()});
+    eps.push_back(ep);
+}
+
+void ServerSendMultilist::finalize() {
+    mh.reserve(packets.size());
+    for (size_t i = 0; i < packets.size(); i++) {
+        void *sa;
+        socklen_t sz;
+        if (auto sin6 = std::get_if<sockaddr_in6>(&eps[i])) {
+            sa = sin6;
+            sz = sizeof(sockaddr_in6);
+        } else if (auto sin = std::get_if<sockaddr_in>(&eps[i])) {
+            sa = sin;
+            sz = sizeof(sockaddr_in);
+        } else {
+            tdutil::unreachable();
+        }
+        mh.push_back(mmsghdr{
+            msghdr{
+                .msg_name = sa,
+                .msg_namelen = sz,
+                .msg_iov = &iovecs[i],
+                .msg_iovlen = 1,
+                .msg_control = nullptr,
+                .msg_controllen = 0,
+                .msg_flags = 0,
+            },
+            0,
+        });
+    }
+}
+
+outcome::result<void> ServerSendMultilist::send(int fd) {
+    while (pos < mh.size()) {
+        auto ret = sendmmsg(fd, &mh[pos], mh.size() - pos, 0);
+        if (ret < 0)
+            return check_eagain(errno, "ServerSendMultilist sendmmsg");
+        else
+            pos += ret;
+    }
+    return outcome::success();
+}
+
 } // namespace wireglider

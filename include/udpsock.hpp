@@ -16,7 +16,10 @@ public:
         _sock.check();
     }
 
-    UdpServer(sockaddr_in sin, bool offload, bool nonblock) : _sin(sin) {
+    UdpServer(tdutil::FileDescriptor &&sock) : _sock(std::move(sock)) {
+    }
+
+    UdpServer(sockaddr_in sin, bool offload, bool nonblock) {
         _sock = tdutil::FileDescriptor(socket(AF_INET, SOCK_DGRAM, 0));
         _sock.check();
 
@@ -31,10 +34,10 @@ public:
             throw std::system_error(errno, std::system_category(), "bind");
 
         if (nonblock)
-            _sock.set_nonblock();
+            _sock.set_nonblock(true);
     }
 
-    UdpServer(sockaddr_in6 sin6, bool offload, bool nonblock) : _sin(sin6) {
+    UdpServer(sockaddr_in6 sin6, bool offload, bool nonblock) {
         _sock = tdutil::FileDescriptor(socket(AF_INET6, SOCK_DGRAM, 0));
         _sock.check();
 
@@ -49,7 +52,7 @@ public:
             throw std::system_error(errno, std::system_category(), "bind");
 
         if (nonblock)
-            _sock.set_nonblock();
+            _sock.set_nonblock(true);
     }
 
     constexpr tdutil::FileDescriptor &fd() {
@@ -68,7 +71,6 @@ private:
     }
 
 private:
-    std::variant<sockaddr_in, sockaddr_in6> _sin;
     tdutil::FileDescriptor _sock;
 };
 

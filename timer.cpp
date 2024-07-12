@@ -7,9 +7,11 @@
 #include "timer.hpp"
 #include "netutil.hpp"
 #include "rundown.hpp"
+#include "worker/send.hpp"
 
 using namespace tdutil;
 using namespace wireglider::timer_impl;
+using namespace wireglider::worker_impl;
 
 namespace wireglider {
 
@@ -53,7 +55,7 @@ void TimerWorker::run() {
 
     _poll.add(_sigfd, EPOLLIN);
     _poll.add(_timer, EPOLLIN | EPOLLET);
-    _poll.add(_arg.server->fd(), 0);
+    _poll.add(_arg.server->fd(), _poll_server);
 
     itimerspec tmrspec{
         to_timespec(_period),
@@ -77,6 +79,8 @@ void TimerWorker::run() {
             if (evbuf[i].events) {
                 if (evbuf[i].data.fd == _timer)
                     do_timer(&evbuf[i]);
+                else if (evbuf[i].data.fd == _arg.server->fd())
+                    do_server(&evbuf[i]);
                 else if (evbuf[i].data.fd == _sigfd && (evbuf[i].events & EPOLLIN))
                     return;
             }
@@ -86,37 +90,23 @@ void TimerWorker::run() {
 }
 
 void TimerWorker::do_timer_step(ClientTable::iterator &it) {
+    auto tosend = new ServerSendMultilist();
     while (1) {
         auto result = wireguard_tick_raw(it->tunnel, _scratch.data(), _scratch.size());
-        switch (result.op) {
-        case WRITE_TO_NETWORK: {
-            const sockaddr *sa;
-            size_t sz;
-            if (auto sin = std::get_if<sockaddr_in>(&it->epkey)) {
-                sa = reinterpret_cast<const sockaddr *>(sin);
-                sz = sizeof(*sin);
-            } else if (auto sin6 = std::get_if<sockaddr_in6>(&it->epkey)) {
-                sa = reinterpret_cast<const sockaddr *>(sin6);
-                sz = sizeof(*sin6);
-            } else {
-                tdutil::unreachable();
-            }
-            sendto(_arg.server->fd(), _scratch.data(), result.size, 0, sa, sz);
+        if (result.op == WRITE_TO_NETWORK) {
+            tosend->push_back(iovec{_scratch.data(), result.size}, it->epkey);
+        } else if (result.op == WRITE_TO_TUNNEL_IPV4 || result.op == WRITE_TO_TUNNEL_IPV6) {
+            fmt::print("got unexpected tunnel write during timer tick");
+            break;
+        } else {
             break;
         }
-        case WIREGUARD_DONE:
-            return;
-        case WRITE_TO_TUNNEL_IPV4:
-        case WRITE_TO_TUNNEL_IPV6:
-            // shouldn't happen during timer ticks
-            fmt::print("got unexpected tunnel write during timer tick");
-            return;
-        case WIREGUARD_ERROR:
-            // TODO: ignore for now
-            return;
-        default:
-            throw std::runtime_error(fmt::format("unexpected wireguard_tick return {}", static_cast<int>(result.op)));
-        }
+    }
+    if (tosend->send(_arg.server->fd())) {
+        delete tosend;
+    } else {
+        _sendq.push_back(*tosend);
+        server_enable(EPOLLOUT);
     }
 }
 
@@ -157,6 +147,20 @@ void TimerWorker::do_timer(epoll_event *ev) {
     }
     // auto done = gettime();
     // update_period(overloaded, done - now);
+}
+
+void TimerWorker::do_server(epoll_event *ev) {
+    if (ev->events & EPOLLOUT) {
+        while (!_sendq.empty()) {
+            auto ret = _sendq.front().send(_arg.server->fd());
+            if (ret)
+                _sendq.pop_front_and_dispose(ServerSendBase::deleter{});
+            else
+                break;
+        }
+    }
+    if (_sendq.empty())
+        server_disable(EPOLLOUT);
 }
 
 /*

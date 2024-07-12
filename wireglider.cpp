@@ -92,7 +92,7 @@ static void doit(Args &args) {
     boost::container::stable_vector<Tun> tun;
     tun.emplace_back(args.iface_name.c_str());
     std::string tunname = tun[0].name();
-    tun[0].fd().set_nonblock();
+    tun[0].fd().set_nonblock(true);
     if (auto tun4 = std::get_if<IpRange4>(&args.tun_cidr)) {
         tun[0].set_address(tun4->first, tun4->second);
     } else if (auto tun6 = std::get_if<IpRange6>(&args.tun_cidr)) {
@@ -156,6 +156,8 @@ static void doit(Args &args) {
     boost::container::stable_vector<timer_impl::TimerQueue> timerq;
     for (unsigned int i = 0; i < args.ntimers; i++) {
         timerq.emplace_back();
+        // We only send packets in timer threads, so we're not affected by offloads.
+        // However the nonblocking status is inherited.
         timers.emplace_back(
             timer_func,
             TimerArg{
@@ -170,7 +172,7 @@ static void doit(Args &args) {
     if (pct != std::string::npos)
         args.control_path = args.control_path.replace(pct, 2, tunname);
     auto unx = std::make_unique<UnixServer>(args.control_path);
-    unx->fd().set_nonblock();
+    unx->fd().set_nonblock(true);
 
     std::jthread control(
         control_func,
