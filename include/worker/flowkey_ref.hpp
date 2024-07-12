@@ -90,19 +90,34 @@ struct PacketRefBatch {
             assign_big_from_native(udp->len, l4len);
         }
 
-        uint16_t l4_csum;
+        // can't use ???hdr() functions since the resulting pointers alias;
+        // due to the use of start_lifetime_as, writes to ip/l4 headers won't be seen in hdrbuf
+        // manipulate hdrbuf directly with offsets instead
+        unsigned int proto_off, srcaddr_off, dstaddr_off, addrsize;
         if (flags.isv6()) {
-            auto ip6 = ip6hdr();
-            assign_big_from_native(ip6->ip6_plen, l4len);
-            l4_csum = pseudo_header_checksum<in6_addr>(ip6->ip6_nxt, ip6->ip6_src, ip6->ip6_dst, l4len);
+            proto_off = offsetof(ip6_hdr, ip6_nxt);
+            srcaddr_off = offsetof(ip6_hdr, ip6_src);
+            dstaddr_off = offsetof(ip6_hdr, ip6_dst);
+            addrsize = sizeof(in6_addr);
+
+            store_big_u16(&hdrbuf[offsetof(ip6_hdr, ip6_plen)], l4len);
         } else {
-            auto ip = ip4hdr();
-            assign_big_from_native(ip->ip_len, hdrbuf.size() + size_bytes());
-            ip->ip_sum = 0;
-            // can't use hdrbuf since the two pointers alias...
-            ip->ip_sum = checksum(std::span(reinterpret_cast<const uint8_t *>(ip), flags.vnethdr.csum_start), 0);
-            l4_csum = pseudo_header_checksum<in_addr>(ip->ip_p, ip->ip_src, ip->ip_dst, l4len);
+            proto_off = offsetof(struct ip, ip_p);
+            srcaddr_off = offsetof(struct ip, ip_src);
+            dstaddr_off = offsetof(struct ip, ip_dst);
+            addrsize = sizeof(in_addr);
+
+            store_big_u16(&hdrbuf[offsetof(struct ip, ip_len)], hdrbuf.size() + size_bytes());
+            memset(&hdrbuf[offsetof(struct ip, ip_sum)], 0, 2);
+            auto ipsum = checksum(std::span(hdrbuf).subspan(0, flags.vnethdr.csum_start), 0);
+            // native order
+            memcpy(&hdrbuf[offsetof(struct ip, ip_sum)], &ipsum, 2);
         }
+        auto l4_csum = pseudo_header_checksum(
+            hdrbuf[proto_off],
+            std::span(hdrbuf.data() + srcaddr_off, addrsize),
+            std::span(hdrbuf.data() + dstaddr_off, addrsize),
+            l4len);
         // native order
         memcpy(&hdrbuf[flags.vnethdr.csum_start + flags.vnethdr.csum_offset], &l4_csum, sizeof(l4_csum));
     }
