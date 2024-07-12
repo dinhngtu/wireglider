@@ -125,8 +125,8 @@ else ifeq ($(SANITIZE), 1)
 	endif
 else
 	CPPFLAGS+=-DNDEBUG
-	CFLAGS+=-O2 -g3
-	CXXFLAGS+=-O2 -g3
+	CFLAGS+=-O3 -g3
+	CXXFLAGS+=-O3 -g3
 	ifeq ($(USE_CLANG), 1)
 		CFLAGS+=-flto=thin
 		CXXFLAGS+=-flto=thin
