@@ -102,6 +102,7 @@ void TimerWorker::do_timer_step(ClientTable::iterator &it) {
             break;
         }
     }
+    tosend->finalize();
     if (tosend->send(_arg.server->fd())) {
         delete tosend;
     } else {
