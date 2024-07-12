@@ -47,6 +47,7 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
     {
         std::lock_guard client_lock(it->mutex);
         std::span remain(memory);
+        bool flush = true;
         for (auto pkt : pb) {
             auto result = wireguard_read_raw(it->tunnel, pkt.data(), pkt.size(), remain.data(), remain.size());
             switch (result.op) {
@@ -68,7 +69,7 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
                 DBG_PRINT("decap net write {}\n", result.size);
                 batch.retpkt.push_back({remain.data(), result.size});
                 remain = remain.subspan(result.size);
-                remain = tunnel_flush(rcu, client_lock, batch.retpkt, it->tunnel, remain);
+                flush = true;
                 break;
             }
             case WIREGUARD_DONE:
@@ -79,9 +80,10 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
                 break;
             }
         }
+        if (flush)
+            remain = tunnel_flush(rcu, client_lock, batch.retpkt, it->tunnel, remain);
     }
 
-    batch.aggregate_udp();
     return batch;
 }
 
