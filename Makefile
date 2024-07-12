@@ -6,6 +6,10 @@
 # sudo tcpdump -w wireglider.pcap port 51820
 # sudo tcpdump -i wg0 -w tun.pcap
 
+# wg$ sudo ../copy-nginx.sh
+# wget -O/dev/null 10.77.44.1/dev/shm/nginx/vm-cumulus.qcow2
+# wget -O/dev/null 10.77.44.2/dev/shm/nginx/vm-cumulus.qcow2
+
 # TODO: fix slow gro path
 
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP

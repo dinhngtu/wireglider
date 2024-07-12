@@ -3,6 +3,7 @@
 
 #include "worker.hpp"
 #include "ancillary.hpp"
+#include "dbgprint.hpp"
 
 using namespace wireglider::worker_impl;
 
@@ -19,6 +20,7 @@ static std::span<uint8_t> tunnel_flush(
         auto result = wireguard_read_raw(tunnel, nullptr, 0, remain.data(), remain.size());
         switch (result.op) {
         case WRITE_TO_NETWORK:
+            DBG_PRINT("tunnel flush v4 {}\n", result.size);
             serversend.push_back({&remain[0], result.size});
             remain = remain.subspan(result.size);
             break;
@@ -26,6 +28,7 @@ static std::span<uint8_t> tunnel_flush(
             return remain;
         case WIREGUARD_ERROR:
         default:
+            DBG_PRINT("unexpected tunnel_flush result {}\n", static_cast<int>(result.op));
             return remain;
         }
     }

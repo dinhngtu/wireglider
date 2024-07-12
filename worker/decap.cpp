@@ -3,6 +3,7 @@
 
 #include "worker.hpp"
 #include "ancillary.hpp"
+#include "dbgprint.hpp"
 
 using namespace wireglider::worker_impl;
 
@@ -18,6 +19,7 @@ void Worker::do_server(epoll_event *ev) {
         auto crypt = do_server_recv(ev, _recvbuf);
         if (!crypt)
             return;
+        DBG_PRINT("got server {} segment size {}\n", crypt->first.data.size(), crypt->first.segment_size);
 
         if constexpr (false) {
             auto batch = do_server_decap(crypt->first, crypt->second, _pktbuf);
@@ -39,8 +41,19 @@ void Worker::do_server(epoll_event *ev) {
         } else {
             auto &[pb, ep] = *crypt;
             auto batch = do_server_decap_ref(pb, ep, _pktbuf);
-            if (!batch)
+            if (!batch) {
+                DBG_PRINT("decap failed\n");
                 return;
+            } else {
+                DBG_PRINT(
+                    "got decap batch size v4 {} {} v6 {} {} unrel/retpkt {} {}\n",
+                    batch->tcp4.size(),
+                    batch->udp4.size(),
+                    batch->tcp6.size(),
+                    batch->udp6.size(),
+                    batch->unrel.size(),
+                    batch->retpkt.size());
+            }
 
             auto ret = server_send_reflist(batch->retpkt, ep);
             if (ret.has_value()) {
@@ -76,11 +89,13 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_server_recv(
     AncillaryData<uint16_t, uint8_t> _cm(mh);
 
     auto bytes = recvmsg(_arg.server->fd(), &mh, 0);
+    auto e = errno;
+    // DBG_PRINT("udp recv {} bytes err {}\n", bytes, e);
     if (bytes < 0) {
-        if (is_eagain())
+        if (is_eagain(e))
             return std::nullopt;
         else
-            throw std::system_error(errno, std::system_category(), "do_server_recv recvmsg");
+            throw std::system_error(e, std::system_category(), "do_server_recv recvmsg");
     }
 
     size_t gro_size = static_cast<size_t>(bytes);

@@ -55,6 +55,7 @@ static DecapOutcome do_push_packet(
         unrel.push_back({const_cast<uint8_t *>(ippkt.data()), ippkt.size()});
         break;
     case GRO_DROP:
+        DBG_PRINT("!! drop\n");
         break;
     }
     return res;

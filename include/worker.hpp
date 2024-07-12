@@ -20,6 +20,7 @@
 #include "worker/flowkey_ref.hpp"
 #include "worker/send.hpp"
 #include "worker/write.hpp"
+#include "dbgprint.hpp"
 
 namespace wireglider {
 
@@ -81,6 +82,7 @@ private:
     outcome::result<void> do_tun_write_batch(worker_impl::DecapRefBatch &batch);
 
     void tun_disable(uint32_t events) {
+        DBG_PRINT("tun_disable {}\n", events);
         auto newevents = _poll_tun & ~events;
         if (newevents != _poll_tun) {
             _poll.set_events(_arg.tun->fd(), newevents);
@@ -89,6 +91,7 @@ private:
     }
 
     void tun_enable(uint32_t events) {
+        DBG_PRINT("tun_enable {}\n", events);
         auto newevents = _poll_tun | events;
         if (newevents != _poll_tun) {
             _poll.set_events(_arg.tun->fd(), newevents);
@@ -97,6 +100,7 @@ private:
     }
 
     void server_disable(uint32_t events) {
+        DBG_PRINT("server_disable {}\n", events);
         auto newevents = _poll_server & ~events;
         if (newevents != _poll_server) {
             _poll.set_events(_arg.server->fd(), newevents);
@@ -105,6 +109,7 @@ private:
     }
 
     void server_enable(uint32_t events) {
+        DBG_PRINT("server_enable {}\n", events);
         auto newevents = _poll_server | events;
         if (newevents != _poll_server) {
             _poll.set_events(_arg.server->fd(), newevents);

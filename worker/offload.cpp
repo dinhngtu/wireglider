@@ -15,6 +15,7 @@
 #include "worker/offload.hpp"
 #include "checksum.hpp"
 #include "endian.hpp"
+#include "dbgprint.hpp"
 
 using namespace boost::endian;
 using namespace wireglider::worker_impl;
@@ -92,7 +93,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
         // FORWARD path. Instead, parse the transport header length and add it onto
         // csumStart, which is synonymous for IP header length.
         if (inbuf.size() - vnethdr.csum_start < sizeof(tcphdr)) {
-            fmt::print("packet is too short\n");
+            DBG_PRINT("packet is too short\n");
             return PacketBatch{
                 .data = inbuf,
                 .segment_size = inbuf.size(),
@@ -102,7 +103,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
         }
         auto thlen = 4u * tdutil::start_lifetime_as<tcphdr>(&inbuf[vnethdr.csum_start])->doff;
         if (thlen < sizeof(tcphdr)) {
-            fmt::print("thlen too small: {}\n", thlen);
+            DBG_PRINT("thlen too small: {}\n", thlen);
             return PacketBatch{
                 .data = inbuf,
                 .segment_size = inbuf.size(),
@@ -117,7 +118,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
         vnethdr.hdr_len = vnethdr.csum_start + sizeof(udphdr);
         break;
     default:
-        fmt::print("unknown gso type {}\n", vnethdr.gso_type);
+        DBG_PRINT("unknown gso type {}\n", vnethdr.gso_type);
         return PacketBatch{
             .data = inbuf,
             .segment_size = inbuf.size(),
