@@ -1,10 +1,12 @@
 # echo datagram | sudo tee /sys/class/net/ibp8s0/mode
 
-# sudo ./wireguard wg0; sudo wg set wg0 listen-port 51820 private-key ../cumulus.key peer XXmnRm3crIM5cU92d1GA7l5sKzU+wosKfeWAYq1edCY= endpoint 10.88.77.3:51820 allowed-ips 10.77.44.2/32; sudo ip ad add 10.77.44.1/24 dev wg0; sudo ip link set wg0 up
-# sudo ./wireguard wg0; sudo wg set wg0 listen-port 51820 private-key ../stratus.key peer YDUwiJvcaGhsC29P6RfDj0Rf0zOXs6Y99kC7NGJfmT0= endpoint 10.88.77.2:51820 allowed-ips 10.77.44.1/32; sudo ip ad add 10.77.44.2/24 dev wg0; sudo ip link set wg0 up
+# sudo WG_KEYLOGFILE=wg.log ./wireguard wg0; sudo wg set wg0 listen-port 51820 private-key ../cumulus.key peer XXmnRm3crIM5cU92d1GA7l5sKzU+wosKfeWAYq1edCY= endpoint 10.88.77.3:51820 allowed-ips 10.77.44.2/32; sudo ip ad add 10.77.44.1/24 dev wg0; sudo ip link set wg0 up
+# sudo WG_KEYLOGFILE=wg.log ./wireguard wg0; sudo wg set wg0 listen-port 51820 private-key ../stratus.key peer YDUwiJvcaGhsC29P6RfDj0Rf0zOXs6Y99kC7NGJfmT0= endpoint 10.88.77.2:51820 allowed-ips 10.77.44.1/32; sudo ip ad add 10.77.44.2/24 dev wg0; sudo ip link set wg0 up
 
 # sudo tcpdump -w wireglider.pcap port 51820
 # sudo tcpdump -i wg0 -w tun.pcap
+
+# TODO: fix slow gro path
 
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
 CPPFLAGS+=-Iinclude
@@ -154,6 +156,7 @@ TESTS=\
 	tests/test-flowkey-ref \
 	tests/test-ancillary \
 	tests/test-sizes \
+	nettool \
 
 $(TESTS): CPPFLAGS+=$(CATCH_CPPFLAGS) $(TINS_CPPFLAGS)
 $(TESTS): CFLAGS+=-Wno-unused -Wno-shadow
@@ -205,6 +208,9 @@ tests/test-offload: worker/offload.o checksum.o
 tests/test-flowkey-own: worker/flowkey_own.o checksum.o
 
 tests/test-flowkey-ref: worker/flowkey_ref.o checksum.o
+
+nettool: LDLIBS=-lfmt
+nettool: netutil.o
 
 liblinux/maple_tree.o liblinux/kernel_compat.o: CXXFLAGS+=-Wno-unused-parameter -Wno-missing-field-initializers -Wno-sign-compare -Wno-narrowing -Wno-old-style-cast
 

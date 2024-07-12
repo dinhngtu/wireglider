@@ -1,6 +1,7 @@
 *.a
 *.o
 *.d
+*.pcap
 .vscode/*.log
 wireglider
 tests/test-checksum
@@ -11,3 +12,4 @@ tests/test-ancillary
 tests/test-flowkey-own
 tests/test-flowkey-ref
 tests/test-sizes
+nettool

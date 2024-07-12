@@ -11,6 +11,11 @@ namespace wireglider {
 
 class UdpServer {
 public:
+    UdpServer() {
+        _sock = tdutil::FileDescriptor(socket(AF_INET, SOCK_DGRAM, 0));
+        _sock.check();
+    }
+
     UdpServer(sockaddr_in sin, bool offload, bool nonblock) : _sin(sin) {
         _sock = tdutil::FileDescriptor(socket(AF_INET, SOCK_DGRAM, 0));
         _sock.check();
