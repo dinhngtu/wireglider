@@ -1,7 +1,7 @@
 # echo datagram | sudo tee /sys/class/net/ibp8s0/mode
 
-# sudo WG_KEYLOGFILE=wg.log ./wireguard wg0; sudo wg set wg0 listen-port 51820 private-key ../cumulus.key peer XXmnRm3crIM5cU92d1GA7l5sKzU+wosKfeWAYq1edCY= endpoint 10.88.77.3:51820 allowed-ips 10.77.44.2/32; sudo ip ad add 10.77.44.1/24 dev wg0; sudo ip link set wg0 up
-# sudo WG_KEYLOGFILE=wg.log ./wireguard wg0; sudo wg set wg0 listen-port 51820 private-key ../stratus.key peer YDUwiJvcaGhsC29P6RfDj0Rf0zOXs6Y99kC7NGJfmT0= endpoint 10.88.77.2:51820 allowed-ips 10.77.44.1/32; sudo ip ad add 10.77.44.2/24 dev wg0; sudo ip link set wg0 up
+# sudo ./wireguard wg0; sudo wg set wg0 listen-port 51820 private-key ~/wg/cumulus.key peer XXmnRm3crIM5cU92d1GA7l5sKzU+wosKfeWAYq1edCY= endpoint 10.88.77.3:51820 allowed-ips 10.77.44.2/32; sudo ip ad add 10.77.44.1/24 dev wg0; sudo ip link set wg0 up
+# sudo ./wireguard wg0; sudo wg set wg0 listen-port 51820 private-key ~/wg/stratus.key peer YDUwiJvcaGhsC29P6RfDj0Rf0zOXs6Y99kC7NGJfmT0= endpoint 10.88.77.2:51820 allowed-ips 10.77.44.1/32; sudo ip ad add 10.77.44.2/24 dev wg0; sudo ip link set wg0 up
 
 # sudo tcpdump -w wireglider.pcap port 51820
 # sudo tcpdump -i wg0 -w tun.pcap
@@ -232,7 +232,7 @@ run: wireglider
 	sudo ./run.sh
 
 debug: wireglider
-	sudo gdb -ex "start -a 0.0.0.0:51820 -A 10.77.44.2/24 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM=" ./$<
+	sudo gdb -ex "start -a 0.0.0.0:51820 -A 10.77.44.2/24 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM= -j 8" ./$<
 
 check: tests
 	@if (for test in $(TESTS); do echo $$test; $$test || exit; done); then \
