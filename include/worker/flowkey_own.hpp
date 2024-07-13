@@ -1,5 +1,7 @@
 #pragma once
 
+#include "checksum.hpp"
+#include "endian.hpp"
 #include "worker/flowkey.hpp"
 
 namespace wireglider::worker_impl {
@@ -76,6 +78,40 @@ struct OwnedPacketBatch {
         assert(!flags.istcp());
         return tdutil::start_lifetime_as<struct udphdr>(&hdrbuf[flags.vnethdr.csum_start]);
     }
+    void finalize() {
+        auto l4len = hdrbuf.size() - flags.vnethdr.csum_start + size_bytes();
+        if (!flags.istcp())
+            assign_big_from_native(udphdr()->len, l4len);
+
+        unsigned int proto_off, srcaddr_off, dstaddr_off, addrsize;
+        if (flags.isv6()) {
+            proto_off = offsetof(ip6_hdr, ip6_nxt);
+            srcaddr_off = offsetof(ip6_hdr, ip6_src);
+            dstaddr_off = offsetof(ip6_hdr, ip6_dst);
+            addrsize = sizeof(in6_addr);
+
+            assign_big_from_native(ip6hdr()->ip6_plen, l4len);
+        } else {
+            proto_off = offsetof(struct ip, ip_p);
+            srcaddr_off = offsetof(struct ip, ip_src);
+            dstaddr_off = offsetof(struct ip, ip_dst);
+            addrsize = sizeof(in_addr);
+
+            auto ip = ip4hdr();
+            assign_big_from_native(ip->ip_len, hdrbuf.size() + size_bytes());
+            ip->ip_sum = 0;
+            // native order
+            ip->ip_sum = checksum(std::span(hdrbuf.data(), flags.vnethdr.csum_start), 0);
+        }
+        auto l4_csum = pseudo_header_checksum(
+            hdrbuf[proto_off],
+            std::span(hdrbuf.data() + srcaddr_off, addrsize),
+            std::span(hdrbuf.data() + dstaddr_off, addrsize),
+            l4len);
+        // native order
+        memcpy(&hdrbuf[flags.vnethdr.csum_start + flags.vnethdr.csum_offset], &l4_csum, sizeof(l4_csum));
+    }
+
     std::vector<uint8_t> hdrbuf;
     std::vector<uint8_t> buf;
     size_t count = 0;

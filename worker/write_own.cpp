@@ -12,6 +12,7 @@ namespace wireglider {
 namespace worker_impl {
 
 outcome::result<void> write_one_batch(int fd, OwnedPacketBatch &opb) {
+    opb.finalize();
     std::array<iovec, 3> iov = {
         iovec{&opb.flags.vnethdr, sizeof(opb.flags.vnethdr)},
         iovec{opb.hdrbuf.data(), opb.hdrbuf.size()},
