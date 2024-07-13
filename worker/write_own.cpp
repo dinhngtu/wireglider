@@ -126,7 +126,7 @@ void Worker::do_tun_write() {
     }
     if (_tunwrite.empty() && _tununrel.empty())
         tun_disable(EPOLLOUT);
-    else if ((_tunwrite.size() + _tununrel.size()) < 64)
+    if ((_tunwrite.size() + _tununrel.size()) < 64)
         server_enable(EPOLLIN);
     else
         server_disable(EPOLLIN);

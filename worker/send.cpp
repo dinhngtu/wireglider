@@ -19,7 +19,7 @@ void Worker::do_server_send() {
     }
     if (_serversend.empty())
         server_disable(EPOLLOUT);
-    else if (_serversend.size() < 64)
+    if (_serversend.size() < 64)
         tun_enable(EPOLLIN);
     else
         tun_disable(EPOLLIN);
