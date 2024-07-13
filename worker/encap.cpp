@@ -71,7 +71,6 @@ outcome::result<std::span<uint8_t>> Worker::do_tun_recv(std::vector<uint8_t> &ou
     // outbuf.resize(65536 + sizeof(virtio_net_hdr));
     assert(outbuf.size() >= 65536 + sizeof(virtio_net_hdr));
 
-    // don't use directly
     auto msize = read(_arg.tun->fd(), outbuf.data(), outbuf.size());
     if (msize < 0) {
         if (is_eagain())
