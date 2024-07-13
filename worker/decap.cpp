@@ -20,54 +20,56 @@ void Worker::do_server(epoll_event *ev) {
     if (ev->events & EPOLLOUT)
         do_server_send();
     if (ev->events & EPOLLIN) {
-        auto crypt = do_server_recv(ev, _recvbuf);
-        if (!crypt)
-            return;
-        DBG_PRINT("got server {} segment size {}\n", crypt->first.data.size(), crypt->first.segment_size);
+        while (1) {
+            auto crypt = do_server_recv(ev, _recvbuf);
+            if (!crypt)
+                break;
+            DBG_PRINT("got server {} segment size {}\n", crypt->first.data.size(), crypt->first.segment_size);
 
-        if constexpr (use_opb_mainloop) {
-            auto batch = do_server_decap(crypt->first, crypt->second, _pktbuf);
-            if (!batch)
-                return;
+            if constexpr (use_opb_mainloop) {
+                auto batch = do_server_decap(crypt->first, crypt->second, _pktbuf);
+                if (!batch)
+                    continue;
 
-            auto sendlist = new ServerSendList(std::move(batch->retpkt), crypt->second);
-            auto ret = sendlist->send(_arg.server->fd());
-            if (ret)
-                delete sendlist;
-            else
-                _serversend.push_back(*sendlist);
+                auto sendlist = new ServerSendList(std::move(batch->retpkt), crypt->second);
+                auto ret = sendlist->send(_arg.server->fd());
+                if (ret)
+                    delete sendlist;
+                else
+                    _serversend.push_back(*sendlist);
 
-            if (!worker_impl::do_tun_write_batch(_arg.tun->fd(), *batch))
-                do_tun_requeue_batch(*batch);
+                if (!worker_impl::do_tun_write_batch(_arg.tun->fd(), *batch))
+                    do_tun_requeue_batch(*batch);
 
-        } else {
-            auto &[pb, ep] = *crypt;
-            auto batch = do_server_decap_ref(pb, ep, _pktbuf);
-            if (!batch) {
-                DBG_PRINT("decap failed\n");
-                return;
             } else {
-                DBG_PRINT(
-                    "got decap batch size v4 {} {} v6 {} {} unrel/retpkt {} {}\n",
-                    batch->tcp4.size(),
-                    batch->udp4.size(),
-                    batch->tcp6.size(),
-                    batch->udp6.size(),
-                    batch->unrel.size(),
-                    batch->retpkt.size());
-            }
+                auto &[pb, ep] = *crypt;
+                auto batch = do_server_decap_ref(pb, ep, _pktbuf);
+                if (!batch) {
+                    DBG_PRINT("decap failed\n");
+                    continue;
+                } else {
+                    DBG_PRINT(
+                        "got decap batch size v4 {} {} v6 {} {} unrel/retpkt {} {}\n",
+                        batch->tcp4.size(),
+                        batch->udp4.size(),
+                        batch->tcp6.size(),
+                        batch->udp6.size(),
+                        batch->unrel.size(),
+                        batch->retpkt.size());
+                }
 
-            auto ret = server_send_reflist(batch->retpkt, ep);
-            if (ret.has_value()) {
-                auto tosend = new ServerSendList(ep);
-                for (auto &iov : ret.value())
-                    tosend->push_back(iov);
-                tosend->finalize();
-                _serversend.push_back(*tosend);
-            }
+                auto ret = server_send_reflist(batch->retpkt, ep);
+                if (ret.has_value()) {
+                    auto tosend = new ServerSendList(ep);
+                    for (auto &iov : ret.value())
+                        tosend->push_back(iov);
+                    tosend->finalize();
+                    _serversend.push_back(*tosend);
+                }
 
-            if (!worker_impl::do_tun_write_batch(_arg.tun->fd(), *batch))
-                do_tun_requeue_batch(*batch);
+                if (!worker_impl::do_tun_write_batch(_arg.tun->fd(), *batch))
+                    do_tun_requeue_batch(*batch);
+            }
         }
     }
 }

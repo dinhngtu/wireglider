@@ -30,36 +30,38 @@ void Worker::do_tun(epoll_event *ev) {
     if (ev->events & EPOLLOUT)
         do_tun_write();
     if (ev->events & EPOLLIN) {
-        virtio_net_hdr vnethdr;
-        auto ret = do_tun_recv(_recvbuf, vnethdr);
-        if (!ret || ret.value().empty())
-            return;
-        auto read_pb = ret.value();
+        while (1) {
+            virtio_net_hdr vnethdr;
+            auto ret = do_tun_recv(_recvbuf, vnethdr);
+            if (!ret || ret.value().empty())
+                break;
+            auto read_pb = ret.value();
 
-        auto tun_pb = do_tun_gso_split(read_pb, _pktbuf, vnethdr);
+            auto tun_pb = do_tun_gso_split(read_pb, _pktbuf, vnethdr);
 
-        unreliov.clear();
-        auto crypt = do_tun_encap(tun_pb, sendbuf, unrelbuf, unreliov);
-        if (!crypt)
-            return;
-        auto &[pb, ep] = *crypt;
+            unreliov.clear();
+            auto crypt = do_tun_encap(tun_pb, sendbuf, unrelbuf, unreliov);
+            if (!crypt)
+                continue;
+            auto &[pb, ep] = *crypt;
 
-        auto unrel_pending = server_send_reflist(pb.unrel, ep);
-        if (unrel_pending) {
-            auto tosend_unrel = new ServerSendList(ep);
-            for (auto pkt : *unrel_pending)
-                tosend_unrel->push_back(pkt);
-            tosend_unrel->finalize();
-            _serversend.push_back(*tosend_unrel);
+            auto unrel_pending = server_send_reflist(pb.unrel, ep);
+            if (unrel_pending) {
+                auto tosend_unrel = new ServerSendList(ep);
+                for (auto pkt : *unrel_pending)
+                    tosend_unrel->push_back(pkt);
+                tosend_unrel->finalize();
+                _serversend.push_back(*tosend_unrel);
 
-            auto tosend = new ServerSendBatch(pb.data, pb.segment_size, ep, pb.ecn);
-            _serversend.push_back(*tosend);
-        }
+                auto tosend = new ServerSendBatch(pb.data, pb.segment_size, ep, pb.ecn);
+                _serversend.push_back(*tosend);
+            }
 
-        ServerSendBatch batch(pb.segment_size, ep, pb.ecn);
-        if (!batch.send(_arg.server->fd(), pb.data)) {
-            auto tosend = new ServerSendBatch(pb.data.subspan(batch.pos), batch.segment_size, batch.ep, batch.ecn);
-            _serversend.push_back(*tosend);
+            ServerSendBatch batch(pb.segment_size, ep, pb.ecn);
+            if (!batch.send(_arg.server->fd(), pb.data)) {
+                auto tosend = new ServerSendBatch(pb.data.subspan(batch.pos), batch.segment_size, batch.ep, batch.ecn);
+                _serversend.push_back(*tosend);
+            }
         }
     }
 }
