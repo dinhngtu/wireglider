@@ -160,6 +160,8 @@ TESTS=\
 	tests/test-flowkey-ref \
 	tests/test-ancillary \
 	tests/test-sizes \
+
+TOOLS=\
 	nettool \
 
 $(TESTS): CPPFLAGS+=$(CATCH_CPPFLAGS) $(TINS_CPPFLAGS)
@@ -191,9 +193,11 @@ OBJECTS=\
 DEPS=$(patsubst %.o,%.d,$(OBJECTS))
 SOURCES=$(patsubst %,%.cpp,$(TARGETS) $(TESTS)) $(patsubst %.o,%.cpp,$(filter-out liblinux/%,$(OBJECTS)))
 
-all: $(TARGETS) $(TESTS)
+all: $(TARGETS) $(TESTS) $(TOOLS)
 
 tests: $(TESTS)
+
+tools: $(TOOLS)
 
 $(TARGETS): $(OBJECTS)
 
