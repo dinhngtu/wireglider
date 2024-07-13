@@ -83,36 +83,36 @@ private:
     void do_poll_reset();
 
     void tun_disable(uint32_t events) {
-        DBG_PRINT("tun_disable {}\n", events);
         auto newevents = _poll_tun & ~events;
         if (newevents != _poll_tun) {
+            DBG_PRINT("tun_disable {}\n", events);
             _poll.set_events(_arg.tun->fd(), newevents);
             _poll_tun = newevents;
         }
     }
 
     void tun_enable(uint32_t events) {
-        DBG_PRINT("tun_enable {}\n", events);
         auto newevents = _poll_tun | events;
         if (newevents != _poll_tun) {
+            DBG_PRINT("tun_enable {}\n", events);
             _poll.set_events(_arg.tun->fd(), newevents);
             _poll_tun = newevents;
         }
     }
 
     void server_disable(uint32_t events) {
-        DBG_PRINT("server_disable {}\n", events);
         auto newevents = _poll_server & ~events;
         if (newevents != _poll_server) {
+            DBG_PRINT("server_disable {}\n", events);
             _poll.set_events(_arg.server->fd(), newevents);
             _poll_server = newevents;
         }
     }
 
     void server_enable(uint32_t events) {
-        DBG_PRINT("server_enable {}\n", events);
         auto newevents = _poll_server | events;
         if (newevents != _poll_server) {
+            DBG_PRINT("server_enable {}\n", events);
             _poll.set_events(_arg.server->fd(), newevents);
             _poll_server = newevents;
         }
