@@ -14,6 +14,7 @@
 #include "udpsock.hpp"
 #include "maple_tree.hpp"
 #include "endpoint.hpp"
+#include "worker/decap.hpp"
 #include "worker/offload.hpp"
 #include "worker/flowkey.hpp"
 #include "worker/flowkey_own.hpp"
@@ -64,9 +65,7 @@ private:
     std::optional<std::span<const iovec>> server_send_reflist(std::span<iovec> pkts, ClientEndpoint ep);
 
     void do_server(epoll_event *ev);
-    std::optional<std::pair<worker_impl::PacketBatch, ClientEndpoint>> do_server_recv(
-        epoll_event *ev,
-        std::vector<uint8_t> &outbuf);
+    int do_server_recv([[maybe_unused]] epoll_event *ev, worker_impl::DecapRecvBatch &drb);
     std::optional<worker_impl::DecapBatch> do_server_decap(
         worker_impl::PacketBatch pb,
         ClientEndpoint ep,
@@ -125,9 +124,6 @@ private:
     uint32_t _poll_tun = 0;
     uint32_t _poll_server = 0;
     WorkerArg _arg;
-    // fits at least 64 KB, for scratch use
-    std::vector<uint8_t> _recvbuf;
-    std::vector<uint8_t> _pktbuf;
     // persistent send queues
     worker_impl::ServerSendQueue _serversend;
     worker_impl::TunWriteQueue _tunwrite;

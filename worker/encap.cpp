@@ -19,6 +19,10 @@ using namespace wireglider::worker_impl;
 namespace wireglider {
 
 void Worker::do_tun(epoll_event *ev) {
+    static std::vector<uint8_t> tunbuf(65536 + sizeof(virtio_net_hdr));
+    // max 64 segments
+    // 60 bytes ipv4 header + 60 bytes tcp header
+    static std::vector<uint8_t> splitbuf(65536 + 64 * (60 + 60));
     // 60 bytes ipv4 header + 60 bytes tcp header + 40 bytes WG overhead
     static constexpr size_t sendbuf_size = 65536 + 64 * (60 + 60) + 64 * calc_overhead();
     static std::vector<uint8_t> sendbuf(sendbuf_size), unrelbuf(sendbuf_size);
@@ -32,12 +36,12 @@ void Worker::do_tun(epoll_event *ev) {
     if (ev->events & EPOLLIN) {
         while (1) {
             virtio_net_hdr vnethdr;
-            auto ret = do_tun_recv(_recvbuf, vnethdr);
+            auto ret = do_tun_recv(tunbuf, vnethdr);
             if (!ret || ret.value().empty())
                 break;
             auto read_pb = ret.value();
 
-            auto tun_pb = do_tun_gso_split(read_pb, _pktbuf, vnethdr);
+            auto tun_pb = do_tun_gso_split(read_pb, splitbuf, vnethdr);
 
             unreliov.clear();
             auto crypt = do_tun_encap(tun_pb, sendbuf, unrelbuf, unreliov);

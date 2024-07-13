@@ -21,10 +21,6 @@ void worker_func(WorkerArg arg) {
 }
 
 Worker::Worker(const WorkerArg &arg) : _arg(arg) {
-    _recvbuf.resize(65536 + sizeof(virtio_net_hdr));
-    // max 64 segments
-    // 60 bytes ipv4 header + 60 bytes tcp header
-    _pktbuf.resize(65536 + 64 * (60 + 60));
 }
 
 void Worker::run() {
