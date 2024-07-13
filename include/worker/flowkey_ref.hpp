@@ -85,14 +85,9 @@ struct PacketRefBatch {
         iov[1] = {hdrbuf.data(), hdrbuf.size()};
 
         auto l4len = hdrbuf.size() - flags.vnethdr.csum_start + size_bytes();
-        if (!flags.istcp()) {
-            auto udp = udphdr();
-            assign_big_from_native(udp->len, l4len);
-        }
+        if (!flags.istcp())
+            assign_big_from_native(udphdr()->len, l4len);
 
-        // can't use ???hdr() functions since the resulting pointers alias;
-        // due to the use of start_lifetime_as, writes to ip/l4 headers won't be seen in hdrbuf
-        // manipulate hdrbuf directly with offsets instead
         unsigned int proto_off, srcaddr_off, dstaddr_off, addrsize;
         if (flags.isv6()) {
             proto_off = offsetof(ip6_hdr, ip6_nxt);
@@ -100,18 +95,18 @@ struct PacketRefBatch {
             dstaddr_off = offsetof(ip6_hdr, ip6_dst);
             addrsize = sizeof(in6_addr);
 
-            store_big_u16(&hdrbuf[offsetof(ip6_hdr, ip6_plen)], l4len);
+            assign_big_from_native(ip6hdr()->ip6_plen, l4len);
         } else {
             proto_off = offsetof(struct ip, ip_p);
             srcaddr_off = offsetof(struct ip, ip_src);
             dstaddr_off = offsetof(struct ip, ip_dst);
             addrsize = sizeof(in_addr);
 
-            store_big_u16(&hdrbuf[offsetof(struct ip, ip_len)], hdrbuf.size() + size_bytes());
-            memset(&hdrbuf[offsetof(struct ip, ip_sum)], 0, 2);
-            auto ipsum = checksum(std::span(hdrbuf).subspan(0, flags.vnethdr.csum_start), 0);
+            auto ip = ip4hdr();
+            assign_big_from_native(ip->ip_len, hdrbuf.size() + size_bytes());
+            ip->ip_sum = 0;
             // native order
-            memcpy(&hdrbuf[offsetof(struct ip, ip_sum)], &ipsum, 2);
+            ip->ip_sum = checksum(std::span(hdrbuf.data(), flags.vnethdr.csum_start), 0);
         }
         auto l4_csum = pseudo_header_checksum(
             hdrbuf[proto_off],
