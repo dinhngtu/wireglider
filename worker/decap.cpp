@@ -35,8 +35,10 @@ void Worker::do_server(epoll_event *ev) {
                 server_enable(EPOLLOUT);
             }
 
-            if (!do_tun_write_batch(*batch))
-                return;
+            if (!worker_impl::do_tun_write_batch(_arg.tun->fd(), *batch)) {
+                do_tun_requeue_batch(*batch);
+                tun_enable(EPOLLOUT);
+            }
 
         } else {
             auto &[pb, ep] = *crypt;
@@ -65,8 +67,10 @@ void Worker::do_server(epoll_event *ev) {
                 server_enable(EPOLLOUT);
             }
 
-            if (!do_tun_write_batch(*batch))
-                return;
+            if (!worker_impl::do_tun_write_batch(_arg.tun->fd(), *batch)) {
+                do_tun_requeue_batch(*batch);
+                tun_enable(EPOLLOUT);
+            }
         }
     }
 }

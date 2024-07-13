@@ -78,8 +78,8 @@ private:
         std::vector<uint8_t> &memory);
 
     void do_tun_write();
-    outcome::result<void> do_tun_write_batch(worker_impl::DecapBatch &batch);
-    outcome::result<void> do_tun_write_batch(worker_impl::DecapRefBatch &batch);
+    void do_tun_requeue_batch(worker_impl::DecapBatch &batch);
+    void do_tun_requeue_batch(worker_impl::DecapRefBatch &batch);
 
     void tun_disable(uint32_t events) {
         DBG_PRINT("tun_disable {}\n", events);
