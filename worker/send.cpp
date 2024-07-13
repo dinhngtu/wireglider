@@ -17,12 +17,6 @@ void Worker::do_server_send() {
         else
             break;
     }
-    if (_serversend.empty())
-        server_disable(EPOLLOUT);
-    if (_serversend.size() < 64)
-        tun_enable(EPOLLIN);
-    else
-        tun_disable(EPOLLIN);
 }
 
 outcome::result<void> ServerSendBatch::send(int fd, std::span<uint8_t> data) {

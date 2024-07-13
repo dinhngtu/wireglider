@@ -32,17 +32,13 @@ void Worker::do_server(epoll_event *ev) {
 
             auto sendlist = new ServerSendList(std::move(batch->retpkt), crypt->second);
             auto ret = sendlist->send(_arg.server->fd());
-            if (ret) {
+            if (ret)
                 delete sendlist;
-            } else {
+            else
                 _serversend.push_back(*sendlist);
-                server_enable(EPOLLOUT);
-            }
 
-            if (!worker_impl::do_tun_write_batch(_arg.tun->fd(), *batch)) {
+            if (!worker_impl::do_tun_write_batch(_arg.tun->fd(), *batch))
                 do_tun_requeue_batch(*batch);
-                tun_enable(EPOLLOUT);
-            }
 
         } else {
             auto &[pb, ep] = *crypt;
@@ -68,13 +64,10 @@ void Worker::do_server(epoll_event *ev) {
                     tosend->push_back(iov);
                 tosend->finalize();
                 _serversend.push_back(*tosend);
-                server_enable(EPOLLOUT);
             }
 
-            if (!worker_impl::do_tun_write_batch(_arg.tun->fd(), *batch)) {
+            if (!worker_impl::do_tun_write_batch(_arg.tun->fd(), *batch))
                 do_tun_requeue_batch(*batch);
-                tun_enable(EPOLLOUT);
-            }
         }
     }
 }

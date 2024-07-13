@@ -54,14 +54,12 @@ void Worker::do_tun(epoll_event *ev) {
 
             auto tosend = new ServerSendBatch(pb.data, pb.segment_size, ep, pb.ecn);
             _serversend.push_back(*tosend);
-
-            server_enable(EPOLLOUT);
         }
+
         ServerSendBatch batch(pb.segment_size, ep, pb.ecn);
         if (!batch.send(_arg.server->fd(), pb.data)) {
             auto tosend = new ServerSendBatch(pb.data.subspan(batch.pos), batch.segment_size, batch.ep, batch.ecn);
             _serversend.push_back(*tosend);
-            server_enable(EPOLLOUT);
         }
     }
 }

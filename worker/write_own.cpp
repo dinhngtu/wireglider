@@ -120,12 +120,6 @@ void Worker::do_tun_write() {
             _tunwrite.pop_front();
         }
     }
-    if (_tunwrite.empty() && _tununrel.empty())
-        tun_disable(EPOLLOUT);
-    if ((_tunwrite.size() + _tununrel.size()) < 64)
-        server_enable(EPOLLIN);
-    else
-        server_disable(EPOLLIN);
 }
 
 } // namespace wireglider

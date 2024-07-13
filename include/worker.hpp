@@ -81,6 +81,8 @@ private:
     void do_tun_requeue_batch(worker_impl::DecapBatch &batch);
     void do_tun_requeue_batch(worker_impl::DecapRefBatch &batch);
 
+    void do_poll_reset();
+
     void tun_disable(uint32_t events) {
         DBG_PRINT("tun_disable {}\n", events);
         auto newevents = _poll_tun & ~events;

@@ -71,12 +71,29 @@ void Worker::run() {
                     }
                 }
             }
+            do_poll_reset();
         } catch (const QuitException &) {
             kill(getpid(), SIGTERM);
             return;
         }
         rcu_quiescent_state();
     }
+}
+
+void Worker::do_poll_reset() {
+    if (_tunwrite.empty() && _tununrel.empty())
+        tun_disable(EPOLLOUT);
+    if ((_tunwrite.size() + _tununrel.size()) < 64)
+        server_enable(EPOLLIN);
+    else
+        server_disable(EPOLLIN);
+
+    if (_serversend.empty())
+        server_disable(EPOLLOUT);
+    if (_serversend.size() < 64)
+        tun_enable(EPOLLIN);
+    else
+        tun_disable(EPOLLIN);
 }
 
 } // namespace wireglider
