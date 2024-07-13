@@ -9,6 +9,10 @@ using namespace wireglider::worker_impl;
 
 namespace wireglider {
 
+namespace worker_impl {
+static constexpr const bool use_opb_mainloop = false;
+}
+
 void Worker::do_server(epoll_event *ev) {
     if (ev->events & (EPOLLHUP | EPOLLERR)) {
         throw std::system_error(EIO, std::system_category(), "do_server events");
@@ -21,7 +25,7 @@ void Worker::do_server(epoll_event *ev) {
             return;
         DBG_PRINT("got server {} segment size {}\n", crypt->first.data.size(), crypt->first.segment_size);
 
-        if constexpr (false) {
+        if constexpr (use_opb_mainloop) {
             auto batch = do_server_decap(crypt->first, crypt->second, _pktbuf);
             if (!batch)
                 return;
