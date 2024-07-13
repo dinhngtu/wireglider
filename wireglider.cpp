@@ -129,7 +129,7 @@ static void doit(Args &args) {
         });
     if (tun[0].features() & IFF_MULTI_QUEUE) {
         for (unsigned int i = 1; i < args.njobs; i++) {
-            tun.emplace_back(tun[0].clone());
+            tun.emplace_back(tun[0].clone()).fd().set_nonblock(true);
             if (auto sin = std::get_if<sockaddr_in>(&args.listen_addr))
                 server.emplace_back(*sin, true, true);
             else if (auto sin6 = std::get_if<sockaddr_in6>(&args.listen_addr))
