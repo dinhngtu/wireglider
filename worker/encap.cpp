@@ -19,14 +19,14 @@ using namespace wireglider::worker_impl;
 namespace wireglider {
 
 void Worker::do_tun(epoll_event *ev) {
-    static std::vector<uint8_t> tunbuf(65536 + sizeof(virtio_net_hdr));
+    static thread_local std::vector<uint8_t> tunbuf(65536 + sizeof(virtio_net_hdr));
     // max 64 segments
     // 60 bytes ipv4 header + 60 bytes tcp header
-    static std::vector<uint8_t> splitbuf(65536 + 64 * (60 + 60));
+    static thread_local std::vector<uint8_t> splitbuf(65536 + 64 * (60 + 60));
     // 60 bytes ipv4 header + 60 bytes tcp header + 40 bytes WG overhead
-    static constexpr size_t sendbuf_size = 65536 + 64 * (60 + 60) + 64 * calc_overhead();
-    static std::vector<uint8_t> sendbuf(sendbuf_size), unrelbuf(sendbuf_size);
-    static std::vector<iovec> unreliov(64);
+    static thread_local constexpr size_t sendbuf_size = 65536 + 64 * (60 + 60) + 64 * calc_overhead();
+    static thread_local std::vector<uint8_t> sendbuf(sendbuf_size), unrelbuf(sendbuf_size);
+    static thread_local std::vector<iovec> unreliov(64);
 
     if (ev->events & (EPOLLHUP | EPOLLERR)) {
         throw QuitException();
