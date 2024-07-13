@@ -91,7 +91,7 @@ endif
 CPPFLAGS+=-DXXH_INLINE_ALL $(shell pkg-config --cflags libxxhash)
 
 # NOTE: customize processor features as desired
-# make ENABLE_AVX=1 MARCH=native; make check
+# make ENABLE_AVX=1 ARCH=native; make check
 FASTCSUM_ROOT?=$(realpath ../fastcsum)
 CPPFLAGS+=-isystem $(FASTCSUM_ROOT)/include
 LDFLAGS+=-L$(FASTCSUM_ROOT)
