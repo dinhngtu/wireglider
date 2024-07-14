@@ -32,7 +32,7 @@ enum class ServerRecvMethod {
     Recvmmsg,
 };
 
-static constexpr const ServerRecvMethod server_recv_method = ServerRecvMethod::Recvmsg;
+static constexpr const ServerRecvMethod server_recv_method = ServerRecvMethod::Recvmmsg;
 static constexpr const bool server_recv_once = true;
 
 } // namespace worker_impl
@@ -101,7 +101,10 @@ int Worker::do_server_recv([[maybe_unused]] epoll_event *ev, DecapRecvBatch &drb
         }
         drb.mhs[0].msg_len = static_cast<unsigned int>(bytes);
     } else if constexpr (server_recv_method == ServerRecvMethod::Recvmmsg) {
-        nvecs = recvmmsg(_arg.server->fd(), drb.mhs.data(), drb.mhs.size(), 0, nullptr);
+        // somehow passing in a zero timeout massively improves the performance of recvmmsg() even in nonblocking mode
+        // passing MSG_DONTWAIT gives an extra 5% performance or so
+        timespec ts{0, 0};
+        nvecs = recvmmsg(_arg.server->fd(), drb.mhs.data(), drb.mhs.size(), MSG_DONTWAIT, &ts);
         auto e = errno;
         if (nvecs < 0) {
             if (is_eagain(e))
