@@ -39,7 +39,18 @@ void Worker::run() {
     _poll.add(_arg.server->fd(), _poll_server);
     _poll.add(_sigfd, EPOLLIN);
 
-    // there are only 3 file descriptors to watch
+    /*
+     * there are only 3 file descriptors to watch
+     * quoting David Laight
+     * (https://lore.kernel.org/netdev/bc84e68c0980466096b0d2f6aec95747@AcuMS.aculab.com/t/#m3711a1d5c751ac9484e955e6df525583efd4b4a3):
+     * > For poll() it doesn't make much difference how many fd are supplied to each system call.
+     * > The overall performance is much the same for 32, 64 or 500 (all the sockets).
+     * > For epoll_wait() that isn't true.
+     * > Supplying a buffer that is shorter than the list of 'ready' fds gives a massive penalty.
+     * > With a buffer long enough for all the events epoll() is somewhat faster than poll().
+     * > But with a 64 entry buffer it is much slower.
+     * > I've looked at the code and can't see why splicing the unread events back is expensive.
+     */
     std::array<epoll_event, 3> evbuf;
 
     while (1) {
