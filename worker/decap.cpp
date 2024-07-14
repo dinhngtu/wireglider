@@ -27,6 +27,14 @@ DecapRecvBatch::DecapRecvBatch() : iovs(size()), mhs(size()), names(size()), cms
     }
 }
 
+enum class ServerRecvMethod {
+    Recvmsg,
+    Recvmmsg,
+};
+
+static constexpr const ServerRecvMethod server_recv_method = ServerRecvMethod::Recvmsg;
+static constexpr const bool server_recv_once = true;
+
 } // namespace worker_impl
 
 void Worker::do_server(epoll_event *ev) {
@@ -73,18 +81,36 @@ void Worker::do_server(epoll_event *ev) {
                 if (!worker_impl::do_tun_write_batch(_arg.tun->fd(), *batch))
                     do_tun_requeue_batch(*batch);
             }
+            if (server_recv_once)
+                break;
         }
     }
 }
 
 int Worker::do_server_recv([[maybe_unused]] epoll_event *ev, DecapRecvBatch &drb) {
-    auto nvecs = recvmmsg(_arg.server->fd(), drb.mhs.data(), drb.mhs.size(), 0, nullptr);
-    auto e = errno;
-    if (nvecs < 0) {
-        if (is_eagain(e))
-            return 0;
-        else
-            throw std::system_error(e, std::system_category(), "do_server_recv recvmsg");
+    int nvecs;
+    if constexpr (server_recv_method == ServerRecvMethod::Recvmsg) {
+        nvecs = 1;
+        auto bytes = recvmsg(_arg.server->fd(), &drb.mhs[0].msg_hdr, 0);
+        auto e = errno;
+        if (bytes < 0) {
+            if (is_eagain(e))
+                return 0;
+            else
+                throw std::system_error(e, std::system_category(), "do_server_recv recvmsg");
+        }
+        drb.mhs[0].msg_len = static_cast<unsigned int>(bytes);
+    } else if constexpr (server_recv_method == ServerRecvMethod::Recvmmsg) {
+        nvecs = recvmmsg(_arg.server->fd(), drb.mhs.data(), drb.mhs.size(), 0, nullptr);
+        auto e = errno;
+        if (nvecs < 0) {
+            if (is_eagain(e))
+                return 0;
+            else
+                throw std::system_error(e, std::system_category(), "do_server_recv recvmsg");
+        }
+    } else {
+        tdutil::unreachable();
     }
 
     drb.pbeps.clear();
