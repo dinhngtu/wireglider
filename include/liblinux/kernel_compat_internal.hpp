@@ -4,7 +4,8 @@
 #include <cstring>
 #include <atomic>
 #include <pthread.h>
-#include "kernel_compat.hpp"
+#include "liblinux/kernel_compat.hpp"
+#include "liblinux/gfp_types.h"
 
 #define __force
 #define __must_check
@@ -262,7 +263,6 @@ static constexpr T max(T a, T b) {
 #define trace_ma_read(x, y)
 #define trace_ma_write(x, y, z, t)
 
-#include "gfp_types.h"
 #define __GFP_BITS_MASK ((__force gfp_t)((1 << __GFP_BITS_SHIFT) - 1))
 
 #define IS_ENABLED(x) x

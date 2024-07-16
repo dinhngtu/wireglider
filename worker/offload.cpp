@@ -7,7 +7,7 @@
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
-#include "virtio_net.hpp"
+#include "liblinux/virtio_net.hpp"
 #include <boost/endian.hpp>
 #include <tdutil/util.hpp>
 #include <fmt/format.h>

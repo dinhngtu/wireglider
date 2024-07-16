@@ -54,8 +54,8 @@
 
 #include <cstdlib>
 #include <atomic>
-#include "maple_tree.hpp"
-#include "xarray.hpp"
+#include "liblinux/maple_tree.hpp"
+#include "liblinux/xarray.hpp"
 
 #define IS_ENABLED(x) x
 

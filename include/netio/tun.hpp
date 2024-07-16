@@ -4,7 +4,7 @@
 #include <netinet/in.h>
 #include <linux/if_tun.h>
 #include <linux/ipv6.h>
-#include "virtio_net.hpp"
+#include "liblinux/virtio_net.hpp"
 #include <tdutil/fildes.hpp>
 #include "netutil.hpp"
 

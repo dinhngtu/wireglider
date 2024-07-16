@@ -10,7 +10,7 @@
 
 #include <cstring>
 #include <pthread.h>
-#include "kernel_compat.hpp"
+#include "liblinux/kernel_compat.hpp"
 #include "rundown.hpp"
 
 struct maple_pnode;

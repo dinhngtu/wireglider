@@ -13,7 +13,7 @@
 # TODO: fix slow gro path
 
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
-CPPFLAGS+=-Iinclude
+CPPFLAGS+=-Iinclude -Iinclude/util -Iinclude/netio
 CFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -std=c11 -fwrapv
 CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -Wold-style-cast -std=c++20 -fwrapv
 

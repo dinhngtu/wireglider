@@ -4,6 +4,8 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/include",
+                "${workspaceFolder}/include/util",
+                "${workspaceFolder}/include/netio",
                 "/lib/modules/6.6.12+/build/usr/include",
                 "${workspaceFolder}/../tdutil/include",
                 "${workspaceFolder}/../boost_1_85_0",

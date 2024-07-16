@@ -1,6 +1,6 @@
 #include <string>
 #include <fmt/format.h>
-#include "kernel_compat_internal.hpp"
+#include "liblinux/kernel_compat_internal.hpp"
 
 bool _do_warn(bool val, const char *warn) {
     if (val)
