@@ -8,8 +8,10 @@
 #include "netutil.hpp"
 #include "rundown.hpp"
 #include "worker/send.hpp"
+#include "tai64n.hpp"
 
 using namespace tdutil;
+using namespace wireglider::time;
 using namespace wireglider::timer_impl;
 using namespace wireglider::worker_impl;
 
@@ -18,24 +20,6 @@ namespace wireglider {
 void timer_func(TimerArg arg) {
     TimerWorker w(arg);
     w.run();
-}
-
-constexpr uint64_t to_time(time_t sec, long nsec) {
-    return static_cast<uint64_t>(sec) + static_cast<uint64_t>(nsec) * 1'000'000'000;
-}
-
-constexpr timespec to_timespec(uint64_t tm) {
-    return timespec{
-        static_cast<time_t>(tm / 1'000'000'000),
-        static_cast<long>(tm % 1'000'000'000),
-    };
-}
-
-static uint64_t gettime() {
-    timespec ts;
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0)
-        throw std::system_error(errno, std::system_category(), "clock_gettime");
-    return to_time(ts.tv_sec, ts.tv_nsec);
 }
 
 TimerWorker::TimerWorker(const TimerArg &arg) : _arg(arg), _scratch(2048) {
@@ -118,7 +102,7 @@ void TimerWorker::do_timer(epoll_event *ev) {
     if (read(_timer, &val, sizeof(val)) < 0)
         return;
     bool overloaded = false;
-    auto now = gettime();
+    auto now = gettime64(CLOCK_MONOTONIC);
     RundownGuard rcu;
     std::lock_guard lock(_arg.queue->mutex);
     while (!_arg.queue->queue.empty() && _arg.queue->queue.top().nexttime <= now) {
