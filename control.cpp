@@ -373,10 +373,10 @@ void ControlWorker::do_cmd_flush_tables(RundownGuard &rcu) {
     int ret;
     ret = mtree_store_range(_arg.allowed_ip4, 0, ULONG_MAX, nullptr, 0);
     if (ret < 0)
-        throw std::system_error(-ret, std::system_category(), "mtree_store_range allowed_ip4");
+        throw std::system_error(-ret, std::generic_category(), "mtree_store_range allowed_ip4");
     ret = mtree_store_range(_arg.allowed_ip6, 0, ULONG_MAX, nullptr, 0);
     if (ret < 0)
-        throw std::system_error(-ret, std::system_category(), "mtree_store_range allowed_ip6");
+        throw std::system_error(-ret, std::generic_category(), "mtree_store_range allowed_ip6");
 
     _arg.client_eps->clear(rcu);
     _arg.clients->clear(rcu);

@@ -44,8 +44,7 @@ outcome::result<void> write_one_batch(int fd, PacketRefBatch &prb) {
         }
         if (std::cmp_less(written, sizeof(prb.flags.vnethdr) + prb.hdrbuf.size())) {
             // this shouldn't happen but add the handling just in case
-            // return std::error_code(EAGAIN, std::system_category());
-            throw std::system_error(EAGAIN, std::system_category(), "unexpectedly short tun write");
+            throw std::system_error(EAGAIN, std::generic_category(), "unexpectedly short tun write");
         }
         auto toadvance = written - sizeof(prb.flags.vnethdr) - prb.hdrbuf.size();
         auto next_pkt_iov = tdutil::advance_iov(std::span(prb.iov).subspan(2), toadvance);
@@ -94,8 +93,7 @@ outcome::result<void> do_tun_write_unrel(int fd, DecapRefBatch::unrel_type &pkts
         }
         if (std::cmp_less(written, sizeof(vnethdr) + pkts.front().iov_len)) {
             // this shouldn't happen but add the handling just in case
-            // return std::error_code(EAGAIN, std::system_category());
-            throw std::system_error(EAGAIN, std::system_category(), "unexpectedly short tun write");
+            throw std::system_error(EAGAIN, std::generic_category(), "unexpectedly short tun write");
         }
         pkts.pop_front();
     }

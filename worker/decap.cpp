@@ -42,7 +42,7 @@ void Worker::do_server(epoll_event *ev) {
     static thread_local std::vector<uint8_t> decapbuf(65536);
 
     if (ev->events & (EPOLLHUP | EPOLLERR)) {
-        throw std::system_error(EIO, std::system_category(), "do_server events");
+        throw std::system_error(EIO, std::generic_category(), "do_server events");
     }
     if (ev->events & EPOLLOUT)
         do_server_send();

@@ -31,8 +31,7 @@ outcome::result<void> write_one_batch(int fd, OwnedPacketBatch &opb) {
         }
         if (std::cmp_less(written, sizeof(opb.flags.vnethdr) + opb.hdrbuf.size())) {
             // this shouldn't happen but add the handling just in case
-            // return std::error_code(EAGAIN, std::system_category());
-            throw std::system_error(EAGAIN, std::system_category(), "unexpectedly short tun write");
+            throw std::system_error(EAGAIN, std::generic_category(), "unexpectedly short tun write");
         }
         opb.buf.erase(opb.buf.begin(), opb.buf.begin() + (written - sizeof(opb.flags.vnethdr) - opb.hdrbuf.size()));
     }
@@ -73,8 +72,7 @@ outcome::result<void> do_tun_write_unrel(int fd, std::deque<std::vector<uint8_t>
         }
         if (std::cmp_less(written, sizeof(vnethdr) + pkts.front().size())) {
             // this shouldn't happen but add the handling just in case
-            // return std::error_code(EAGAIN, std::system_category());
-            throw std::system_error(EAGAIN, std::system_category(), "unexpectedly short tun write");
+            throw std::system_error(EAGAIN, std::generic_category(), "unexpectedly short tun write");
         }
         pkts.pop_front();
     }
