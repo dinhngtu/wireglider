@@ -44,11 +44,6 @@ struct PacketBatch {
             std::span<const uint8_t>::iterator last)
             : _segment_size(segment_size), _span(first, last) {
         }
-        constexpr PacketBatchIterator(const PacketBatchIterator &) = default;
-        constexpr PacketBatchIterator &operator=(const PacketBatchIterator &) = default;
-        constexpr PacketBatchIterator(PacketBatchIterator &&) = default;
-        constexpr PacketBatchIterator &operator=(PacketBatchIterator &&) = default;
-        ~PacketBatchIterator() = default;
 
         PacketBatchIterator &operator++() {
             assert(!_span.empty());
