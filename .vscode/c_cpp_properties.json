@@ -9,6 +9,7 @@
                 "${workspaceFolder}/include/proto",
                 "/lib/modules/6.6.12+/build/usr/include",
                 "${workspaceFolder}/../tdutil/include",
+                "${workspaceFolder}/../liburing/src/include",
                 "${workspaceFolder}/../boost_1_85_0",
                 "${workspaceFolder}/../boringtun/boringtun/src",
                 "${workspaceFolder}/../fmt/include",

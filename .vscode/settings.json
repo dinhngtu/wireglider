@@ -2,6 +2,7 @@
     "files.associations": {
         "*.h": "c",
         "*.dsl": "EASL",
+        ".clang-tidy": "yaml",
         "system_error": "cpp",
         "cctype": "cpp",
         "clocale": "cpp",
@@ -90,6 +91,8 @@
         "complex": "cpp",
         "coroutine": "cpp",
         "csignal": "cpp",
-        "cassert": "cpp"
+        "cassert": "cpp",
+        "scoped_allocator": "cpp",
+        "any": "cpp"
     }
 }

@@ -41,10 +41,11 @@ CPPFLAGS+=-isystem $(TDUTIL_ROOT)/include
 LDFLAGS+=-L$(TDUTIL_ROOT)
 LDLIBS+=-ltdutil
 
-#LIBURING_ROOT?=$(realpath ../liburing)
-#CPPFLAGS+=-isystem $(LIBURING_ROOT)/src/include
-#LDFLAGS+=-L$(LIBURING_ROOT)/src
-#LDLIBS+=-l:liburing.a
+# ./configure; make
+LIBURING_ROOT?=$(realpath ../liburing)
+CPPFLAGS+=-isystem $(LIBURING_ROOT)/src/include
+LDFLAGS+=-L$(LIBURING_ROOT)/src
+LDLIBS+=-l:liburing.a
 
 # ./b2 variant=release link=static runtime-link=shared stage
 BOOST_ROOT?=$(realpath ../boost_1_85_0)
