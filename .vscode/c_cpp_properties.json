@@ -6,21 +6,24 @@
                 "${workspaceFolder}/include",
                 "${workspaceFolder}/include/util",
                 "${workspaceFolder}/include/netio",
+                "${workspaceFolder}/include/proto",
                 "/lib/modules/6.6.12+/build/usr/include",
                 "${workspaceFolder}/../tdutil/include",
                 "${workspaceFolder}/../boost_1_85_0",
                 "${workspaceFolder}/../boringtun/boringtun/src",
                 "${workspaceFolder}/../fmt/include",
                 "${workspaceFolder}/../mimalloc/include",
+                "${workspaceFolder}/../fastcsum/include",
+                "${workspaceFolder}/../noise-c/include",
                 "${workspaceFolder}/../Catch2/src",
-                "${workspaceFolder}/../Catch2/build/generated-includes",
-                "${workspaceFolder}/../fastcsum/include"
+                "${workspaceFolder}/../Catch2/build/generated-includes"
             ],
             "defines": [
                 "_GNU_SOURCE",
                 "_FILE_OFFSET_BITS=64",
                 "_LGPL_SOURCE",
-                "__AVX__"
+                "__AVX__",
+                "BOOST_ENDIAN_NO_CTORS"
             ],
             "compilerPath": "/usr/bin/gcc",
             "intelliSenseMode": "linux-gcc-x64",

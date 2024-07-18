@@ -16,6 +16,8 @@
 #include <urcu/rculfhash.h>
 #pragma GCC diagnostic pop
 
+#include "disposable.hpp"
+
 namespace wireglider {
 
 class RundownGuard {
@@ -114,21 +116,7 @@ public:
         if (!_tbl)
             throw CdsException();
     }
-    constexpr CdsHashtable(const CdsHashtable &) = delete;
-    constexpr CdsHashtable &operator=(const CdsHashtable &) = delete;
-    CdsHashtable(CdsHashtable &&other) noexcept {
-        swap(*this, other);
-    }
-    CdsHashtable &operator=(CdsHashtable &&other) noexcept {
-        if (this != &other) {
-            dispose();
-            swap(*this, other);
-        }
-        return *this;
-    };
-    ~CdsHashtable() {
-        dispose();
-    }
+    DISPOSABLE(CdsHashtable);
 
     iterator begin([[maybe_unused]] const RundownGuard &rcu) {
         iterator it(_tbl);

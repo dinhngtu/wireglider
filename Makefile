@@ -13,7 +13,7 @@
 # TODO: fix slow gro path
 
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
-CPPFLAGS+=-Iinclude -Iinclude/util -Iinclude/netio
+CPPFLAGS+=-Iinclude -Iinclude/util -Iinclude/netio -Iinclude/proto
 CFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -std=c11 -fwrapv
 CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -Wold-style-cast -std=c++20 -fwrapv
 
@@ -48,7 +48,7 @@ LDLIBS+=-ltdutil
 
 # ./b2 variant=release link=static runtime-link=shared stage
 BOOST_ROOT?=$(realpath ../boost_1_85_0)
-CPPFLAGS+=-isystem $(BOOST_ROOT)
+CPPFLAGS+=-isystem $(BOOST_ROOT) -DBOOST_ENDIAN_NO_CTORS
 LDFLAGS+=-L$(BOOST_ROOT)/stage/lib
 LDLIBS+=
 
@@ -100,6 +100,15 @@ LDLIBS+=-lfastcsum
 # requires liburcu-dev
 CPPFLAGS+=-D_LGPL_SOURCE $(shell pkg-config --cflags liburcu-qsbr liburcu-cds)
 LDLIBS+=$(shell pkg-config --libs liburcu-qsbr liburcu-cds)
+
+# requires libsodium-dev
+CPPFLAGS+=$(shell pkg-config --cflags libsodium)
+LDLIBS+=$(shell pkg-config --libs libsodium)
+
+NOISEC_ROOT?=$(realpath ../noise-c)
+# ./autogen.sh; ./configure --with-libsodium; make
+CPPFLAGS+=-isystem $(NOISEC_ROOT)/include
+LDFLAGS+=-L$(NOISEC_ROOT)/src/protocol
 
 # requires libtins-dev
 TINS_CPPFLAGS+=$(shell pkg-config --cflags libtins)

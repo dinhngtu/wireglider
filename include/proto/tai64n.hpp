@@ -17,10 +17,14 @@ constexpr timespec to_timespec(uint64_t tm) {
     };
 }
 
+// minimum valid timespec
 static constexpr timespec timespec_min() {
-    return {
-        std::numeric_limits<decltype(timespec::tv_sec)>::min(), std::numeric_limits<decltype(timespec::tv_nsec)>::min(),
-    }
+    return {0, 0};
+}
+
+// maximum valid timespec
+static constexpr timespec timespec_max() {
+    return {std::numeric_limits<decltype(timespec::tv_sec)>::max(), 999999999};
 }
 
 static inline timespec gettime(clockid_t clockid) {
@@ -38,8 +42,8 @@ static inline uint64_t gettime64(clockid_t clockid) {
 struct [[gnu::packed]] TAI64N {
     union {
         struct {
-            uint64_t sec_be;
-            uint32_t nsec_be;
+            boost::endian::big_uint64_t sec_be;
+            boost::endian::big_uint32_t nsec_be;
         };
         uint8_t bytes[12];
     };
@@ -49,10 +53,14 @@ struct [[gnu::packed]] TAI64N {
         nsec_be = 0;
     }
     constexpr TAI64N(const timespec &ts) {
-        sec_be = boost::endian::native_to_big(static_cast<uint64_t>(ts.tv_sec));
-        nsec_be = boost::endian::native_to_big(static_cast<uint32_t>(ts.tv_nsec));
+        sec_be = static_cast<uint64_t>(ts.tv_sec);
+        nsec_be = static_cast<uint32_t>(ts.tv_nsec);
     }
 };
+
+constexpr auto operator<=>(const TAI64N &a, const TAI64N &b) {
+    return std::tie(a.sec_be, a.nsec_be) <=> std::tie(b.sec_be, b.nsec_be);
+}
 
 class TAI64NClock {
 public:
