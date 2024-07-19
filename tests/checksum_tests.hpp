@@ -8,6 +8,8 @@
 
 #include "checksum.hpp"
 
+// watch out for RFC 1071 erratum 3133 https://www.rfc-editor.org/errata/eid3133 on big-endian machines
+
 // https://github.com/snabbco/snabb/blob/b7f6934caa241ac1d1b1be10d5d9f3db5d335f13/src/arch/checksum.dasl#L117
 static uint16_t checksum_ref1(const uint8_t *data, size_t size) {
     uint64_t csum = 0;
