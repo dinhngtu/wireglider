@@ -12,4 +12,5 @@ tests/test-ancillary
 tests/test-flowkey-own
 tests/test-flowkey-ref
 tests/test-sizes
+tests/test-replay
 nettool

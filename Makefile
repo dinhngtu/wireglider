@@ -170,6 +170,7 @@ TESTS=\
 	tests/test-flowkey-ref \
 	tests/test-ancillary \
 	tests/test-sizes \
+	tests/test-replay \
 
 TOOLS=\
 	nettool \
