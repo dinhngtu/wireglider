@@ -1,6 +1,5 @@
 #pragma once
 
-#include <variant>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/udp.h>

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <variant>
 #include <mutex>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
@@ -11,8 +10,6 @@
 #include <tdutil/epollman.hpp>
 
 #include "wireglider.hpp"
-#include "client.hpp"
-#include "liblinux/maple_tree.hpp"
 #include "udpsock.hpp"
 #include "worker/send.hpp"
 
@@ -28,7 +25,7 @@ struct ClientTimer {
     };
     using ClientTimerQueue = boost::heap::fibonacci_heap<ClientTimer, boost::heap::compare<ClientTimer::Compare>>;
 
-    x25519_key pubkey;
+    PublicKey pubkey;
     mutable uint64_t lasttime, nexttime;
     ClientTimerQueue::handle_type handle;
 };

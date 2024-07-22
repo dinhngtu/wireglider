@@ -4,6 +4,7 @@
 #include <csignal>
 #include <system_error>
 
+#include "keys.hpp"
 #include "endpoint.hpp"
 #include "client.hpp"
 #include "rundown.hpp"
@@ -11,14 +12,14 @@
 
 namespace wireglider {
 
-using ClientTable = CdsHashtable<x25519_key, Client::PubkeyTag, const Client>;
+using ClientTable = CdsHashtable<PublicKey, Client::PubkeyTag, const Client>;
 using EndpointTable = CdsHashtable<ClientEndpoint, Client::EndpointTag, const Client>;
 
 struct QuitException : public std::exception {};
 
 struct Config {
     rcu_head rcu;
-    x25519_key privkey;
+    PublicKey privkey;
     NetPrefix4 prefix4;
     NetPrefix6 prefix6;
 

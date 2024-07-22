@@ -12,6 +12,7 @@
 #include <tdutil/util.hpp>
 
 #include "worker.hpp"
+#include "tai64n.hpp"
 
 using namespace boost::endian;
 using namespace wireglider::worker_impl;

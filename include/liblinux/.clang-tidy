@@ -1,0 +1,2 @@
+Checks: |
+  -cppcoreguidelines-macro-usage,

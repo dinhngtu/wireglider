@@ -63,7 +63,7 @@ static inline in_addr to_addr(Tins::IPv4Address a) {
 
 static inline in6_addr to_addr(Tins::IPv6Address a) {
     in6_addr ret;
-    a.copy(ret.s6_addr);
+    a.copy(&ret.s6_addr[0]);
     return ret;
 }
 

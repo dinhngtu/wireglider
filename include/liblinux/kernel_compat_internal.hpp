@@ -4,7 +4,7 @@
 #include <cstring>
 #include <atomic>
 #include <pthread.h>
-#include "liblinux/kernel_compat.hpp"
+#include "liblinux/kernel_compat.hpp" // IWYU pragma: export
 #include "liblinux/gfp_types.h"
 
 #define __force

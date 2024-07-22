@@ -6,9 +6,9 @@
 #include <system_error>
 #include <cxxopts.hpp>
 #include <fmt/format.h>
-#include <wireguard_ffi.h>
 #include <tdutil/util.hpp>
 
+#include "keys.hpp"
 #include "wireglider.hpp"
 #include "tun.hpp"
 #include "udpsock.hpp"
@@ -67,7 +67,7 @@ static Config *make_config(const Args &args) {
     auto cfg = new Config();
     cfg->prefix4 = prefix4;
     cfg->prefix6 = prefix6;
-    if (!parse_keybytes(&cfg->privkey.key[0], args.private_key.c_str()))
+    if (!parse_keybytes(cfg->privkey.key, args.private_key.c_str()))
         throw std::invalid_argument("invalid server private key");
     return cfg;
 }

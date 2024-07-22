@@ -1,7 +1,9 @@
 #pragma once
 
 #include <deque>
+#include <vector>
 
+#include "result.hpp"
 #include "worker/flowkey_own.hpp"
 #include "worker/flowkey_ref.hpp"
 

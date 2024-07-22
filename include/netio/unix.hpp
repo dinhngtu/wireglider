@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <cstring>
 #include <system_error>
 #include <sys/types.h>

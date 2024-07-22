@@ -20,3 +20,6 @@ Checks: |
     -misc-unused-parameters,
     -misc-unused-using-decls,
     performance-*,
+CheckOptions:
+    - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+      value: true

@@ -2,9 +2,7 @@
 
 #include <cassert>
 #include <bitset>
-#include <vector>
 #include <span>
-#include <deque>
 #include <type_traits>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>

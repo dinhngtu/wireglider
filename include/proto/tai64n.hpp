@@ -1,6 +1,8 @@
 #pragma once
 
 #include <limits>
+#include <tuple>
+#include <system_error>
 #include <time.h>
 #include <boost/endian.hpp>
 

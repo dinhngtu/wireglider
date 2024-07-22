@@ -5,7 +5,6 @@
 #include <sys/un.h>
 #include <boost/unordered/unordered_flat_set.hpp>
 #include <fmt/format.h>
-#include <wireguard_ffi.h>
 
 #include "wireglider.hpp"
 #include "result.hpp"
@@ -16,6 +15,7 @@
 
 using namespace tdutil;
 using namespace wireglider::control_impl;
+using namespace wireglider::proto;
 
 namespace wireglider {
 
@@ -220,7 +220,7 @@ static std::vector<ClientSetCommand> parse_set(std::deque<std::string> &input, I
         auto &cmd = input.front();
         if (cmd.starts_with("private_key=")) {
             auto privkey = cmd.substr(sizeof("private_key=") - 1);
-            if (!parse_keybytes(&iface_cmd.private_key.key[0], privkey.c_str()))
+            if (!parse_keybytes(iface_cmd.private_key.key, privkey.c_str()))
                 throw ControlCommandException(EINVAL);
             iface_cmd.has_privkey = true;
         } else if (cmd.starts_with("listen_port=")) {
@@ -232,7 +232,7 @@ static std::vector<ClientSetCommand> parse_set(std::deque<std::string> &input, I
         } else if (cmd.starts_with("public_key=")) {
             cmds.emplace_back();
             auto psk = cmd.substr(sizeof("public_key=") - 1);
-            if (!parse_keybytes(&cmds.back().public_key.key[0], psk.c_str()))
+            if (!parse_keybytes(cmds.back().public_key.key, psk.c_str()))
                 throw ControlCommandException(EINVAL);
         } else if (cmd.starts_with("protocol_version=")) {
             // ignore
@@ -244,7 +244,7 @@ static std::vector<ClientSetCommand> parse_set(std::deque<std::string> &input, I
             } else if (cmd.starts_with("preshared_key=")) {
                 auto psk_str = cmd.substr(sizeof("preshared_key=") - 1);
                 uint8_t psk[32];
-                if (!parse_keybytes(&psk[0], psk_str.c_str()))
+                if (!parse_keybytes(psk, psk_str.c_str()))
                     throw ControlCommandException(EINVAL);
                 cmds.back().preshared_key = std::to_array(psk);
             } else if (cmd.starts_with("endpoint=")) {
@@ -382,7 +382,7 @@ void ControlWorker::do_cmd_flush_tables(RundownGuard &rcu) {
     _arg.clients->clear(rcu);
 }
 
-const Client *ControlWorker::do_remove_client(RundownGuard &rcu, Config *config, const x25519_key &public_key) {
+const Client *ControlWorker::do_remove_client(RundownGuard &rcu, Config *config, const PublicKey &public_key) {
     auto it = _arg.clients->find(rcu, public_key);
     if (it != _arg.clients->end()) {
         auto oldclient = it.get();
@@ -451,14 +451,7 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
             newclient->allowed_ips.insert(cmd.allowed_ip.begin(), cmd.allowed_ip.end());
         }
         DBG_PRINT("adding peer endpoint {} = {}\n", newclient->epkey, static_cast<void *>(newclient));
-        newclient->tunnel = new_tunnel_raw_ex(
-            &config->privkey,
-            &cmd.public_key,
-            newclient->psk.data(),
-            newclient->keepalive,
-            newclient->index);
-        if (!newclient->tunnel)
-            throw ControlCommandException(EINVAL);
+        newclient->peer = std::make_unique<Peer>(newclient->index);
 
         // we're the only writer to client/ep/aip tables
         // so we're free to do rmw existence checking here

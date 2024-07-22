@@ -1,6 +1,5 @@
 #pragma once
 
-#include <vector>
 #include <variant>
 #include <cstring>
 #include <string>
@@ -14,6 +13,8 @@
 #include <xxhash.h>
 
 #include <tdutil/util.hpp>
+
+// IWYU pragma: always_keep
 
 namespace wireglider {
 

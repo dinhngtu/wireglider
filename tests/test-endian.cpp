@@ -9,8 +9,6 @@ TEST_CASE("large from small") {
     uint64_t dest;
     uint16_t src = 1;
     SECTION("assign_big_from_native") {
-        uint64_t dest;
-        uint16_t src = 1;
         assign_big_from_native(dest, src);
         REQUIRE(dest == native_to_big(uint64_t(src)));
     }

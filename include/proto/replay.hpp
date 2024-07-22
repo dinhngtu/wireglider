@@ -8,7 +8,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <climits>
+#include <array>
 #include <bit>
+
+#include "disposable.hpp"
 
 namespace wireglider::proto {
 
@@ -22,13 +25,15 @@ class ReplayRing {
     static const size_t RingBlocks = Size / BlockBits;
     static const size_t BlockMask = RingBlocks - 1;
     static const T BitMask = BlockBits - 1;
+    static const T WindowSize = Size - BlockBits;
 
 public:
-    ReplayRing(T limit) : _limit(limit) {
+    ReplayRing(T limit) noexcept : _limit(limit) {
         _ring[0] = 0;
     }
+    DISPOSABLE(ReplayRing);
 
-    bool try_advance(T counter) {
+    bool try_advance(T counter) noexcept {
         if (counter >= _limit) {
             return false;
         }
@@ -44,7 +49,7 @@ public:
                 _ring[i & BlockMask] = 0;
             }
             _last = counter;
-        } else if (_last - counter > _winsize) { // behind current window
+        } else if (_last - counter > WindowSize) { // behind current window
             return false;
         }
         // check and set bit
@@ -56,14 +61,24 @@ public:
         return oldval != newval;
     }
 
-    constexpr T window_size() const {
-        return _winsize;
+    constexpr T window_size() const noexcept {
+        return WindowSize;
     }
 
+    void reset() noexcept {
+        _last = 0;
+        _ring[0] = 0;
+    }
+
+    constexpr DEFAULT_SWAP(ReplayRing, _ring, _last, _limit);
+
 private:
-    BackingType _ring[RingBlocks];
+    void dispose() noexcept {
+        reset();
+    }
+
+    std::array<BackingType, RingBlocks> _ring;
     T _last = 0;
-    T _winsize = Size - BlockBits;
     T _limit;
 };
 

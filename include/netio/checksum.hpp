@@ -75,11 +75,19 @@ inline uint64_t checksum_nofold(std::span<const uint8_t, 1> b, uint64_t initial)
 
 template <>
 inline uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b, uint64_t initial) {
+#if defined(__ADX__)
+    static const size_t vector_threshold = 1024;
+#else
+    static const size_t vector_threshold = 512;
+#endif
 #if defined(__AVX2__)
-    return fastcsum::fastcsum_nofold_avx2_v3(b.data(), b.size(), initial);
+    if (b.size() > vector_threshold)
+        return fastcsum::fastcsum_nofold_vec256_align(b.data(), b.size(), initial);
 #elif defined(__AVX__) || defined(__SSE4_1__)
-    return fastcsum::fastcsum_nofold_vec128(b.data(), b.size(), initial);
-#elif defined(__ADX__)
+    if (b.size() > vector_threshold)
+        return fastcsum::fastcsum_nofold_vec128_align(b.data(), b.size(), initial);
+#endif
+#if defined(__ADX__)
     return fastcsum::fastcsum_nofold_adx_v2(b.data(), b.size(), initial);
 #elif defined(__x86_64__)
     return fastcsum::fastcsum_nofold_x64_64b(b.data(), b.size(), initial);

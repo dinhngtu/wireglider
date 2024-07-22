@@ -1,13 +1,11 @@
 #pragma once
 
-#include <algorithm>
 #include <array>
-#include <variant>
-#include <utility>
 #include <mutex>
-#include <vector>
+#include <memory>
 #include <boost/unordered/unordered_flat_set.hpp>
-#include <wireguard_ffi.h>
+
+#include "proto.hpp"
 #include "rundown.hpp"
 #include "endpoint.hpp"
 #include "netutil.hpp"
@@ -23,7 +21,7 @@ struct Client {
     struct EndpointTag {};
 
     mutable cds_lfht_node pubnode;
-    x25519_key pubkey;
+    PublicKey pubkey;
     mutable cds_lfht_node epnode;
     ClientEndpoint epkey;
 
@@ -34,11 +32,11 @@ struct Client {
 
     mutable std::mutex mutex;
     // protected by mutex:
-    mutable wireguard_tunnel_raw *tunnel;
+    mutable std::unique_ptr<proto::Peer> peer;
     mutable boost::unordered_flat_set<IpRange> allowed_ips;
 
     // is there a better way to implement this stuff?
-    constexpr const x25519_key &key([[maybe_unused]] PubkeyTag tag) const {
+    constexpr const PublicKey &key([[maybe_unused]] PubkeyTag tag) const {
         return pubkey;
     }
     constexpr cds_lfht_node &node([[maybe_unused]] PubkeyTag tag) const {
@@ -59,24 +57,3 @@ struct Client {
 };
 
 } // namespace wireglider
-
-namespace std {
-template <>
-struct hash<x25519_key> {
-    size_t operator()(const x25519_key &a) const noexcept {
-        return XXH3_64bits(&a.key[0], sizeof(a.key));
-    }
-};
-} // namespace std
-
-static constexpr bool operator==(const x25519_key &a, const x25519_key &b) noexcept {
-    return std::equal(std::begin(a.key), std::end(a.key), std::begin(b.key));
-}
-
-static constexpr auto operator<=>(const x25519_key &a, const x25519_key &b) noexcept {
-    return std::lexicographical_compare_three_way(
-        std::begin(a.key),
-        std::end(a.key),
-        std::begin(b.key),
-        std::end(b.key));
-}

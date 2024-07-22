@@ -4,6 +4,7 @@
 #include <vector>
 #include <span>
 #include <sys/uio.h>
+#include <tdutil/util.hpp>
 #include "liblinux/virtio_net.hpp"
 
 #ifdef VIRTIO_NET_HDR_GSO_UDP_L4

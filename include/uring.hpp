@@ -1,13 +1,8 @@
 #pragma once
 
 #include <algorithm>
-#include <array>
 #include <vector>
-#include <iterator>
-#include <limits>
-#include <memory>
 #include <span>
-#include <type_traits>
 #include <liburing.h>
 
 #include "tdutil/auto_handle.hpp"
@@ -64,50 +59,6 @@ private:
 
     explicit cq_window(const std::span<io_uring_cqe *> &cqebuf) : cqes(cqebuf) {
     }
-};
-
-class bufring {
-public:
-    explicit bufring(uring &uring, unsigned int nentries, int bgid, unsigned int flags)
-        : _ring(uring.get()), _nentries(nentries), _bgid(bgid) {
-        int ret;
-        _br = io_uring_setup_buf_ring(_ring, _nentries, _bgid, 0, &ret);
-        if (!_br)
-            throw std::system_error(-ret, std::generic_category(), "io_uring_setup_buf_ring");
-    }
-    DISPOSABLE(bufring);
-
-    constexpr int bgid() const {
-        return _bgid;
-    }
-
-    constexpr friend void swap(bufring &self, bufring &other) noexcept {
-        using std::swap;
-        swap(self._ring, other._ring);
-        swap(self._br, other._br);
-        swap(self._nentries, other._nentries);
-        swap(self._bgid, other._bgid);
-    }
-
-    friend constexpr bool operator==(const bufring &a, const bufring &b) noexcept {
-        return a._br == b._br;
-    }
-
-private:
-    void dispose() {
-        if (_br)
-            io_uring_free_buf_ring(_ring, _br, _nentries, _bgid);
-        _ring = nullptr;
-        _br = nullptr;
-        _nentries = 0;
-        _bgid = -1;
-    }
-
-private:
-    struct io_uring *_ring = nullptr;
-    struct io_uring_buf_ring *_br = nullptr;
-    unsigned int _nentries = 0;
-    int _bgid = -1;
 };
 
 class uring {
@@ -192,6 +143,50 @@ private:
     std::vector<int> _fixed;
     std::vector<iovec> _bufs;
     tdutil::auto_handle<uring_deleter> _ring;
+};
+
+class bufring {
+public:
+    explicit bufring(uring &uring, unsigned int nentries, int bgid, unsigned int flags)
+        : _ring(uring.get()), _nentries(nentries), _bgid(bgid) {
+        int ret;
+        _br = io_uring_setup_buf_ring(_ring, _nentries, _bgid, 0, &ret);
+        if (!_br)
+            throw std::system_error(-ret, std::generic_category(), "io_uring_setup_buf_ring");
+    }
+    DISPOSABLE(bufring);
+
+    constexpr int bgid() const {
+        return _bgid;
+    }
+
+    constexpr friend void swap(bufring &self, bufring &other) noexcept {
+        using std::swap;
+        swap(self._ring, other._ring);
+        swap(self._br, other._br);
+        swap(self._nentries, other._nentries);
+        swap(self._bgid, other._bgid);
+    }
+
+    friend constexpr bool operator==(const bufring &a, const bufring &b) noexcept {
+        return a._br == b._br;
+    }
+
+private:
+    void dispose() {
+        if (_br)
+            io_uring_free_buf_ring(_ring, _br, _nentries, _bgid);
+        _ring = nullptr;
+        _br = nullptr;
+        _nentries = 0;
+        _bgid = -1;
+    }
+
+private:
+    struct io_uring *_ring = nullptr;
+    struct io_uring_buf_ring *_br = nullptr;
+    unsigned int _nentries = 0;
+    int _bgid = -1;
 };
 
 } // namespace wireglider::uring

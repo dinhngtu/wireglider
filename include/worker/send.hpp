@@ -39,8 +39,6 @@ struct ServerSendBatch : public ServerSendBase {
     explicit ServerSendBatch(size_t _segment_size, ClientEndpoint _ep, uint8_t _ecn)
         : ep(_ep), segment_size(_segment_size), max_send(65535 - 65535 % segment_size), ecn(_ecn) {
     }
-    virtual ~ServerSendBatch() {
-    }
 
     outcome::result<void> send(int fd, std::span<uint8_t> data);
     outcome::result<void> send(int fd) override {
@@ -60,8 +58,6 @@ struct ServerSendList : public ServerSendBase {
     explicit ServerSendList(ClientEndpoint _ep) : ep(_ep) {
     }
     explicit ServerSendList(packet_list &&pkts, ClientEndpoint _ep);
-    virtual ~ServerSendList() {
-    }
 
     outcome::result<void> send(int fd) override;
 
@@ -79,8 +75,6 @@ struct ServerSendList : public ServerSendBase {
 // separate endpoint per packet, for timer use
 struct ServerSendMultilist : public ServerSendBase {
     using packet_list = std::deque<std::vector<uint8_t>>;
-    virtual ~ServerSendMultilist() {
-    }
 
     outcome::result<void> send(int fd) override;
 

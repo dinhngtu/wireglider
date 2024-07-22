@@ -1,6 +1,7 @@
 #pragma once
 
-#include <boost/outcome.hpp>
+// IWYU pragma: always_keep
+#include <boost/outcome.hpp> // IWYU pragma: export
 #include <system_error>
 
 namespace outcome = BOOST_OUTCOME_V2_NAMESPACE;

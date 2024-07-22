@@ -5,12 +5,14 @@
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+#include <fmt/format.h>
 #include <boost/endian.hpp>
 #include <tdutil/function_traits.hpp>
 #include <tdutil/util.hpp>
 
 #include "worker/flowkey.hpp"
 #include "checksum.hpp"
+#include "worker/offload.hpp"
 
 namespace wireglider::worker_impl {
 

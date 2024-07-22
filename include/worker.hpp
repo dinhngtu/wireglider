@@ -1,23 +1,17 @@
 #pragma once
 
-#include <mutex>
 #include <vector>
 #include <deque>
 #include <optional>
-#include <wireguard_ffi.h>
 #include <tdutil/epollman.hpp>
 
-#include "wireglider.hpp"
 #include "result.hpp"
-#include "client.hpp"
 #include "tun.hpp"
 #include "udpsock.hpp"
-#include "liblinux/maple_tree.hpp"
 #include "endpoint.hpp"
 #include "worker/arg.hpp"
 #include "worker/decap.hpp"
 #include "worker/offload.hpp"
-#include "worker/flowkey.hpp"
 #include "worker/flowkey_own.hpp"
 #include "worker/flowkey_ref.hpp"
 #include "worker/send.hpp"

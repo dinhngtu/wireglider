@@ -7,7 +7,7 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 
-#include "client.hpp"
+#include "endpoint.hpp"
 #include "worker/offload.hpp"
 #include "ancillary.hpp"
 

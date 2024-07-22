@@ -12,8 +12,8 @@
 #else
 #pragma GCC diagnostic ignored "-Wvolatile"
 #endif
-#include <urcu-qsbr.h>
-#include <urcu/rculfhash.h>
+#include <urcu-qsbr.h>      // IWYU pragma: export
+#include <urcu/rculfhash.h> // IWYU pragma: export
 #pragma GCC diagnostic pop
 
 #include "disposable.hpp"
@@ -52,7 +52,7 @@ concept IsCdsHashtableNode = requires(V v, Tag tag, cds_lfht_node *node) {
     { V::get_from(node, tag) } -> std::convertible_to<V *>;
 };
 
-template <std::totally_ordered K, typename Tag, IsCdsHashtableNode<K, Tag> V>
+template <typename K, typename Tag, IsCdsHashtableNode<K, Tag> V>
 class CdsHashtable;
 
 template <typename K, typename Tag, IsCdsHashtableNode<K, Tag> V>
@@ -101,7 +101,7 @@ private:
     cds_lfht_iter _iter{};
 };
 
-template <std::totally_ordered K, typename Tag, IsCdsHashtableNode<K, Tag> V>
+template <typename K, typename Tag, IsCdsHashtableNode<K, Tag> V>
 class CdsHashtable {
 public:
     using iterator = CdsHashtableIterator<K, Tag, V>;
@@ -207,12 +207,12 @@ private:
     cds_lfht *_tbl = nullptr;
 };
 
-template <std::totally_ordered K, typename Tag, IsCdsHashtableNode<K, Tag> V>
+template <typename K, typename Tag, IsCdsHashtableNode<K, Tag> V>
 constexpr typename CdsHashtable<K, Tag, V>::iterator begin(CdsHashtable<K, Tag, V> &ht) {
     return ht.begin();
 }
 
-template <std::totally_ordered K, typename Tag, IsCdsHashtableNode<K, Tag> V>
+template <typename K, typename Tag, IsCdsHashtableNode<K, Tag> V>
 constexpr typename CdsHashtable<K, Tag, V>::iterator end(CdsHashtable<K, Tag, V> &ht) {
     return ht.end();
 }

@@ -11,7 +11,7 @@
 #include <cstring>
 #include <pthread.h>
 #include "liblinux/kernel_compat.hpp"
-#include "rundown.hpp"
+#include "rundown.hpp" // IWYU pragma: keep
 
 struct maple_pnode;
 struct maple_enode;
