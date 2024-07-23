@@ -94,5 +94,6 @@
         "cassert": "cpp",
         "scoped_allocator": "cpp",
         "any": "cpp"
-    }
+    },
+    "C_Cpp.intelliSenseEngine": "disabled"
 }
