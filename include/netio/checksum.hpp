@@ -11,7 +11,7 @@
 #include <array>
 #include <boost/endian.hpp>
 
-#include <fastcsum.hpp>
+#include <fastcsum.h>
 
 namespace wireglider {
 
@@ -82,17 +82,17 @@ inline uint64_t checksum_nofold(std::span<const uint8_t, std::dynamic_extent> b,
 #endif
 #if defined(__AVX2__)
     if (b.size() > vector_threshold)
-        return fastcsum::fastcsum_nofold_vec256_align(b.data(), b.size(), initial);
+        return fastcsum_nofold_vec256_align(b.data(), b.size(), initial);
 #elif defined(__AVX__) || defined(__SSE4_1__)
     if (b.size() > vector_threshold)
-        return fastcsum::fastcsum_nofold_vec128_align(b.data(), b.size(), initial);
+        return fastcsum_nofold_vec128_align(b.data(), b.size(), initial);
 #endif
 #if defined(__ADX__)
-    return fastcsum::fastcsum_nofold_adx_v2(b.data(), b.size(), initial);
+    return fastcsum_nofold_adx_v2(b.data(), b.size(), initial);
 #elif defined(__x86_64__)
-    return fastcsum::fastcsum_nofold_x64_64b(b.data(), b.size(), initial);
+    return fastcsum_nofold_x64_64b(b.data(), b.size(), initial);
 #else
-    return fastcsum::fastcsum_nofold_generic64(b.data(), b.size(), initial);
+    return fastcsum_nofold_generic64(b.data(), b.size(), initial);
 #endif
 }
 
@@ -120,7 +120,7 @@ static inline uint16_t pseudo_header_checksum(
     std::span<const uint8_t, E2> dstAddr,
     uint16_t l4Len) {
     auto ac = checksum_impl::pseudo_header_checksum_nofold(proto, srcAddr, dstAddr, l4Len);
-    return fastcsum::fold_complement_checksum64(ac);
+    return fastcsum_fold_complement(ac);
 }
 
 template <typename TAddress>
@@ -136,12 +136,12 @@ static inline uint16_t pseudo_header_checksum(
         reinterpret_cast<const uint8_t *>(&dstAddr),
         sizeof(dstAddr));
     auto ac = checksum_impl::pseudo_header_checksum_nofold(proto, srcAddrBytes, dstAddrBytes, l4Len);
-    return fastcsum::fold_complement_checksum64(ac);
+    return fastcsum_fold_complement(ac);
 }
 
 static inline uint16_t checksum(std::span<const uint8_t> b, uint64_t initial) {
     auto ac = checksum_impl::checksum_nofold(b, initial);
-    return fastcsum::fold_complement_checksum64(ac);
+    return fastcsum_fold_complement(ac);
 }
 
 uint16_t calc_l4_checksum(std::span<const uint8_t> thispkt, bool isv6, bool istcp, uint16_t csum_start);

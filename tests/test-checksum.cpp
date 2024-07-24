@@ -31,7 +31,7 @@ TEST_CASE("checksum_carry") {
 template <size_t O, size_t N>
 static inline void csum_test_sized(std::span<uint8_t> b) {
     std::span<const uint8_t, N> pkt = b.subspan<O, N>();
-    auto csum = fastcsum::fold_complement_checksum64(wireglider::checksum_impl::checksum_nofold(pkt, 0));
+    auto csum = fastcsum_fold_complement(wireglider::checksum_impl::checksum_nofold(pkt, 0));
     auto ref1 = checksum_ref1(pkt.data(), pkt.size());
     auto ref2 = checksum_ref2(reinterpret_cast<const uint16_t *>(pkt.data()), pkt.size());
     REQUIRE(ref1 == ref2);
