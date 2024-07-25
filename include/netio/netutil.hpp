@@ -28,6 +28,10 @@ struct Ifr {
     }
     Ifr(const std::string &name) : Ifr(name.c_str()) {
     }
+    Ifr(Ifr &&) = default;
+    Ifr &operator=(Ifr &&) = default;
+    ~Ifr() {
+    }
 
     Ifr(const Ifr &other) {
         memcpy(&ifr, &other.ifr, sizeof(ifreq));

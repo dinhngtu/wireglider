@@ -1,4 +1,3 @@
-#include <utility>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
@@ -7,7 +6,8 @@
 #include <tdutil/util.hpp>
 #include <tdutil/io.hpp>
 
-#include "worker.hpp"
+#include "worker/flowkey_own.hpp"
+#include "worker/flowkey_ref.hpp"
 #include "worker/evaluator.hpp"
 
 using namespace boost::endian;
@@ -34,7 +34,7 @@ struct FlowMapTraits<T, OwnFlowMap> {
         std::span<const uint8_t> pkthdr,
         uint16_t segment_size,
         const PacketFlags &flags) {
-        return OwnedPacketBatch(pkthdr, 4u * segment_size, flags);
+        return OwnedPacketBatch(pkthdr, 4ul * segment_size, flags);
     }
 };
 

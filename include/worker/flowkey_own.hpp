@@ -1,5 +1,9 @@
 #pragma once
 
+#include <vector>
+#include <deque>
+#include <tdutil/util.hpp>
+
 #include "checksum.hpp"
 #include "endian.hpp"
 #include "worker/flowkey.hpp"
@@ -18,11 +22,9 @@ struct OwnedPacketBatch {
     }
     OwnedPacketBatch(const OwnedPacketBatch &) = default;
     OwnedPacketBatch &operator=(const OwnedPacketBatch &) = default;
-    OwnedPacketBatch(OwnedPacketBatch &&other) noexcept {
-        hdrbuf = std::move(other.hdrbuf);
-        buf = std::move(other.buf);
-        count = std::exchange(other.count, 0);
-        flags = other.flags;
+    OwnedPacketBatch(OwnedPacketBatch &&other) noexcept
+        : hdrbuf(std::move(other.hdrbuf)), buf(std::move(other.buf)), count(std::exchange(other.count, 0)),
+          flags(other.flags) {
     }
     OwnedPacketBatch &operator=(OwnedPacketBatch &&other) noexcept {
         if (this != &other) {
