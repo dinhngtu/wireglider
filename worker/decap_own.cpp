@@ -45,7 +45,8 @@ std::optional<DecapBatch> Worker::do_server_decap(PacketBatch pb, ClientEndpoint
 
     DecapBatch batch(_arg.tun_has_uso);
     {
-        std::lock_guard client_lock(it->mutex);
+        auto state = it->state.synchronize();
+        // TODO
         for (auto pkt : pb) {
             auto result = wireguard_read_raw(it->tunnel, pkt.data(), pkt.size(), scratch.data(), scratch.size());
             switch (result.op) {

@@ -2,9 +2,8 @@
 #include <system_error>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
-#include <sys/un.h>
-#include <boost/unordered/unordered_flat_set.hpp>
 #include <fmt/format.h>
+#include <boost/thread/synchronized_value.hpp>
 
 #include "wireglider.hpp"
 #include "result.hpp"
@@ -315,13 +314,12 @@ void ControlWorker::do_cmd_set(ControlClient *cc) {
             MA_STATE(mas, &_client_idx, 0, 0);
             void *entry;
             mas_for_each(&mas, entry, ULONG_MAX) {
-                todelete.push_back(static_cast<Client *>(entry));
+                todelete.push_back(static_cast<const Client *>(entry));
             }
 
             do_cmd_flush_tables(rcu);
             for (auto &tq : *_arg.timerq) {
-                std::lock_guard lock(tq.mutex);
-                tq.queue.clear();
+                tq.queue->clear();
             }
         }
 
@@ -388,15 +386,20 @@ const Client *ControlWorker::do_remove_client(RundownGuard &rcu, Config *config,
         auto oldclient = it.get();
         const Client *replaced;
         // none of this should fail
-        for (auto aip : oldclient->allowed_ips) {
-            if (auto net4 = std::get_if<IpRange4>(&aip)) {
-                replaced = static_cast<Client *>(mtree_erase(_arg.allowed_ip4, config->prefix4.reduce(net4->first)));
-                if (replaced != oldclient)
-                    throw std::runtime_error("unexpected mtree_erase allowed_ip4 result");
-            } else if (auto net6 = std::get_if<IpRange6>(&aip)) {
-                replaced = static_cast<Client *>(mtree_erase(_arg.allowed_ip6, config->prefix6.reduce(net6->first)));
-                if (replaced != oldclient)
-                    throw std::runtime_error("unexpected mtree_erase allowed_ip6 result");
+        {
+            auto os = oldclient->state.synchronize();
+            for (auto aip : os->allowed_ips) {
+                if (auto net4 = std::get_if<IpRange4>(&aip)) {
+                    replaced =
+                        static_cast<const Client *>(mtree_erase(_arg.allowed_ip4, config->prefix4.reduce(net4->first)));
+                    if (replaced != oldclient)
+                        throw std::runtime_error("unexpected mtree_erase allowed_ip4 result");
+                } else if (auto net6 = std::get_if<IpRange6>(&aip)) {
+                    replaced =
+                        static_cast<const Client *>(mtree_erase(_arg.allowed_ip6, config->prefix6.reduce(net6->first)));
+                    if (replaced != oldclient)
+                        throw std::runtime_error("unexpected mtree_erase allowed_ip6 result");
+                }
             }
         }
         if (!_arg.client_eps->erase_at(rcu, oldclient))
@@ -444,14 +447,17 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
         newclient->epkey = cmd.endpoint.value_or(oldclient->epkey);
         newclient->psk = cmd.preshared_key.value_or(oldclient->psk);
         newclient->keepalive = cmd.persistent_keepalive_interval.value_or(oldclient->keepalive);
-        if (!oldclient || cmd.replace_allowed_ips) {
-            newclient->allowed_ips = boost::unordered_flat_set<IpRange>(cmd.allowed_ip.begin(), cmd.allowed_ip.end());
-        } else {
-            newclient->allowed_ips = oldclient->allowed_ips;
-            newclient->allowed_ips.insert(cmd.allowed_ip.begin(), cmd.allowed_ip.end());
+        {
+            auto [ns, os] = boost::synchronize(newclient->state, oldclient->state);
+            if (!oldclient || cmd.replace_allowed_ips) {
+                ns->allowed_ips = boost::unordered_flat_set<IpRange>(cmd.allowed_ip.begin(), cmd.allowed_ip.end());
+            } else {
+                ns->allowed_ips = os->allowed_ips;
+                ns->allowed_ips.insert(cmd.allowed_ip.begin(), cmd.allowed_ip.end());
+            }
+            DBG_PRINT("adding peer endpoint {} = {}\n", newclient->epkey, static_cast<void *>(newclient));
+            ns->peer = std::make_unique<Peer>(newclient->index);
         }
-        DBG_PRINT("adding peer endpoint {} = {}\n", newclient->epkey, static_cast<void *>(newclient));
-        newclient->peer = std::make_unique<Peer>(newclient->index);
 
         // we're the only writer to client/ep/aip tables
         // so we're free to do rmw existence checking here
@@ -470,7 +476,8 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
         }
         std::vector<unsigned long> inserted4, inserted6;
         try {
-            for (auto aip : newclient->allowed_ips) {
+            auto ns = newclient->state.synchronize();
+            for (auto aip : ns->allowed_ips) {
                 if (auto net4 = std::get_if<IpRange4>(&aip)) {
                     auto [begin, end] = config->prefix4.get_range(net4->first, net4->second);
                     DBG_PRINT("allowed ip4 range {}-{}\n", begin, end);
@@ -497,8 +504,7 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
 
         {
             auto tmrid = client_timer_id(cmd.public_key);
-            auto tq = &(*_arg.timerq)[tmrid];
-            std::lock_guard lock(tq->mutex);
+            auto &tq = (*_arg.timerq)[tmrid];
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
             timer_impl::ClientTimer tmr{
@@ -508,7 +514,7 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
                 .handle = timer_impl::ClientTimer::ClientTimerQueue::handle_type(nullptr),
             };
 #pragma GCC diagnostic pop
-            auto handle = tq->queue.push(tmr);
+            auto handle = tq.queue->push(tmr);
             (*handle).handle = handle;
         }
 
