@@ -1,15 +1,21 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
+#include <sodium/utils.h>
 #include <span>
+#include <type_traits>
 #include <variant>
 #include <noise/protocol.h>
 #include <sodium.h>
-#include <wireguard_ffi.h>
 #include <tdutil/auto_handle.hpp>
+#include <tdutil/time.hpp>
+#include <tdutil/util.hpp>
 
-#include "result.hpp"
+#include "keys.hpp"
+#include "result.hpp" // IWYU pragma: keep
 #include "tai64n.hpp"
+#include "replay.hpp"
 #include "disposable.hpp"
 
 namespace wireglider::proto {
@@ -25,6 +31,21 @@ struct NoiseErrorCategory : public std::error_category {
 static inline NoiseErrorCategory noise_category() {
     return NoiseErrorCategory{};
 }
+
+static const uint64_t RekeyAfterMessages = 1ull << 60;
+static const uint64_t RejectAfterMessages = UINT64_MAX - (1ull << 13);
+static const long Second = 1'000'000'000l;
+static const long Millisecond = 1'000'000l;
+static const long RekeyAfterTime = Second * 120;
+static const long RekeyAttemptTime = Second * 90;
+static const long RekeyTimeout = Second * 5;
+static const long MaxTimerHandshakes = 90 / 5;
+static const long RekeyTimeoutJitterMaxMs = 333;
+static const long RejectAfterTime = Second * 180;
+static const long KeepaliveTimeout = Second * 10;
+static const long CookieRefreshTime = Second * 120;
+static const long HandshakeInitationRate = Second / 50;
+static const uint64_t PaddingMultiple = 16;
 
 struct [[gnu::packed]] Handshake1 {
     boost::endian::little_uint32_t message_type_and_zeroes;
@@ -43,31 +64,48 @@ struct [[gnu::packed]] Handshake2 {
     uint8_t mac2[16];
 };
 
+struct [[gnu::packed]] CookiePacket {
+    boost::endian::little_uint32_t message_type_and_zeroes;
+    boost::endian::little_uint32_t receiver_index;
+    uint8_t nonce[24];
+    uint8_t encrypted_cookie[16 + 16];
+};
+
+struct [[gnu::packed]] DataHeader {
+    boost::endian::little_uint32_t message_type_and_zeroes;
+    boost::endian::little_uint32_t receiver_index;
+    boost::endian::little_uint64_t counter;
+};
+
 using Handshake = tdutil::auto_handle<noise_handshakestate_free>;
 using Hash = tdutil::auto_handle<noise_hashstate_free>;
 
 struct ProtoState {
     ProtoState() {
     }
-    DISPOSABLE_COPYABLE(ProtoState);
+    DISPOSABLE(ProtoState);
 
     Handshake handshake;
+    timespec handshake_begin = time::timespec_min();
     std::array<uint8_t, 64> cookie = {0};
     timespec cookie_until = time::timespec_min();
 
-    struct {
-        int role = 0;
-        uint32_t remote_index = 0;
-    } responder;
+    bool exists() const {
+        return !!handshake;
+    }
 
-    DEFAULT_SWAP(ProtoState, handshake, cookie, cookie_until, responder.role, responder.remote_index);
+    bool is_role(int role) const {
+        return handshake && noise_handshakestate_get_role(handshake.get()) == role;
+    }
+
+    bool is_action(int action) const {
+        return handshake && noise_handshakestate_get_action(handshake.get()) == action;
+    }
+
+    DEFAULT_SWAP(ProtoState, handshake, cookie, cookie_until);
 
 private:
-    void dispose() noexcept {
-        handshake.reset();
-        sodium_memzero(cookie.data(), cookie.size());
-        cookie_until = timespec_min();
-    }
+    DEFAULT_DISPOSE(ProtoState, handshake, cookie, cookie_until);
 };
 
 struct HalfSessionState {
@@ -78,23 +116,100 @@ struct HalfSessionState {
 struct SessionState {
     SessionState() {
     }
-    DISPOSABLE_COPYABLE(SessionState);
+    SessionState(
+        int _role,
+        uint32_t rid,
+        const uint8_t *_key1,
+        size_t len1,
+        const uint8_t *_key2,
+        size_t len2,
+        const timespec &_birth)
+        : role(_role), remote_index(rid), birth(_birth), last_send(_birth), last_recv(_birth),
+          replay(RejectAfterMessages) {
+        std::copy(_key1, _key1 + len1, key1.begin());
+        std::copy(_key2, _key2 + len2, key2.begin());
+    }
+    DISPOSABLE(SessionState);
 
     int role = 0;
     uint32_t remote_index = 0;
     std::array<uint8_t, 32> key1 = {0}, key2 = {0};
-    timespec key_until = timespec_min();
+    timespec birth = time::timespec_min();
+    timespec last_send = time::timespec_min(), last_recv = time::timespec_min();
+    uint64_t encrypt_nonce = 0;
+    ReplayRing<uint64_t, 8192> replay = ReplayRing<uint64_t, 8192>(RejectAfterMessages);
 
-    constexpr DEFAULT_SWAP(SessionState, role, remote_index, key1, key2, key_until);
+    bool exists() const {
+        return !!role;
+    }
+    bool expired(const timespec &now, long life = RejectAfterTime) const {
+        using tdutil::operators::operator-;
+        return !exists() || (now - birth) > life;
+    }
+
+    void reset() {
+        dispose();
+    }
+
+    DEFAULT_SWAP(SessionState, role, remote_index, key1, key2, birth, encrypt_nonce, replay);
 
 private:
     void dispose() noexcept {
         role = 0;
+        remote_index = 0;
         sodium_memzero(key1.data(), key1.size());
         sodium_memzero(key2.data(), key2.size());
-        key_until = timespec_min();
+        birth = time::timespec_min();
+        encrypt_nonce = 0;
+        replay.reset();
     }
 };
+
+enum class DecryptError {
+    Rejected,
+    NoSession,
+};
+
+enum class ProtoSignal {
+    Ok = 0,
+    OldSession = 1,
+    NeedsHandshake = 2,
+    NeedsKeepalive = 4,
+    // Encryption key has been wiped. Protocol is in uninitialized state.
+    SessionWasReset = 8,
+    // Handshake attempts have failed. Any queued packets need to be removed.
+    NeedsQueueClear = 16,
+};
+
+static inline ProtoSignal operator&(ProtoSignal a, ProtoSignal b) {
+    return static_cast<ProtoSignal>(
+        static_cast<std::underlying_type_t<ProtoSignal>>(a) & static_cast<std::underlying_type_t<ProtoSignal>>(b));
+}
+static inline ProtoSignal operator|(ProtoSignal a, ProtoSignal b) {
+    return static_cast<ProtoSignal>(
+        static_cast<std::underlying_type_t<ProtoSignal>>(a) | static_cast<std::underlying_type_t<ProtoSignal>>(b));
+}
+static inline ProtoSignal &operator&=(ProtoSignal &a, ProtoSignal b) {
+    a = a & b;
+    return a;
+}
+static inline ProtoSignal &operator|=(ProtoSignal &a, ProtoSignal b) {
+    a = a | b;
+    return a;
+}
+
+struct ProtoSuccess {
+    unsigned long long outsize;
+    ProtoSignal signal;
+};
+
+enum class EncryptError {
+    NoSession,
+    BufferError,
+};
+
+using EncryptResult = outcome::result<ProtoSuccess, EncryptError>;
+using DecryptResult = outcome::result<ProtoSuccess, DecryptError>;
 
 class Peer {
 public:
@@ -103,62 +218,73 @@ public:
     constexpr Peer &operator=(const Peer &) = delete;
     Peer(Peer &&other) = delete;
     Peer &operator=(Peer &&other) = delete;
-
-    void reset_handshake();
-    void reset_all() {
-        reset_handshake();
-        _session = SessionState();
+    ~Peer() {
     }
 
-    outcome::result<Handshake1 *> write_handshake1(timespec now, const x25519_key &pubkey, std::span<uint8_t> out);
-    static outcome::result<const Handshake2 *> decode_handshake2(std::span<const uint8_t> in);
-    outcome::result<void> read_handshake2(const Handshake2 *hs2, timespec now, const x25519_key &pubkey);
+    // Reset handshake state and set handshake birth time.
+    void reset_handshake(const timespec &now);
+    // Reset handshake and active session.
+    void reset_all(const timespec &now) {
+        reset_handshake(now);
+        _session.reset();
+    }
 
-    static outcome::result<const Handshake1 *> decode_handshake1(std::span<const uint8_t> in);
-    outcome::result<void> read_handshake1(const Handshake1 *hs1, timespec now, const x25519_key &pubkey);
+    std::variant<std::monostate, const Handshake1 *, const Handshake2 *, const CookiePacket *, std::span<const uint8_t>>
+    decode_pkt(std::span<const uint8_t> in);
+
+    outcome::result<Handshake1 *> write_handshake1(
+        const timespec &now,
+        const PublicKey &pubkey,
+        std::span<uint8_t> out);
+    outcome::result<void> read_handshake2(const Handshake2 *hs2, const timespec &now);
+
+    outcome::result<void> read_handshake1(const Handshake1 *hs1, const PublicKey &pubkey);
     outcome::result<std::span<uint8_t>> write_handshake2(
-        timespec now,
-        const x25519_key &pubkey,
+        const timespec &now,
+        const PublicKey &pubkey,
         std::span<uint8_t> out);
 
-    std::span<const uint8_t> current_decryption_key(const timespec &now) const {
-        using wireglider::time::operator<=>;
-        auto pending = std::get_if<SessionState>(&_pending);
-        if (pending && now < pending->key_until)
-            return pending->key2;
-        else if (now < _session.key_until)
-            return _session.key2;
-        else
-            return {};
+    DecryptResult decrypt(const timespec &now, std::span<uint8_t> out, std::span<const uint8_t> in);
+    EncryptResult encrypt(const timespec &now, std::span<uint8_t> out, std::span<const uint8_t> in);
+    ProtoSignal tick(const timespec &now);
+
+    uint64_t increment() {
+        return _session.encrypt_nonce++;
     }
 
-    std::span<const uint8_t> current_encryption_key(const timespec &now) const {
-        using wireglider::time::operator<=>;
-        if (now < _session.key_until)
-            return _session.key1;
-        else
-            return {};
+    static constexpr size_t expected_encrypt_size(size_t ptext_size) {
+        auto padded_size = tdutil::round_up(ptext_size, 16);
+        return sizeof(DataHeader) + padded_size + crypto_aead_chacha20poly1305_IETF_ABYTES;
+    }
+
+    static constexpr size_t expected_encrypt_overhead(size_t ptext_size) {
+        auto padded_size = tdutil::round_up(ptext_size, 16);
+        return sizeof(DataHeader) + padded_size - ptext_size + crypto_aead_chacha20poly1305_IETF_ABYTES;
     }
 
 private:
     static outcome::result<NoiseProtocolId> make_proto_id();
     static outcome::result<Handshake> create_handshake(
         const NoiseProtocolId &nid,
-        const x25519_key &server_privkey,
-        const x25519_key *pubkey,
+        const PublicKey &server_privkey,
+        const PublicKey *pubkey,
         std::span<const uint8_t, 32> psk,
         int role);
     outcome::result<void> configure_initiator(
-        const x25519_key &server_privkey,
-        const x25519_key &pubkey,
+        const timespec &now,
+        const PublicKey &server_privkey,
+        const PublicKey &pubkey,
         std::span<const uint8_t, 32> psk);
-    outcome::result<void> configure_responder(const x25519_key &server_privkey, std::span<const uint8_t, 32> psk);
+    outcome::result<void> configure_responder(
+        const timespec &now,
+        const PublicKey &server_privkey,
+        std::span<const uint8_t, 32> psk);
     static outcome::result<void> write_handshake_raw(NoiseHandshakeState *hs, NoiseBuffer *out);
     static outcome::result<void> write_handshake_raw(NoiseHandshakeState *hs, time::TAI64N now, NoiseBuffer *out);
     static outcome::result<void> read_handshake_raw(NoiseHandshakeState *hs, NoiseBuffer *in, NoiseBuffer *out);
-    outcome::result<void> make_mac1key(const x25519_key &pubkey, std::array<uint8_t, 64> &out);
+    outcome::result<void> make_mac1key(const PublicKey &pubkey, std::array<uint8_t, 64> &out);
     outcome::result<void> calculate_mac1(
-        const x25519_key &pubkey,
+        const PublicKey &pubkey,
         std::span<const uint8_t> payload,
         std::span<uint8_t, 16> out);
 
@@ -168,14 +294,16 @@ private:
     Hash _blake2s;
     uint32_t _local_index = 0;
 
-    // sticky state
-    time::TAI64N _last_tm;
+    // sticky states
+    // last handshake timestamp of remote initiator (DoS mitigation)
+    time::TAI64N _last_remote_hs1;
+    timespec _next_hs1_retry = time::timespec_min();
 
     ProtoState _proto;
     std::variant<std::monostate, HalfSessionState, SessionState> _pending;
     SessionState _session;
 
-    tdutil::auto_cleanup _zeroize = tdutil::auto_cleanup([this] { reset_all(); });
+    tdutil::auto_cleanup _zeroize = tdutil::auto_cleanup([this] { reset_all(time::timespec_min()); });
 };
 
 } // namespace wireglider::proto

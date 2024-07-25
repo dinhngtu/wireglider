@@ -26,8 +26,9 @@ public:
 
     void run();
 
-    static constexpr size_t calc_overhead() {
-        return sizeof(udphdr) + 32;
+    static constexpr size_t calc_max_overhead_conservative() {
+        return sizeof(udphdr) + sizeof(proto::DataHeader) + proto::PaddingMultiple +
+               crypto_aead_chacha20poly1305_IETF_ABYTES;
     }
 
 private:

@@ -1,21 +1,21 @@
-#include <string>
 #include <array>
+#include <system_error>
 #include <utility>
 #include <span>
 #include <sys/types.h>
 #include <csignal>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
-#include <netinet/tcp.h>
-#include <netinet/udp.h>
 #include <boost/endian.hpp>
-#include <tdutil/util.hpp>
 
+#include "proto.hpp"
 #include "worker.hpp"
 #include "tai64n.hpp"
 
 using namespace boost::endian;
+using namespace wireglider::proto;
 using namespace wireglider::worker_impl;
+using namespace tdutil;
 
 namespace wireglider {
 
@@ -24,8 +24,8 @@ void Worker::do_tun(epoll_event *ev) {
     // max 64 segments
     // 60 bytes ipv4 header + 60 bytes tcp header
     static thread_local std::vector<uint8_t> splitbuf(65536 + 64 * (60 + 60));
-    // 60 bytes ipv4 header + 60 bytes tcp header + 40 bytes WG overhead
-    static thread_local constexpr size_t sendbuf_size = 65536 + 64 * (60 + 60) + 64 * calc_overhead();
+    // 60 bytes ipv4 header + 60 bytes tcp header + WG overhead
+    static thread_local constexpr size_t sendbuf_size = 65536 + 64 * (60 + 60) + 64 * calc_max_overhead_conservative();
     static thread_local std::vector<uint8_t> sendbuf(sendbuf_size), unrelbuf(sendbuf_size);
     static thread_local std::vector<iovec> unreliov(64);
 
@@ -96,15 +96,30 @@ outcome::result<std::span<uint8_t>> Worker::do_tun_recv(std::vector<uint8_t> &ou
     return rest;
 }
 
+static outcome::result<std::pair<std::span<uint8_t>, ProtoSignal>, EncryptError> encrypt_packets(
+    PacketBatch &pb,
+    boost::strict_lock_ptr<ClientState> &state,
+    std::span<uint8_t> remain,
+    const timespec &now) {
+    auto protosgn = ProtoSignal::Ok;
+    for (auto pkt : pb) {
+        auto result = BOOST_OUTCOME_TRYX(state->peer->encrypt(now, remain, pkt));
+        remain = remain.subspan(result.outsize);
+        protosgn &= result.signal;
+    }
+    return {remain, protosgn};
+}
+
 std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     PacketBatch &pb,
     std::vector<uint8_t> &outbuf,
     std::vector<uint8_t> &unrelbuf,
     std::vector<iovec> &unreliov) {
-    Client *client = nullptr;
+    const Client *client = nullptr;
 
     // be conservative
-    [[maybe_unused]] auto reserve_size = pb.data.size() + calc_overhead() * pb.nr_segments();
+    [[maybe_unused]] auto reserve_size =
+        pb.data.size() + Peer::expected_encrypt_overhead(pb.segment_size) * pb.nr_segments();
     // if (outbuf.size() < reserve_size)
     // outbuf.resize(reserve_size);
     assert(outbuf.size() >= reserve_size);
@@ -116,37 +131,35 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
         in6_addr dstip6;
         memcpy(&dstip6, pb.data.data() + offsetof(ip6_hdr, ip6_dst), sizeof(dstip6));
         unsigned long ipkey = config->prefix6.reduce(dstip6);
-        client = static_cast<Client *>(mtree_load(_arg.allowed_ip6, ipkey));
+        client = static_cast<const Client *>(mtree_load(_arg.allowed_ip6, ipkey));
     } else {
         in_addr dstip4;
         memcpy(&dstip4, pb.data.data() + offsetof(struct ip, ip_dst), sizeof(dstip4));
         unsigned long ipkey = config->prefix4.reduce(dstip4);
-        client = static_cast<Client *>(mtree_load(_arg.allowed_ip4, ipkey));
+        client = static_cast<const Client *>(mtree_load(_arg.allowed_ip4, ipkey));
     }
 
     if (!client)
         return std::nullopt;
 
-    std::span<const uint8_t> rest(pb.data);
     std::span<uint8_t> remain(outbuf);
-    auto expected_segment_size = pb.segment_size + calc_overhead();
+    auto expected_segment_size = Peer::expected_encrypt_size(pb.segment_size);
     size_t unrel_current = 0;
+    auto now = time::gettime(CLOCK_MONOTONIC);
     {
-        std::lock_guard<std::mutex> client_lock(client->mutex);
-        for (auto pkt : pb) {
-            auto res = wireguard_write_raw(client->tunnel, pkt.data(), pkt.size(), remain.data(), remain.size());
-            // op: handle error
-            if (res.op == WRITE_TO_NETWORK) {
-                if (res.size == expected_segment_size) {
-                    // admit packets with the expected size into the pb
-                    remain = remain.subspan(res.size);
-                } else {
-                    // a cached packet
-                    assert(unrel_current + res.size <= unrelbuf.size());
-                    memcpy(&unrelbuf[unrel_current], &remain[0], res.size);
-                    unreliov.push_back({&unrelbuf[unrel_current], res.size});
-                    unrel_current += res.size;
-                }
+        auto state = client->state.synchronize();
+        auto result = encrypt_packets(pb, state, remain, now);
+        if (!result) {
+            switch (result.assume_error()) {
+            case EncryptError::NoSession: {
+                auto buf = new ClientBuffer(remain.begin(), remain.end(), pb.segment_size, true);
+                state->buffer.push_back(*buf);
+                break;
+            }
+            case EncryptError::BufferError:
+                throw std::runtime_error("insufficient encrypt buffer");
+            default:
+                throw std::runtime_error("unhandled encrypt error");
             }
         }
     }

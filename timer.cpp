@@ -73,17 +73,34 @@ void TimerWorker::run() {
     }
 }
 
-void TimerWorker::do_timer_step(ClientTable::iterator &it) {
+void TimerWorker::do_timer_step(const Client *client) {
     auto tosend = new ServerSendMultilist();
-    while (1) {
-        auto result = wireguard_tick_raw(it->tunnel, _scratch.data(), _scratch.size());
-        if (result.op == WRITE_TO_NETWORK) {
-            tosend->push_back(iovec{_scratch.data(), result.size}, it->epkey);
-        } else if (result.op == WRITE_TO_TUNNEL_IPV4 || result.op == WRITE_TO_TUNNEL_IPV6) {
-            fmt::print("got unexpected tunnel write during timer tick");
-            break;
-        } else {
-            break;
+    {
+        auto state = client->state.synchronize();
+        auto now = time::gettime(CLOCK_MONOTONIC);
+        std::span remain(_scratch);
+        while (!state->buffer.empty()) {
+            /*
+            auto result = wireguard_tick_raw(client->tunnel, _scratch.data(), _scratch.size());
+            if (result.op == WRITE_TO_NETWORK) {
+                tosend->push_back(iovec{_scratch.data(), result.size}, client->epkey);
+            } else if (result.op == WRITE_TO_TUNNEL_IPV4 || result.op == WRITE_TO_TUNNEL_IPV6) {
+                fmt::print("got unexpected tunnel write during timer tick");
+                break;
+            } else {
+                break;
+            }
+             */
+            auto &top = state->buffer.front();
+            for (auto pkt : top) {
+                // TODO
+                auto result = state->peer->encrypt(now, remain, pkt);
+                if (result) {
+                    remain = remain.subspan(result.assume_value().outsize);
+                    // protosgn &= result.signal;
+                    //  TODO: protosgn
+                }
+            }
         }
     }
     tosend->finalize();
@@ -104,30 +121,29 @@ void TimerWorker::do_timer(epoll_event *ev) {
     bool overloaded = false;
     auto now = gettime64(CLOCK_MONOTONIC);
     RundownGuard rcu;
-    std::lock_guard lock(_arg.queue->mutex);
-    while (!_arg.queue->queue.empty() && _arg.queue->queue.top().nexttime <= now) {
+    auto tq = _arg.queue.queue.synchronize();
+    while (!tq->empty() && tq->top().nexttime <= now) {
         bool expired = false;
         // make a copy for mutability
-        auto &top = _arg.queue->queue.top();
+        auto &top = tq->top();
         if (top.lasttime == now) {
             overloaded = true;
         } else if (!overloaded) {
             // process this client
             auto it = _arg.clients->find(rcu, top.pubkey);
             if (it != _arg.clients->end()) {
-                std::lock_guard client_lock(it->mutex);
-                do_timer_step(it);
+                do_timer_step(it.get());
             } else {
                 expired = true;
             }
         }
         if (expired) {
-            _arg.queue->queue.erase(top.handle);
+            tq->erase(top.handle);
         } else {
             top.lasttime = now;
             // instead of per-client period, we have global period
             top.nexttime = now + _period;
-            _arg.queue->queue.decrease(top.handle);
+            tq->decrease(top.handle);
         }
     }
     // auto done = gettime();

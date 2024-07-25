@@ -10,7 +10,16 @@
 # wget -O/dev/null 10.77.44.1/dev/shm/nginx/vm-cumulus.qcow2
 # wget -O/dev/null 10.77.44.2/dev/shm/nginx/vm-cumulus.qcow2
 
-# TODO: fix slow gro path
+# To summarize the various issues:
+# - bandwidth starvation of decap path in bidir mode - also happens with boringtun
+#   protocol impl issue within boringtun?
+#   or something missing in both impls that wireguard-go has?
+# - recvmmsg() is slow AF - conversion to io_uring?
+# - crypto scalability - is ring crypto fast enough? Workqueues with work stealing?
+# - looping server recv until EAGAIN significantly slows down recv bandwidth compared to one-shot recv
+#   where does the issue come from? recv() slowness? or something else?
+# - need to implement core affinity system eventually
+# - about the sendmmsg/recvmmsg patch...
 
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
 CPPFLAGS+=-Iinclude -Iinclude/util -Iinclude/netio -Iinclude/proto
@@ -55,13 +64,6 @@ LDLIBS+=
 
 # requires libcxxopts-dev
 CPPFLAGS+=$(shell pkg-config --cflags cxxopts)
-
-# requires cargo
-# cargo build --lib --release --features "device ffi-bindings"
-BORINGTUN_ROOT?=$(realpath ../boringtun)
-CPPFLAGS+=-isystem $(BORINGTUN_ROOT)/boringtun/src
-LDFLAGS+=-L$(BORINGTUN_ROOT)/target/release
-LDLIBS+=-l:libboringtun.a
 
 # mkdir build; cd build; cmake ..; make
 FMT_ROOT?=$(realpath ../fmt)

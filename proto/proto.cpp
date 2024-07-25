@@ -1,15 +1,59 @@
+#include <boost/endian/conversion.hpp>
 #include <cstring>
-#include <sodium.h>
-#include <boost/endian.hpp>
-#include <tdutil/time.hpp>
+#include <noise/protocol/constants.h>
 #include <tdutil/util.hpp>
 
 #include "proto.hpp"
 
+/*
+ * Protocol conformance:
+ *
+ * - A handshake initiation is retried after REKEY_TIMEOUT + jitter ms, if a response has not been received, where
+ * jitter is some random value between 0 and 333 ms. [Proto tick OK, Timer]
+ *
+ * - If a packet has been received from a given peer, but we have not sent one back to the given peer in KEEPALIVE ms,
+ * we send an empty packet. [Proto recv OK, tick OK, Timer]
+ *
+ * - If we have sent a packet to a given peer but have not received a packet after from that peer for KEEPALIVE +
+ * REKEY_TIMEOUT ms, we initiate a new handshake. [Proto send OK, tick OK, Timer]
+ *
+ * - All ephemeral private keys and symmetric session keys are zeroed out after REJECT_AFTER_TIME * 3 ms if no new keys
+ * have been exchanged. [Proto tick OK, Timer?]
+ *
+ * - After sending a packet, if the number of packets sent using that key exceeds REKEY_AFTER_MESSAGES, we initiate a
+ * new handshake. [Proto OK]
+ *
+ * - After sending a packet, if the sender was the original initiator of the handshake and if the current session key is
+ * REKEY_AFTER_TIME ms old, we initiate a new handshake. If the sender was the original responder of the handshake, we
+ * do not reinitiate a new handshake after REKEY_AFTER_TIME ms like the original initiator does. [Proto OK]
+ *
+ * - After receiving a packet, if the receiver was the original initiator of the handshake and if the current session
+ * key is REKEY_AFTER_TIME - KEEPALIVE_TIMEOUT - REKEY_TIMEOUT ms old, we initiate a new handshake. [Proto OK]
+ *
+ * - Handshakes are only initiated once every REKEY_TIMEOUT ms, with this strict rate limiting enforced.
+ *
+ * - Packets are dropped if the session counter is greater than REJECT_AFTER_MESSAGES or if its key is older than
+ * REJECT_AFTER_TIME ms. [Proto OK]
+ *
+ * - After REKEY_ATTEMPT_TIME ms of trying to initiate a new handshake, the retries give up and cease, and clear all
+ * existing packets queued up to be sent. If a packet is explicitly queued up to be sent, then this timer is reset.
+ * [Proto tick OK, Timer]
+ *
+ * - After a handshake is completed, with a message from initiator to responder and then responder back to initiator,
+ * the initiator may then send encrypted session packets, but the responder cannot. The responder must wait to use the
+ * new session until it has recieved one encrypted session packet from the initiator, in order to provide key
+ * confirmation. Thus, until the responder receives that first packet using the newly established session, it must
+ * either queue up packets to be sent later, or use the previous session, if one exists and is valid. Therefore, after
+ * the initiator receives the response from the responder, if it has no data packets immediately queued up to send, it
+ * should send an empty packet, so as to provide this confirmation. [Proto session cache OK, encap caching OK, initiator
+ * handshake empty packet not implemented]
+ */
+
 using namespace boost::endian;
 using namespace tdutil;
-using namespace wireglider::time;
 using namespace tdutil::operators;
+using namespace wireglider;
+using namespace wireglider::time;
 
 #define WIREGUARD_PROTO_NAME "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s"
 #define WIREGUARD_IDENTIFIER "WireGuard v1 zx2c4 Jason@zx2c4.com"
@@ -35,9 +79,18 @@ static constexpr NoiseBuffer noise_inout(std::span<uint8_t> span, size_t datasiz
     return ret;
 }
 
+namespace wireglider {
+
+bool parse_keybytes(uint8_t (&key)[32], const char *str) {
+    // TODO
+    return false;
+}
+
+} // namespace wireglider
+
 namespace wireglider::proto {
 
-enum MessageType : uint32_t {
+enum class MessageType : uint32_t {
     First = 1,
     Second = 2,
     Cookie = 3,
@@ -67,8 +120,8 @@ outcome::result<NoiseProtocolId> Peer::make_proto_id() {
 
 outcome::result<Handshake> Peer::create_handshake(
     const NoiseProtocolId &nid,
-    const x25519_key &server_privkey,
-    const x25519_key *pubkey,
+    const PublicKey &server_privkey,
+    const PublicKey *pubkey,
     std::span<const uint8_t, 32> psk,
     int role) {
     Handshake hs;
@@ -111,16 +164,18 @@ outcome::result<Handshake> Peer::create_handshake(
     return hs;
 }
 
-void Peer::reset_handshake() {
-    _proto = ProtoState();
+void Peer::reset_handshake(const timespec &now) {
+    _proto.handshake.reset();
+    _proto.handshake_begin = now;
     _pending = std::monostate{};
 }
 
 outcome::result<void> Peer::configure_initiator(
-    const x25519_key &server_privkey,
-    const x25519_key &pubkey,
+    const timespec &now,
+    const PublicKey &server_privkey,
+    const PublicKey &pubkey,
     std::span<const uint8_t, 32> psk) {
-    reset_handshake();
+    reset_handshake(now);
 
     auto new_handshake = create_handshake(_nid, server_privkey, &pubkey, psk, NOISE_ROLE_INITIATOR);
     if (new_handshake.has_value())
@@ -133,8 +188,11 @@ outcome::result<void> Peer::configure_initiator(
     return outcome::success();
 }
 
-outcome::result<void> Peer::configure_responder(const x25519_key &server_privkey, std::span<const uint8_t, 32> psk) {
-    reset_handshake();
+outcome::result<void> Peer::configure_responder(
+    const timespec &now,
+    const PublicKey &server_privkey,
+    std::span<const uint8_t, 32> psk) {
+    reset_handshake(now);
 
     auto new_handshake = create_handshake(_nid, server_privkey, nullptr, psk, NOISE_ROLE_RESPONDER);
     if (new_handshake.has_value())
@@ -159,6 +217,8 @@ outcome::result<void> Peer::write_handshake_raw(NoiseHandshakeState *hs, NoiseBu
     auto err = noise_handshakestate_write_message(hs, out, &payload);
     if (err != NOISE_ERROR_NONE)
         return outcome::failure(std::error_code(err, noise_category()));
+
+    return outcome::success();
 }
 
 outcome::result<void> Peer::write_handshake_raw(NoiseHandshakeState *hs, TAI64N now, NoiseBuffer *out) {
@@ -173,6 +233,8 @@ outcome::result<void> Peer::write_handshake_raw(NoiseHandshakeState *hs, TAI64N 
     auto err = noise_handshakestate_write_message(hs, out, &payload);
     if (err != NOISE_ERROR_NONE)
         return outcome::failure(std::error_code(err, noise_category()));
+
+    return outcome::success();
 }
 
 outcome::result<void> Peer::read_handshake_raw(NoiseHandshakeState *hs, NoiseBuffer *in, NoiseBuffer *out) {
@@ -184,12 +246,14 @@ outcome::result<void> Peer::read_handshake_raw(NoiseHandshakeState *hs, NoiseBuf
     auto err = noise_handshakestate_read_message(hs, in, out);
     if (err != NOISE_ERROR_NONE)
         return outcome::failure(std::error_code(err, noise_category()));
+
+    return outcome::success();
 }
 
-outcome::result<void> Peer::make_mac1key(const x25519_key &pubkey, std::array<uint8_t, 64> &out) {
+outcome::result<void> Peer::make_mac1key(const PublicKey &pubkey, std::array<uint8_t, 64> &out) {
     auto err = noise_hashstate_hash_two(
         _blake2s.get(),
-        WIREGUARD_LABEL_MAC1,
+        reinterpret_cast<const uint8_t *>(WIREGUARD_LABEL_MAC1),
         strlen(WIREGUARD_LABEL_MAC1),
         &pubkey.key[0],
         std::size(pubkey.key),
@@ -202,7 +266,7 @@ outcome::result<void> Peer::make_mac1key(const x25519_key &pubkey, std::array<ui
 }
 
 outcome::result<void> Peer::calculate_mac1(
-    const x25519_key &pubkey,
+    const PublicKey &pubkey,
     std::span<const uint8_t> payload,
     std::span<uint8_t, 16> out) {
     std::array<uint8_t, 64> mac1key = {0};
@@ -218,11 +282,42 @@ outcome::result<void> Peer::calculate_mac1(
         out.size());
     if (err != NOISE_ERROR_NONE)
         return outcome::failure(std::error_code(err, noise_category()));
+    return outcome::success();
 }
 
-outcome::result<Handshake1 *> Peer::write_handshake1(timespec now, const x25519_key &pubkey, std::span<uint8_t> out) {
-    if (noise_handshakestate_get_role(_proto.handshake.get()) != NOISE_ROLE_INITIATOR ||
-        noise_handshakestate_get_action(_proto.handshake.get()) != NOISE_ACTION_WRITE_MESSAGE ||
+std::variant<std::monostate, const Handshake1 *, const Handshake2 *, const CookiePacket *, std::span<const uint8_t>>
+Peer::decode_pkt(std::span<const uint8_t> in) {
+    if (in.size() < sizeof(MessageType))
+        return std::monostate{};
+    auto mtype = static_cast<MessageType>(load_little_u32(in.data()));
+    switch (mtype) {
+    case MessageType::First:
+        if (in.size() == sizeof(Handshake1))
+            return tdutil::start_lifetime_as<Handshake1>(in.data());
+        else
+            return std::monostate{};
+    case MessageType::Second:
+        if (in.size() == sizeof(Handshake2))
+            return tdutil::start_lifetime_as<Handshake2>(in.data());
+        else
+            return std::monostate{};
+    case MessageType::Cookie:
+        if (in.size() == sizeof(CookiePacket))
+            return tdutil::start_lifetime_as<CookiePacket>(in.data());
+        else
+            return std::monostate{};
+    case MessageType::Data:
+        return in;
+    default:
+        return std::monostate{};
+    }
+}
+
+outcome::result<Handshake1 *> Peer::write_handshake1(
+    const timespec &now,
+    const PublicKey &pubkey,
+    std::span<uint8_t> out) {
+    if (!_proto.is_role(NOISE_ROLE_INITIATOR) || !_proto.is_action(NOISE_ACTION_WRITE_MESSAGE) ||
         !std::holds_alternative<std::monostate>(_pending))
         return outcome::failure(std::error_code(EINVAL, std::generic_category()));
     if (out.size() < sizeof(Handshake1))
@@ -231,7 +326,7 @@ outcome::result<Handshake1 *> Peer::write_handshake1(timespec now, const x25519_
 
     auto hs1 = tdutil::start_lifetime_as<Handshake1>(out.data());
     auto_cleanup zeroize_result([=] { sodium_memzero(hs1, sizeof(Handshake1)); });
-    hs1->message_type_and_zeroes = MessageType::First;
+    hs1->message_type_and_zeroes = static_cast<uint32_t>(MessageType::First);
     hs1->sender_index = _local_index;
     auto hsb = noise_output(hs1->handshake);
     BOOST_OUTCOME_TRY(write_handshake_raw(_proto.handshake.get(), TAI64N(now), &hsb));
@@ -254,21 +349,12 @@ outcome::result<Handshake1 *> Peer::write_handshake1(timespec now, const x25519_
     }
 
     zeroize_result.reset();
+    _next_hs1_retry = now + (RekeyTimeout + randombytes_uniform(RekeyTimeoutJitterMaxMs) * Millisecond);
     return hs1;
 }
 
-outcome::result<const Handshake2 *> Peer::decode_handshake2(std::span<const uint8_t> in) {
-    if (in.size() != sizeof(Handshake2))
-        return outcome::failure(std::error_code(ENOENT, std::generic_category()));
-    auto hs2 = tdutil::start_lifetime_as<Handshake2>(in.data());
-    if (hs2->message_type_and_zeroes != MessageType::Second)
-        return outcome::failure(std::error_code(ENOENT, std::generic_category()));
-    return hs2;
-}
-
-outcome::result<void> Peer::read_handshake2(const Handshake2 *hs2, timespec now, const x25519_key &pubkey) {
-    if (noise_handshakestate_get_role(_proto.handshake.get()) != NOISE_ROLE_INITIATOR ||
-        noise_handshakestate_get_action(_proto.handshake.get()) != NOISE_ACTION_READ_MESSAGE ||
+outcome::result<void> Peer::read_handshake2(const Handshake2 *hs2, const timespec &now) {
+    if (!_proto.is_role(NOISE_ROLE_INITIATOR) || !_proto.is_action(NOISE_ACTION_READ_MESSAGE) ||
         !std::holds_alternative<std::monostate>(_pending))
         return outcome::failure(std::error_code(EINVAL, std::generic_category()));
 
@@ -277,7 +363,7 @@ outcome::result<void> Peer::read_handshake2(const Handshake2 *hs2, timespec now,
         return outcome::failure(std::error_code(ENOENT, std::generic_category()));
     auto hsb = noise_input(hs2->handshake);
     BOOST_OUTCOME_TRY(read_handshake_raw(_proto.handshake.get(), &hsb, nullptr));
-    if (noise_handshakestate_get_action(_proto.handshake.get()) != NOISE_ACTION_SPLIT)
+    if (!_proto.is_action(NOISE_ACTION_SPLIT))
         return outcome::failure(std::error_code(ENOENT, std::generic_category()));
 
     std::array<uint8_t, 32> key1, key2;
@@ -291,26 +377,12 @@ outcome::result<void> Peer::read_handshake2(const Handshake2 *hs2, timespec now,
         return outcome::failure(std::error_code(err, noise_category()));
 
     // commit
-    _session.role = NOISE_ROLE_INITIATOR;
-    _session.remote_index = rid;
-    std::copy(key1.begin(), key1.begin() + len1, _session.key1.begin());
-    std::copy(key2.begin(), key2.begin() + len2, _session.key2.begin());
-    //_key_until = now +
+    _session = SessionState(NOISE_ROLE_INITIATOR, rid, key1.data(), len1, key2.data(), len2, now);
     return outcome::success();
 }
 
-outcome::result<const Handshake1 *> Peer::decode_handshake1(std::span<const uint8_t> in) {
-    if (in.size() != sizeof(Handshake1))
-        return outcome::failure(std::error_code(ENOENT, std::generic_category()));
-    auto hs1 = tdutil::start_lifetime_as<Handshake1>(in.data());
-    if (hs1->message_type_and_zeroes != MessageType::First)
-        return outcome::failure(std::error_code(ENOENT, std::generic_category()));
-    return hs1;
-}
-
-outcome::result<void> Peer::read_handshake1(const Handshake1 *hs1, timespec now, const x25519_key &pubkey) {
-    if (noise_handshakestate_get_role(_proto.handshake.get()) != NOISE_ROLE_RESPONDER ||
-        noise_handshakestate_get_action(_proto.handshake.get()) != NOISE_ACTION_READ_MESSAGE ||
+outcome::result<void> Peer::read_handshake1(const Handshake1 *hs1, const PublicKey &pubkey) {
+    if (!_proto.is_role(NOISE_ROLE_RESPONDER) || !_proto.is_action(NOISE_ACTION_READ_MESSAGE) ||
         !std::holds_alternative<std::monostate>(_pending))
         return outcome::failure(std::error_code(EINVAL, std::generic_category()));
 
@@ -329,8 +401,9 @@ outcome::result<void> Peer::read_handshake1(const Handshake1 *hs1, timespec now,
     TAI64N remote_tm;
     auto tmb = noise_output(std::span(remote_tm.bytes));
     BOOST_OUTCOME_TRY(read_handshake_raw(_proto.handshake.get(), &hsb, &tmb));
-    if (remote_tm <= _last_tm)
+    if (remote_tm <= _last_remote_hs1)
         return outcome::failure(std::error_code(ENOENT, std::generic_category()));
+    _last_remote_hs1 = remote_tm;
 
     HalfSessionState pending;
     pending.role = NOISE_ROLE_RESPONDER;
@@ -340,12 +413,11 @@ outcome::result<void> Peer::read_handshake1(const Handshake1 *hs1, timespec now,
 }
 
 outcome::result<std::span<uint8_t>> Peer::write_handshake2(
-    timespec now,
-    const x25519_key &pubkey,
+    const timespec &now,
+    const PublicKey &pubkey,
     std::span<uint8_t> out) {
     auto half = std::get_if<HalfSessionState>(&_pending);
-    if (noise_handshakestate_get_role(_proto.handshake.get()) != NOISE_ROLE_RESPONDER ||
-        noise_handshakestate_get_action(_proto.handshake.get()) != NOISE_ACTION_WRITE_MESSAGE || !half)
+    if (!_proto.is_role(NOISE_ROLE_RESPONDER) || !_proto.is_action(NOISE_ACTION_WRITE_MESSAGE) || !half)
         return outcome::failure(std::error_code(EINVAL, std::generic_category()));
 
     // TODO
@@ -355,7 +427,7 @@ outcome::result<std::span<uint8_t>> Peer::write_handshake2(
 
     auto hs2 = tdutil::start_lifetime_as<Handshake2>(out.data());
     auto_cleanup zeroize_result([=] { sodium_memzero(hs2, sizeof(Handshake2)); });
-    hs2->message_type_and_zeroes = MessageType::Second;
+    hs2->message_type_and_zeroes = static_cast<uint32_t>(MessageType::Second);
     hs2->sender_index = _local_index;
     hs2->receiver_index = half->remote_index;
     auto hsb = noise_output(hs2->handshake);
@@ -381,17 +453,127 @@ outcome::result<std::span<uint8_t>> Peer::write_handshake2(
             return outcome::failure(std::error_code(err, noise_category()));
     }
 
-    SessionState pending;
-    pending.role = half->role;
-    pending.remote_index = half->remote_index;
-    size_t len1 = pending.key1.size(), len2 = pending.key2.size();
-    auto err =
-        noise_handshakestate_split_raw(_proto.handshake.get(), pending.key1.data(), &len1, pending.key2.data(), &len2);
+    std::array<uint8_t, 32> key1, key2;
+    size_t len1 = key1.size(), len2 = key2.size();
+    auto err = noise_handshakestate_split_raw(_proto.handshake.get(), key1.data(), &len1, key2.data(), &len2);
     if (err != NOISE_ERROR_NONE)
         return outcome::failure(std::error_code(err, noise_category()));
-    // pending.key_until;
-    _pending = std::move(pending);
+    _pending = SessionState(half->role, half->remote_index, key1.data(), len1, key2.data(), len2, now);
     return outcome::success();
+}
+
+DecryptResult Peer::decrypt(const timespec &now, std::span<uint8_t> out, std::span<const uint8_t> in) {
+    SessionState *session = std::get_if<SessionState>(&_pending);
+    bool needs_upgrade = false;
+    if (session && !session->expired(now))
+        needs_upgrade = true;
+    else if (_session.exists() && !_session.expired(now))
+        session = &_session;
+    else
+        return DecryptError::NoSession;
+    // TODO: timers
+
+    auto hdr = reinterpret_cast<const DataHeader *>(in.data());
+    if (hdr->counter > RejectAfterMessages)
+        return DecryptError::Rejected;
+
+    ProtoSuccess result{
+        .outsize = 0,
+        .signal = ProtoSignal::Ok,
+    };
+    std::array<uint8_t, crypto_aead_chacha20poly1305_IETF_NPUBBYTES> nonce = {0};
+    store_little_u64(&nonce[0], hdr->counter);
+    if (crypto_aead_chacha20poly1305_ietf_decrypt(
+            out.data(),
+            &result.outsize,
+            nullptr,
+            in.data(),
+            in.size(),
+            nullptr,
+            0,
+            &nonce[0],
+            session->key2.data()) < 0)
+        return DecryptError::Rejected;
+    if (!session->replay.try_advance(hdr->counter))
+        return DecryptError::Rejected;
+    if (needs_upgrade)
+        _session = std::move(*session);
+    if (_session.last_send - now > KeepaliveTimeout)
+        result.signal |= ProtoSignal::NeedsKeepalive;
+    _session.last_recv = now;
+    if (_session.role == NOISE_ROLE_INITIATOR &&
+        _session.expired(now, RekeyAfterTime - KeepaliveTimeout - RekeyTimeout))
+        result.signal |= ProtoSignal::NeedsHandshake;
+    return result;
+}
+
+EncryptResult Peer::encrypt(const timespec &now, std::span<uint8_t> out, std::span<const uint8_t> in) {
+    if (!_session.exists() || _session.expired(now))
+        return EncryptError::NoSession;
+    // TODO: timers
+
+    auto padded_size = round_up(in.size(), 16);
+    if (out.size() < sizeof(DataHeader) + padded_size + crypto_aead_chacha20poly1305_IETF_ABYTES)
+        return EncryptError::BufferError;
+
+    auto counter = _session.encrypt_nonce++;
+    if (counter >= RejectAfterMessages)
+        return EncryptError::NoSession;
+    store_little_u32(out.data(), static_cast<uint32_t>(MessageType::Data));
+    store_little_u32(out.data() + offsetof(DataHeader, receiver_index), _session.remote_index);
+    store_little_u64(out.data() + offsetof(DataHeader, counter), counter);
+    std::array<uint8_t, crypto_aead_chacha20poly1305_IETF_NPUBBYTES> nonce = {0};
+    store_little_u64(nonce.data(), counter);
+
+    auto cryptout = out.subspan(sizeof(DataHeader));
+    if (padded_size != in.size()) {
+        memcpy(cryptout.data(), in.data(), in.size());
+        memset(&cryptout[in.size()], 0, padded_size - in.size());
+        in = cryptout.subspan(0, padded_size);
+    }
+
+    ProtoSuccess result{
+        .outsize = cryptout.size(),
+        .signal = ProtoSignal::Ok,
+    };
+    if (_session.encrypt_nonce > RekeyAfterMessages)
+        result.signal |= ProtoSignal::NeedsHandshake;
+    if (_session.role == NOISE_ROLE_INITIATOR && _session.expired(now, RekeyAfterTime))
+        result.signal |= ProtoSignal::NeedsHandshake;
+    if (_session.last_recv - now > (KeepaliveTimeout + RekeyTimeout))
+        result.signal |= ProtoSignal::NeedsHandshake;
+    _session.last_send = now;
+    crypto_aead_chacha20poly1305_ietf_encrypt(
+        cryptout.data(),
+        &result.outsize,
+        in.data(),
+        in.size(),
+        nullptr,
+        0,
+        nullptr,
+        nonce.data(),
+        _session.key1.data());
+    return result;
+}
+
+ProtoSignal Peer::tick(const timespec &now) {
+    ProtoSignal signal = ProtoSignal::Ok;
+    if (_proto.exists() && _session.expired(now) && (now - _proto.handshake_begin) > RekeyAttemptTime)
+        signal |= ProtoSignal::NeedsQueueClear;
+    if (_session.exists() && _session.expired(now, 3 * RejectAfterTime)) {
+        reset_all(now);
+        signal |= ProtoSignal::SessionWasReset;
+        return signal;
+    }
+    if (_proto.is_role(NOISE_ROLE_INITIATOR) && _proto.is_action(NOISE_ACTION_READ_MESSAGE) && now > _next_hs1_retry)
+        signal |= ProtoSignal::NeedsHandshake;
+    if (_session.exists()) {
+        if (_session.last_send - now > KeepaliveTimeout)
+            signal |= ProtoSignal::NeedsKeepalive;
+        if (_session.last_recv - now > (KeepaliveTimeout + RekeyTimeout))
+            signal |= ProtoSignal::NeedsHandshake;
+    }
+    return signal;
 }
 
 } // namespace wireglider::proto
