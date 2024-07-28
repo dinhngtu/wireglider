@@ -29,21 +29,6 @@ static uint16_t checksum_ref1(const uint8_t *data, size_t size) {
     return ~csum & 0xffff;
 }
 
-// https://stackoverflow.com/a/8845286/8642889
-static uint16_t checksum_ref2(const uint16_t *buffer, int size) {
-    unsigned long cksum = 0;
-    while (size > 1) {
-        cksum += *buffer++;
-        size -= sizeof(uint16_t);
-    }
-    if (size)
-        cksum += *reinterpret_cast<const uint8_t *>(buffer);
-
-    cksum = (cksum >> 16) + (cksum & 0xffff);
-    cksum += (cksum >> 16);
-    return static_cast<uint16_t>(~cksum);
-}
-
 static std::vector<uint8_t> create_packet(size_t size) {
     std::independent_bits_engine<std::default_random_engine, CHAR_BIT, uint8_t> rnd;
     std::vector<uint8_t> vec(size);

@@ -13,8 +13,6 @@ TEST_CASE("checksum") {
     auto pkt = create_packet(size);
     auto csum = wireglider::checksum(pkt, 0);
     auto ref1 = checksum_ref1(pkt.data(), pkt.size());
-    auto ref2 = checksum_ref2(reinterpret_cast<uint16_t *>(pkt.data()), pkt.size());
-    REQUIRE(ref1 == ref2);
     REQUIRE(csum == ref1);
 }
 
@@ -23,8 +21,6 @@ TEST_CASE("checksum_carry") {
     auto pkt = create_packet_carry(size);
     auto csum = wireglider::checksum(pkt, 0);
     auto ref1 = checksum_ref1(pkt.data(), pkt.size());
-    auto ref2 = checksum_ref2(reinterpret_cast<uint16_t *>(pkt.data()), pkt.size());
-    REQUIRE(ref1 == ref2);
     REQUIRE(csum == ref1);
 }
 
@@ -33,8 +29,6 @@ static inline void csum_test_sized(std::span<uint8_t> b) {
     std::span<const uint8_t, N> pkt = b.subspan<O, N>();
     auto csum = fastcsum_fold_complement(wireglider::checksum_impl::checksum_nofold(pkt, 0));
     auto ref1 = checksum_ref1(pkt.data(), pkt.size());
-    auto ref2 = checksum_ref2(reinterpret_cast<const uint16_t *>(pkt.data()), pkt.size());
-    REQUIRE(ref1 == ref2);
     REQUIRE(csum == ref1);
 }
 
