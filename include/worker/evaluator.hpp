@@ -10,6 +10,7 @@
 #include <tdutil/function_traits.hpp>
 #include <tdutil/util.hpp>
 
+#include "dbgprint.hpp"
 #include "worker/flowkey.hpp"
 #include "checksum.hpp"
 #include "worker/offload.hpp"
@@ -21,51 +22,15 @@ using ip_header_of_t = std::remove_pointer_t<typename tdutil::result_type_t<decl
 template <auto F>
 using address_type_of_t = typename std::remove_cvref_t<tdutil::first_argument_t<decltype(F)>>::address_type;
 
-static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
+std::pair<const struct ip *, uint8_t> fill_fk_ip4(
     FlowKey<in_addr> &fk,
     std::span<const uint8_t> ippkt,
-    PacketFlags &flags) {
-    auto ip = reinterpret_cast<const struct ip *>(ippkt.data());
-    // no support for long ipv4 headers yet
-    if (ip->ip_hl * 4u != sizeof(struct ip))
-        return {nullptr, IPPROTO_RAW};
-    if (ippkt.size() != boost::endian::big_to_native(ip->ip_len))
-        return {nullptr, IPPROTO_RAW};
-    // no fragmenting of any kind
-    if (boost::endian::big_to_native(ip->ip_off) & ~IP_DF)
-        return {nullptr, IPPROTO_RAW};
-    // iph checksum
-    if (checksum(ippkt.subspan(0, sizeof(struct ip)), 0)) {
-        fmt::print("ip checksum drop\n");
-        return {nullptr, IPPROTO_RAW};
-    }
-    flags.vnethdr.hdr_len = flags.vnethdr.csum_start = sizeof(struct ip);
-    flags.isv6() = false;
-    fk.srcip = ip->ip_src;
-    fk.dstip = ip->ip_dst;
-    fk.frag = ip->ip_off;
-    fk.tos = ip->ip_tos;
-    fk.ttl = ip->ip_ttl;
-    return std::make_pair(ip, ip->ip_p);
-}
+    PacketFlags &flags);
 
-static std::pair<const ip6_hdr *, uint8_t> fill_fk_ip6(
+std::pair<const ip6_hdr *, uint8_t> fill_fk_ip6(
     FlowKey<in6_addr> &fk,
     std::span<const uint8_t> ippkt,
-    PacketFlags &flags) {
-    auto ip = reinterpret_cast<const ip6_hdr *>(ippkt.data());
-    auto rest = ippkt.subspan(sizeof(ip6_hdr));
-    if (rest.size() != boost::endian::big_to_native(ip->ip6_plen))
-        return {nullptr, IPPROTO_RAW};
-    flags.isv6() = true;
-    flags.vnethdr.hdr_len = flags.vnethdr.csum_start = sizeof(ip6_hdr);
-    fk.srcip = ip->ip6_src;
-    fk.dstip = ip->ip6_dst;
-    fk.frag = 0;
-    fk.tos = (boost::endian::big_to_native(ip->ip6_flow) >> 20) & 0xff;
-    fk.ttl = ip->ip6_hlim;
-    return std::make_pair(ip, ip->ip6_nxt);
-}
+    PacketFlags &flags);
 
 template <typename T>
 static bool fill_fk_ecn(FlowKey<T> &fk, uint8_t ecn_outer) {
@@ -97,7 +62,7 @@ static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
         // exclude empty packets as well
         return nullptr;
     if (calc_l4_checksum(ippkt, flags.isv6(), true, iphsize)) {
-        fmt::print("tcp checksum drop\n");
+        DBG_PRINT("tcp checksum drop\n");
         return nullptr;
     }
     auto tcp = reinterpret_cast<const tcphdr *>(&ippkt[iphsize]);
@@ -126,7 +91,7 @@ static const udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
     if (ippkt.size() - iphsize <= sizeof(udphdr))
         return nullptr;
     if (calc_l4_checksum(ippkt, flags.isv6(), false, iphsize)) {
-        fmt::print("udp checksum drop\n");
+        DBG_PRINT("udp checksum drop\n");
         return nullptr;
     }
     auto udp = reinterpret_cast<const udphdr *>(&ippkt[iphsize]);

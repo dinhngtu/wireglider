@@ -19,7 +19,7 @@ namespace wireglider::worker_impl {
 OwnedPacketBatch::OwnedPacketBatch(const PacketRefBatch &prb)
     : hdrbuf(prb.hdrbuf.begin(), prb.hdrbuf.end()), flags(prb.flags) {
     size_t totsize = 0;
-    auto pkts = std::span(prb.iov).subspan(2);
+    auto pkts = std::span(&prb.iov[0], &prb.iov[2]);
     for (const auto &pkt : pkts) {
         totsize += pkt.iov_len;
         count++;

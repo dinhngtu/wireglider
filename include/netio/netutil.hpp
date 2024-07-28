@@ -121,7 +121,7 @@ static inline auto operator<=>(const in6_addr &a, const in6_addr &b) noexcept {
 
 static inline auto format_as(const in_addr &a) {
     uint8_t b[4];
-    boost::endian::store_big_u32(b, boost::endian::big_to_native(a.s_addr));
+    memcpy(&b[0], &a.s_addr, 4);
     return fmt::format("{}.{}.{}.{}", b[0], b[1], b[2], b[3]);
 }
 
@@ -139,11 +139,11 @@ static inline auto format_as(const in6_addr &a) {
 }
 
 static inline auto format_as(const struct ip &ip) {
-    return fmt::format("ip4 {}->{} proto {}", ip.ip_src, ip.ip_dst, ip.ip_p);
+    return fmt::format("ip4 {}->{} proto {}", format_as(ip.ip_src), format_as(ip.ip_dst), ip.ip_p);
 }
 
 static inline auto format_as(const ip6_hdr &ip) {
-    return fmt::format("ip6 {}->{} proto {}", ip.ip6_src, ip.ip6_dst, ip.ip6_nxt);
+    return fmt::format("ip6 {}->{} proto {}", format_as(ip.ip6_src), format_as(ip.ip6_dst), ip.ip6_nxt);
 }
 
 static inline auto format_as(const sockaddr_in &sin) {

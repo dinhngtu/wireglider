@@ -97,7 +97,7 @@ CPPFLAGS+=-DXXH_INLINE_ALL $(shell pkg-config --cflags libxxhash)
 # mkdir build; cd build; cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DENABLE_AVX=true -DARCH=native; make
 FASTCSUM_ROOT?=$(realpath ../fastcsum)
 CPPFLAGS+=-isystem $(FASTCSUM_ROOT)/include
-LDFLAGS+=-L$(FASTCSUM_ROOT)
+LDFLAGS+=-L$(FASTCSUM_ROOT)/build
 LDLIBS+=-lfastcsum
 
 # requires liburcu-dev
@@ -192,6 +192,7 @@ OBJECTS=\
 	worker/offload.o \
 	worker/flowkey_own.o \
 	worker/flowkey_ref.o \
+	worker/evaluator.o \
 	worker/send.o \
 	worker/write_own.o \
 	worker/write_ref.o \
@@ -226,9 +227,9 @@ tests/test-checksum: checksum.o
 
 tests/test-offload: worker/offload.o checksum.o
 
-tests/test-flowkey-own: worker/flowkey_own.o checksum.o
+tests/test-flowkey-own: worker/flowkey_own.o worker/evaluator.o checksum.o
 
-tests/test-flowkey-ref: worker/flowkey_ref.o checksum.o
+tests/test-flowkey-ref: worker/flowkey_ref.o worker/evaluator.o checksum.o
 
 nettool: LDLIBS=-lfmt
 nettool: netutil.o
