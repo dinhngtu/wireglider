@@ -3,10 +3,9 @@
 #include <cstdint>
 #include <climits>
 #include <cstring>
+#include <endian.h>
 #include <vector>
 #include <random>
-
-// watch out for RFC 1071 erratum 3133 https://www.rfc-editor.org/errata/eid3133 on big-endian machines
 
 // https://github.com/snabbco/snabb/blob/b7f6934caa241ac1d1b1be10d5d9f3db5d335f13/src/arch/checksum.dasl#L117
 static uint16_t checksum_ref1(const uint8_t *data, size_t size) {
@@ -18,8 +17,13 @@ static uint16_t checksum_ref1(const uint8_t *data, size_t size) {
         csum += word;
         i -= 2;
     }
-    if (i == 1)
-        csum += data[size - 1];
+    if (i == 1) {
+        // RFC 1071 erratum 3133 https://www.rfc-editor.org/errata/eid3133
+        uint16_t last = data[size - 1];
+        if (__BYTE_ORDER == __BIG_ENDIAN)
+            last <<= 8;
+        csum += last;
+    }
     while (1) {
         auto carry = csum >> 16;
         if (!carry)

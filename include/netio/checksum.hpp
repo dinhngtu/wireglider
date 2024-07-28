@@ -69,7 +69,10 @@ inline uint64_t checksum_nofold(std::span<const uint8_t, 2> b, uint64_t initial)
 template <>
 inline uint64_t checksum_nofold(std::span<const uint8_t, 1> b, uint64_t initial) {
     uint64_t ret = initial;
-    bool c = __builtin_add_overflow(ret, static_cast<uint64_t>(b[0]), &ret);
+    uint64_t last = b[0];
+    if (__BYTE_ORDER == __BIG_ENDIAN)
+        last <<= 8;
+    bool c = __builtin_add_overflow(ret, last, &ret);
     return ret + c;
 }
 
@@ -102,6 +105,7 @@ static inline uint64_t pseudo_header_checksum_nofold(
     std::span<const uint8_t, E1> srcAddr,
     std::span<const uint8_t, E2> dstAddr,
     uint16_t l4Len) {
+    static_assert(E1 > 1 && E2 > 1);
     auto sum = checksum_impl::checksum_nofold(srcAddr, 0);
     sum = checksum_impl::checksum_nofold(dstAddr, sum);
     std::array<uint8_t, 4> proto_bytes;
