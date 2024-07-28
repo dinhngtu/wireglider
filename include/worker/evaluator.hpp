@@ -25,7 +25,7 @@ static std::pair<const struct ip *, uint8_t> fill_fk_ip4(
     FlowKey<in_addr> &fk,
     std::span<const uint8_t> ippkt,
     PacketFlags &flags) {
-    auto ip = tdutil::start_lifetime_as<struct ip>(ippkt.data());
+    auto ip = reinterpret_cast<const struct ip *>(ippkt.data());
     // no support for long ipv4 headers yet
     if (ip->ip_hl * 4u != sizeof(struct ip))
         return {nullptr, IPPROTO_RAW};
@@ -53,7 +53,7 @@ static std::pair<const ip6_hdr *, uint8_t> fill_fk_ip6(
     FlowKey<in6_addr> &fk,
     std::span<const uint8_t> ippkt,
     PacketFlags &flags) {
-    auto ip = tdutil::start_lifetime_as<ip6_hdr>(ippkt.data());
+    auto ip = reinterpret_cast<const ip6_hdr *>(ippkt.data());
     auto rest = ippkt.subspan(sizeof(ip6_hdr));
     if (rest.size() != boost::endian::big_to_native(ip->ip6_plen))
         return {nullptr, IPPROTO_RAW};
@@ -100,7 +100,7 @@ static const tcphdr *fill_fk_tcp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
         fmt::print("tcp checksum drop\n");
         return nullptr;
     }
-    auto tcp = tdutil::start_lifetime_as<tcphdr>(&ippkt[iphsize]);
+    auto tcp = reinterpret_cast<const tcphdr *>(&ippkt[iphsize]);
     auto thlen = 4u * tcp->doff;
     if (thlen < sizeof(tcphdr) || ippkt.size() - iphsize <= thlen)
         return nullptr;
@@ -129,7 +129,7 @@ static const udphdr *fill_fk_udp(FlowKey<T> &fk, std::span<const uint8_t> ippkt,
         fmt::print("udp checksum drop\n");
         return nullptr;
     }
-    auto udp = tdutil::start_lifetime_as<udphdr>(&ippkt[iphsize]);
+    auto udp = reinterpret_cast<const udphdr *>(&ippkt[iphsize]);
     flags.istcp() = false;
     flags.ispsh() = false;
     flags.vnethdr.gso_type = WIREGLIDER_VIRTIO_NET_HDR_GSO_UDP_L4;

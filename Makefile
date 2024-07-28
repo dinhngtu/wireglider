@@ -23,8 +23,8 @@
 
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
 CPPFLAGS+=-Iinclude -Iinclude/util -Iinclude/netio -Iinclude/proto
-CFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -std=c11 -fwrapv
-CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -Wold-style-cast -std=c++20 -fwrapv
+CFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -std=c11 -fwrapv -fno-strict-aliasing
+CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -Wold-style-cast -std=c++20 -fwrapv -fno-strict-aliasing
 
 USE_CLANG?=0
 ifeq ($(USE_CLANG),1)

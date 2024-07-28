@@ -293,17 +293,17 @@ Peer::decode_pkt(std::span<const uint8_t> in) {
     switch (mtype) {
     case MessageType::First:
         if (in.size() == sizeof(Handshake1))
-            return tdutil::start_lifetime_as<Handshake1>(in.data());
+            return reinterpret_cast<const Handshake1 *>(in.data());
         else
             return std::monostate{};
     case MessageType::Second:
         if (in.size() == sizeof(Handshake2))
-            return tdutil::start_lifetime_as<Handshake2>(in.data());
+            return reinterpret_cast<const Handshake2 *>(in.data());
         else
             return std::monostate{};
     case MessageType::Cookie:
         if (in.size() == sizeof(CookiePacket))
-            return tdutil::start_lifetime_as<CookiePacket>(in.data());
+            return reinterpret_cast<const CookiePacket *>(in.data());
         else
             return std::monostate{};
     case MessageType::Data:
@@ -324,7 +324,7 @@ outcome::result<Handshake1 *> Peer::write_handshake1(
         return outcome::failure(std::error_code(ENOBUFS, std::generic_category()));
     sodium_memzero(out.data(), sizeof(Handshake1));
 
-    auto hs1 = tdutil::start_lifetime_as<Handshake1>(out.data());
+    auto hs1 = reinterpret_cast<Handshake1 *>(out.data());
     auto_cleanup zeroize_result([=] { sodium_memzero(hs1, sizeof(Handshake1)); });
     hs1->message_type_and_zeroes = static_cast<uint32_t>(MessageType::First);
     hs1->sender_index = _local_index;
@@ -425,7 +425,7 @@ outcome::result<std::span<uint8_t>> Peer::write_handshake2(
         return outcome::failure(std::error_code(ENOBUFS, std::generic_category()));
     sodium_memzero(out.data(), sizeof(Handshake2));
 
-    auto hs2 = tdutil::start_lifetime_as<Handshake2>(out.data());
+    auto hs2 = reinterpret_cast<Handshake2 *>(out.data());
     auto_cleanup zeroize_result([=] { sodium_memzero(hs2, sizeof(Handshake2)); });
     hs2->message_type_and_zeroes = static_cast<uint32_t>(MessageType::Second);
     hs2->sender_index = _local_index;

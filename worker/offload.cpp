@@ -49,17 +49,17 @@ namespace wireglider::worker_impl {
  */
 PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &outbuf, virtio_net_hdr &vnethdr) {
     auto l4_csum_offset = vnethdr.csum_start + vnethdr.csum_offset;
-    auto isv6 = tdutil::start_lifetime_as<struct ip>(inbuf.data())->ip_v == 6;
+    auto isv6 = reinterpret_cast<struct ip *>(inbuf.data())->ip_v == 6;
     uint8_t ecn;
     if (isv6)
-        ecn = IPTOS_ECN(big_to_native(tdutil::start_lifetime_as<ip6_hdr>(inbuf.data())->ip6_flow) >> 20);
+        ecn = IPTOS_ECN(big_to_native(reinterpret_cast<ip6_hdr *>(inbuf.data())->ip6_flow) >> 20);
     else
-        ecn = IPTOS_ECN(tdutil::start_lifetime_as<struct ip>(inbuf.data())->ip_tos);
+        ecn = IPTOS_ECN(reinterpret_cast<struct ip *>(inbuf.data())->ip_tos);
 
     switch (vnethdr.gso_type & ~VIRTIO_NET_HDR_GSO_ECN) {
     case VIRTIO_NET_HDR_GSO_NONE:
         if (vnethdr.flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) {
-            auto ip = tdutil::start_lifetime_as<struct ip>(inbuf.data());
+            auto ip = reinterpret_cast<struct ip *>(inbuf.data());
 
             // clear ipv4 header checksum
             if (!isv6)
@@ -69,7 +69,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
 
             bool istcp;
             if (isv6) {
-                istcp = tdutil::start_lifetime_as<ip6_hdr>(inbuf.data())->ip6_nxt == IPPROTO_TCP;
+                istcp = reinterpret_cast<ip6_hdr *>(inbuf.data())->ip6_nxt == IPPROTO_TCP;
             } else {
                 istcp = ip->ip_p == IPPROTO_TCP;
                 auto ip_csum = checksum(inbuf.subspan(0, vnethdr.csum_start), 0);
@@ -101,7 +101,7 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
                 .ecn = ecn,
             };
         }
-        auto thlen = 4u * tdutil::start_lifetime_as<tcphdr>(&inbuf[vnethdr.csum_start])->doff;
+        auto thlen = 4u * reinterpret_cast<tcphdr *>(&inbuf[vnethdr.csum_start])->doff;
         if (thlen < sizeof(tcphdr)) {
             DBG_PRINT("thlen too small: {}\n", thlen);
             return PacketBatch{
@@ -148,14 +148,14 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
 
     // clear ipv4 header checksum
     if (!isv6)
-        tdutil::start_lifetime_as<struct ip>(prefix.data())->ip_sum = 0;
+        reinterpret_cast<struct ip *>(prefix.data())->ip_sum = 0;
     // clear tcp/udp checksum
     memset(&prefix[l4_csum_offset], 0, 2);
 
     bool istcp = vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV4 || vnethdr.gso_type == VIRTIO_NET_HDR_GSO_TCPV6;
     uint32_t tcpseq0 = 0;
     if (istcp)
-        tcpseq0 = big_to_native(tdutil::start_lifetime_as<tcphdr>(&prefix[vnethdr.csum_start])->seq);
+        tcpseq0 = big_to_native(reinterpret_cast<tcphdr *>(&prefix[vnethdr.csum_start])->seq);
 
     size_t i = 0, pbsize = 0;
     for (; !rest.empty(); i++) {
@@ -172,13 +172,13 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
         if (isv6) {
             // For IPv6 we are responsible for updating the payload length field.
             assign_big_from_native(
-                tdutil::start_lifetime_as<ip6_hdr>(thispkt.data())->ip6_plen,
+                reinterpret_cast<ip6_hdr *>(thispkt.data())->ip6_plen,
                 thispkt.size() - vnethdr.csum_start);
         } else {
             // For IPv4 we are responsible for incrementing the ID field,
             // updating the total len field, and recalculating the header
             // checksum.
-            auto ip = tdutil::start_lifetime_as<struct ip>(thispkt.data());
+            auto ip = reinterpret_cast<struct ip *>(thispkt.data());
             if (i) {
                 big_to_native_inplace(ip->ip_id);
                 ip->ip_id += i;
@@ -192,14 +192,14 @@ PacketBatch do_tun_gso_split(std::span<uint8_t> inbuf, std::vector<uint8_t> &out
 
         if (istcp) {
             // set TCP seq and adjust TCP flags
-            auto tcp = tdutil::start_lifetime_as<tcphdr>(&thispkt[vnethdr.csum_start]);
+            auto tcp = reinterpret_cast<tcphdr *>(&thispkt[vnethdr.csum_start]);
             assign_big_from_native(tcp->seq, tcpseq0 + vnethdr.gso_size * i);
             if (datalen < rest.size())
                 // FIN and PSH should only be set on last segment
                 tcp->fin = tcp->psh = 0;
         } else {
             // set UDP header len
-            auto udp = tdutil::start_lifetime_as<udphdr>(&thispkt[vnethdr.csum_start]);
+            auto udp = reinterpret_cast<udphdr *>(&thispkt[vnethdr.csum_start]);
             assign_big_from_native(udp->len, thispkt.size() - vnethdr.csum_start);
         }
 

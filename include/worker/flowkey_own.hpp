@@ -66,19 +66,19 @@ struct OwnedPacketBatch {
     }
     struct ip *ip4hdr() {
         assert(!flags.isv6());
-        return tdutil::start_lifetime_as<struct ip>(hdrbuf.data());
+        return reinterpret_cast<struct ip *>(hdrbuf.data());
     }
     struct ip6_hdr *ip6hdr() {
         assert(flags.isv6());
-        return tdutil::start_lifetime_as<struct ip6_hdr>(hdrbuf.data());
+        return reinterpret_cast<struct ip6_hdr *>(hdrbuf.data());
     }
     struct tcphdr *tcphdr() {
         assert(flags.istcp());
-        return tdutil::start_lifetime_as<struct tcphdr>(&hdrbuf[flags.vnethdr.csum_start]);
+        return reinterpret_cast<struct tcphdr *>(&hdrbuf[flags.vnethdr.csum_start]);
     }
     struct udphdr *udphdr() {
         assert(!flags.istcp());
-        return tdutil::start_lifetime_as<struct udphdr>(&hdrbuf[flags.vnethdr.csum_start]);
+        return reinterpret_cast<struct udphdr *>(&hdrbuf[flags.vnethdr.csum_start]);
     }
     void finalize() {
         auto l4len = hdrbuf.size() - flags.vnethdr.csum_start + size_bytes();
