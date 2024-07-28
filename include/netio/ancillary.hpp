@@ -74,10 +74,7 @@ public:
     }
 
 private:
-    union {
-        std::array<uint8_t, space()> _storage = {0};
-        cmsghdr _align;
-    };
+    alignas(cmsghdr) std::array<uint8_t, space()> _storage = {0};
 };
 
 } // namespace wireglider
