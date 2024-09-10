@@ -204,7 +204,7 @@ OBJECTS=\
 	liblinux/maple_tree.o \
 	liblinux/kernel_compat.o \
 
-DEPS=$(patsubst %.o,%.d,$(OBJECTS))
+DEPS=$(patsubst %,%.d,$(TARGETS) $(TESTS)) $(patsubst %.o,%.d,$(OBJECTS))
 SOURCES=$(patsubst %,%.cpp,$(TARGETS) $(TESTS)) $(patsubst %.o,%.cpp,$(filter-out liblinux/%,$(OBJECTS)))
 
 all: $(TARGETS) $(TESTS) $(TOOLS)
