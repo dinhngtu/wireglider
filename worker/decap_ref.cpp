@@ -57,7 +57,17 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
                 protosgn &= result.assume_value().signal;
             }
         }
-        // TODO: protosgn
+        if (!!(protosgn & ProtoSignal::NeedsHandshake)) {
+            auto hs = state->peer->write_handshake1(now, it->pubkey, remain);
+            if (hs)
+                batch.retpkt.push_back({remain.data(), sizeof(Handshake1)});
+            else
+                return std::nullopt;
+        } else if (!!(protosgn & ProtoSignal::NeedsKeepalive)) {
+            auto ka = state->peer->encrypt(now, remain, {});
+            if (ka)
+                batch.retpkt.push_back({remain.data(), ka.assume_value().outsize});
+        }
     }
 
     return batch;

@@ -142,6 +142,7 @@ bool ControlWorker::do_client_getlines(ControlClient *client) {
             if (client->input.back().empty()) {
                 client->input.pop_back();
                 found = true;
+                DBG_PRINT(">{}\n", client->input.back());
                 break;
             } else {
                 client->input.emplace_back();
@@ -167,8 +168,14 @@ bool ControlWorker::do_client_getlines(ControlClient *client) {
 outcome::result<void> ControlWorker::do_client_write(ControlClient *client) {
     while (!client->output.empty()) {
         std::vector<iovec> iov;
-        for (size_t i = 0; i < IOV_MAX && i < client->output.size(); i++)
+        for (size_t i = 0; i < IOV_MAX && i < client->output.size(); i++) {
+#if DEBUG
+            std::string toprint = client->output[i];
+            std::replace(toprint.begin(), toprint.end(), '\n', ';');
+            DBG_PRINT("<{}\n", toprint);
+#endif
             iov.push_back(iovec{client->output[i].data(), client->output[i].size()});
+        }
         ssize_t written = writev(client->fd, iov.data(), iov.size());
         if (written < 0)
             return check_eagain(errno, "do_client_write writev");
@@ -203,7 +210,8 @@ void ControlWorker::do_cmd(ControlClient *client) {
         }
     } catch (const ControlCommandException &ex) {
         client->output.emplace_back(fmt::format("errno={}\n\n", ex.err));
-    } catch (const std::exception &) {
+    } catch (const std::exception &ex) {
+        DBG_PRINT("do_cmd exception: {}\n", ex.what());
         client->output.emplace_back(fmt::format("errno={}\n\n", EPERM));
     }
     client->input.clear();
@@ -242,7 +250,7 @@ static std::vector<ClientSetCommand> parse_set(std::deque<std::string> &input, I
                 cmds.back().update_only = true;
             } else if (cmd.starts_with("preshared_key=")) {
                 auto psk_str = cmd.substr(sizeof("preshared_key=") - 1);
-                uint8_t psk[32];
+                uint8_t psk[32]; // NOLINT
                 if (!parse_keybytes(psk, psk_str.c_str()))
                     throw ControlCommandException(EINVAL);
                 cmds.back().preshared_key = std::to_array(psk);
@@ -346,7 +354,7 @@ void ControlWorker::do_cmd_set(ControlClient *cc) {
         }
     }
 
-    cc->output.emplace_back(fmt::format("errno=0\n\n", ret));
+    cc->output.emplace_back(fmt::format("errno={}\n\n", ret));
 }
 
 void ControlWorker::do_cmd_set_privkey(const InterfaceCommand &iface_cmd) {
@@ -448,10 +456,11 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
         newclient->psk = cmd.preshared_key.value_or(oldclient->psk);
         newclient->keepalive = cmd.persistent_keepalive_interval.value_or(oldclient->keepalive);
         {
-            auto [ns, os] = boost::synchronize(newclient->state, oldclient->state);
+            auto ns = newclient->state.synchronize();
             if (!oldclient || cmd.replace_allowed_ips) {
                 ns->allowed_ips = boost::unordered_flat_set<IpRange>(cmd.allowed_ip.begin(), cmd.allowed_ip.end());
             } else {
+                auto os = oldclient->state.synchronize();
                 ns->allowed_ips = os->allowed_ips;
                 ns->allowed_ips.insert(cmd.allowed_ip.begin(), cmd.allowed_ip.end());
             }
@@ -518,7 +527,7 @@ const Client *ControlWorker::do_add_client(RundownGuard &rcu, Config *config, Cl
             (*handle).handle = handle;
         }
 
-    } catch (const ControlCommandException &) {
+    } catch (const ControlCommandException &ex) {
         free_client_id(newclient->index);
         delete newclient;
         throw;

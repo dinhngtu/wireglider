@@ -29,19 +29,19 @@ struct ClientBuffer : public boost::intrusive::list_base_hook<> {
     }
 };
 
-constexpr PacketBatchIterator begin(ClientBuffer &pb) {
+static inline PacketBatchIterator begin(ClientBuffer &pb) {
     return PacketBatchIterator(pb.segment_size, pb.data.begin(), pb.data.end());
 }
 
-constexpr PacketBatchIterator end(ClientBuffer &pb) {
+static inline PacketBatchIterator end(ClientBuffer &pb) {
     return PacketBatchIterator(pb.segment_size, pb.data.end(), pb.data.end());
 }
 
-constexpr PacketBatchIterator begin(const ClientBuffer &pb) {
+static inline PacketBatchIterator begin(const ClientBuffer &pb) {
     return PacketBatchIterator(pb.segment_size, pb.data.begin(), pb.data.end());
 }
 
-constexpr PacketBatchIterator end(const ClientBuffer &pb) {
+static inline PacketBatchIterator end(const ClientBuffer &pb) {
     return PacketBatchIterator(pb.segment_size, pb.data.end(), pb.data.end());
 }
 

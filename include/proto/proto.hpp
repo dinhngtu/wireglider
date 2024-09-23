@@ -34,17 +34,17 @@ static inline NoiseErrorCategory noise_category() {
 
 static const uint64_t RekeyAfterMessages = 1ull << 60;
 static const uint64_t RejectAfterMessages = UINT64_MAX - (1ull << 13);
-static const long Second = 1'000'000'000l;
-static const long Millisecond = 1'000'000l;
-static const long RekeyAfterTime = Second * 120;
-static const long RekeyAttemptTime = Second * 90;
-static const long RekeyTimeout = Second * 5;
+static const long OneSecond = 1'000'000'000l;
+static const long OneMillisecond = 1'000'000l;
+static const long RekeyAfterTime = OneSecond * 120;
+static const long RekeyAttemptTime = OneSecond * 90;
+static const long RekeyTimeout = OneSecond * 5;
 static const long MaxTimerHandshakes = 90 / 5;
 static const long RekeyTimeoutJitterMaxMs = 333;
-static const long RejectAfterTime = Second * 180;
-static const long KeepaliveTimeout = Second * 10;
-static const long CookieRefreshTime = Second * 120;
-static const long HandshakeInitationRate = Second / 50;
+static const long RejectAfterTime = OneSecond * 180;
+static const long KeepaliveTimeout = OneSecond * 10;
+static const long CookieRefreshTime = OneSecond * 120;
+static const long HandshakeInitationRate = OneSecond / 50;
 static const uint64_t PaddingMultiple = 16;
 
 struct [[gnu::packed]] Handshake1 {
@@ -180,6 +180,10 @@ enum class ProtoSignal {
     // Handshake attempts have failed. Any queued packets need to be removed.
     NeedsQueueClear = 16,
 };
+
+static inline bool operator!(ProtoSignal a) {
+    return !static_cast<std::underlying_type_t<ProtoSignal>>(a);
+}
 
 static inline ProtoSignal operator&(ProtoSignal a, ProtoSignal b) {
     return static_cast<ProtoSignal>(

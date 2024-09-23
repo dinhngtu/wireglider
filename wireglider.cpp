@@ -163,7 +163,7 @@ static void doit(Args &args) {
             TimerArg{
                 .id = i,
                 .clients = &clients,
-                .queue = &timerq[i],
+                .queue = &timerq[i].queue,
                 .server = &server[i % server.size()],
             });
     }

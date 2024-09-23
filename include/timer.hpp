@@ -1,6 +1,5 @@
 #pragma once
 
-#include <vector>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
 #include <boost/heap/fibonacci_heap.hpp>
@@ -39,7 +38,7 @@ struct TimerQueue {
 struct TimerArg {
     unsigned int id;
     ClientTable *clients;
-    timer_impl::TimerQueue queue;
+    boost::synchronized_value<timer_impl::ClientTimer::ClientTimerQueue> *queue;
     UdpServer *server;
 };
 
@@ -81,7 +80,6 @@ private:
     tdutil::FileDescriptor _timer;
     uint64_t _period = 100'000'000ull;
     tdutil::EpollManager<> _poll;
-    std::vector<uint8_t> _scratch;
     worker_impl::ServerSendQueue _sendq;
     uint32_t _poll_server = 0;
 };

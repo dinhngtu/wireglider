@@ -23,12 +23,6 @@ struct ServerSendBase : public boost::intrusive::list_base_hook<> {
     }
 
     virtual outcome::result<void> send(int fd) = 0;
-
-    struct deleter {
-        void operator()(ServerSendBase *self) {
-            delete self;
-        }
-    };
 };
 
 struct ServerSendBatch : public ServerSendBase {

@@ -76,7 +76,7 @@ static constexpr NoiseBuffer noise_output(std::span<uint8_t> span) {
     return ret;
 }
 
-static constexpr NoiseBuffer noise_inout(std::span<uint8_t> span, size_t datasize) {
+[[maybe_unused]] static constexpr NoiseBuffer noise_inout(std::span<uint8_t> span, size_t datasize) {
     NoiseBuffer ret;
     noise_buffer_set_inout(ret, span.data(), datasize, span.size());
     return ret;
@@ -369,7 +369,7 @@ outcome::result<Handshake1 *> Peer::write_handshake1(
     }
 
     zeroize_result.reset();
-    _next_hs1_retry = now + (RekeyTimeout + randombytes_uniform(RekeyTimeoutJitterMaxMs) * Millisecond);
+    _next_hs1_retry = now + (RekeyTimeout + randombytes_uniform(RekeyTimeoutJitterMaxMs) * OneMillisecond);
     return hs1;
 }
 
@@ -440,7 +440,6 @@ outcome::result<std::span<uint8_t>> Peer::write_handshake2(
     if (!_proto.is_role(NOISE_ROLE_RESPONDER) || !_proto.is_action(NOISE_ACTION_WRITE_MESSAGE) || !half)
         return outcome::failure(std::error_code(EINVAL, std::generic_category()));
 
-    // TODO
     if (out.size() < sizeof(Handshake2))
         return outcome::failure(std::error_code(ENOBUFS, std::generic_category()));
     sodium_memzero(out.data(), sizeof(Handshake2));
@@ -491,7 +490,6 @@ DecryptResult Peer::decrypt(const timespec &now, std::span<uint8_t> out, std::sp
         session = &_session;
     else
         return DecryptError::NoSession;
-    // TODO: timers
 
     auto hdr = reinterpret_cast<const DataHeader *>(in.data());
     if (hdr->counter > RejectAfterMessages)
@@ -530,7 +528,6 @@ DecryptResult Peer::decrypt(const timespec &now, std::span<uint8_t> out, std::sp
 EncryptResult Peer::encrypt(const timespec &now, std::span<uint8_t> out, std::span<const uint8_t> in) {
     if (!_session.exists() || _session.expired(now))
         return EncryptError::NoSession;
-    // TODO: timers
 
     auto padded_size = round_up(in.size(), 16);
     if (out.size() < sizeof(DataHeader) + padded_size + crypto_aead_chacha20poly1305_IETF_ABYTES)
@@ -585,7 +582,8 @@ ProtoSignal Peer::tick(const timespec &now) {
         signal |= ProtoSignal::SessionWasReset;
         return signal;
     }
-    if (_proto.is_role(NOISE_ROLE_INITIATOR) && _proto.is_action(NOISE_ACTION_READ_MESSAGE) && now > _next_hs1_retry)
+    if (_proto.is_role(NOISE_ROLE_INITIATOR) && _proto.is_action(NOISE_ACTION_READ_MESSAGE) &&
+        (now - _next_hs1_retry) > 0)
         signal |= ProtoSignal::NeedsHandshake;
     if (_session.exists()) {
         if (_session.last_send - now > KeepaliveTimeout)

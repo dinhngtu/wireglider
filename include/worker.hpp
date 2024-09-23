@@ -47,10 +47,10 @@ private:
 
     void do_server(epoll_event *ev);
     int do_server_recv([[maybe_unused]] epoll_event *ev, worker_impl::DecapRecvBatch &drb);
-    std::optional<worker_impl::DecapBatch> do_server_decap(
-        worker_impl::PacketBatch pb,
-        ClientEndpoint ep,
-        std::vector<uint8_t> &scratch);
+    // std::optional<worker_impl::DecapBatch> do_server_decap(
+    // worker_impl::PacketBatch pb,
+    // ClientEndpoint ep,
+    // std::vector<uint8_t> &scratch);
     // memory must live for the duration of the DecapRefBatch
     std::optional<worker_impl::DecapRefBatch> do_server_decap_ref(
         worker_impl::PacketBatch pb,

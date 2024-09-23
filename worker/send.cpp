@@ -13,7 +13,7 @@ void Worker::do_server_send() {
     while (!_serversend.empty()) {
         auto ret = _serversend.front().send(_arg.server->fd());
         if (ret)
-            _serversend.pop_front_and_dispose(ServerSendBase::deleter{});
+            _serversend.pop_front_and_dispose(std::default_delete<ServerSendBase>{});
         else
             break;
     }

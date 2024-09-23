@@ -24,7 +24,7 @@
 CPPFLAGS+=-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -MMD -MP
 CPPFLAGS+=-Iinclude -Iinclude/util -Iinclude/netio -Iinclude/proto
 CFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -std=c11 -fwrapv -fno-strict-aliasing
-CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -Wold-style-cast -std=c++20 -fwrapv -fno-strict-aliasing
+CXXFLAGS+=-Wall -Wextra -Wformat=2 -Werror=shadow -Werror=return-type -Wold-style-cast -Wno-invalid-offsetof -std=c++20 -fwrapv -fno-strict-aliasing
 
 USE_CLANG?=0
 ifeq ($(USE_CLANG),1)
@@ -112,6 +112,7 @@ NOISEC_ROOT?=$(realpath ../noise-c)
 # ./autogen.sh; ./configure --with-libsodium; make
 CPPFLAGS+=-isystem $(NOISEC_ROOT)/include
 LDFLAGS+=-L$(NOISEC_ROOT)/src/protocol
+LDLIBS+=-lnoiseprotocol
 
 # requires libtins-dev
 TINS_CPPFLAGS+=$(shell pkg-config --cflags libtins)
@@ -186,7 +187,6 @@ $(TESTS): LDLIBS=-ltdutil -lfmt -lfastcsum $(CATCH_LDLIBS) $(TINS_LDLIBS)
 OBJECTS=\
 	worker.o \
 	worker/decap.o \
-	worker/decap_own.o \
 	worker/decap_ref.o \
 	worker/encap.o \
 	worker/offload.o \
@@ -196,6 +196,9 @@ OBJECTS=\
 	worker/send.o \
 	worker/write_own.o \
 	worker/write_ref.o \
+	proto/noise_error.o \
+	proto/tai64n.o \
+	proto/proto.o \
 	control.o \
 	timer.o \
 	netutil.o \
@@ -247,7 +250,7 @@ run: wireglider
 	sudo ./run.sh
 
 debug: wireglider
-	sudo gdb -ex "start -a 0.0.0.0:51820 -A 10.77.44.2/24 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM= -j 8" ./$<
+	sudo gdb -ex "start -a 0.0.0.0:51820 -A 10.77.44.1/24 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM=" ./$<
 
 check: tests
 	@if (for test in $(TESTS); do echo $$test; $$test || exit; done); then \

@@ -1,8 +1,11 @@
+#include <memory>
 #include <system_error>
 #include <sys/signalfd.h>
 #include <sys/timerfd.h>
 #include <fmt/format.h>
 
+#include "client.hpp"
+#include "proto.hpp"
 #include "wireglider.hpp"
 #include "timer.hpp"
 #include "netutil.hpp"
@@ -11,6 +14,7 @@
 #include "tai64n.hpp"
 
 using namespace tdutil;
+using namespace wireglider::proto;
 using namespace wireglider::time;
 using namespace wireglider::timer_impl;
 using namespace wireglider::worker_impl;
@@ -22,7 +26,7 @@ void timer_func(TimerArg arg) {
     w.run();
 }
 
-TimerWorker::TimerWorker(const TimerArg &arg) : _arg(arg), _scratch(2048) {
+TimerWorker::TimerWorker(const TimerArg &arg) : _arg(arg) {
 }
 
 void TimerWorker::run() {
@@ -73,36 +77,84 @@ void TimerWorker::run() {
     }
 }
 
+static outcome::result<std::pair<std::span<uint8_t>, ProtoSignal>, EncryptError> unbuffer_packets(
+    wireglider::ClientBuffer &top,
+    const Client *client,
+    boost::strict_lock_ptr<ClientState> &state,
+    ServerSendMultilist *tosend,
+    std::span<uint8_t> remain,
+    const timespec &now) {
+    auto protosgn = ProtoSignal::Ok;
+    for (auto pkt : top) {
+        auto result = BOOST_OUTCOME_TRYX(state->peer->encrypt(now, remain, pkt));
+        auto outsize = result.outsize;
+        tosend->push_back({remain.data(), outsize}, client->epkey);
+        remain = remain.subspan(outsize);
+        protosgn &= result.signal;
+    }
+    return {remain, protosgn};
+}
+
 void TimerWorker::do_timer_step(const Client *client) {
+    static thread_local std::vector<uint8_t> scratch(65536);
+
+    auto state = client->state.synchronize();
+    auto now = time::gettime(CLOCK_MONOTONIC);
+
+    auto ticksgn = state->peer->tick(now);
+    if (!!(ticksgn & ProtoSignal::NeedsQueueClear)) {
+        state->buffer.clear_and_dispose(std::default_delete<ClientBuffer>{});
+    }
+    if (!!(ticksgn & ProtoSignal::SessionWasReset)) {
+        return;
+    }
+
     auto tosend = new ServerSendMultilist();
-    {
-        auto state = client->state.synchronize();
-        auto now = time::gettime(CLOCK_MONOTONIC);
-        std::span remain(_scratch);
-        while (!state->buffer.empty()) {
-            /*
-            auto result = wireguard_tick_raw(client->tunnel, _scratch.data(), _scratch.size());
-            if (result.op == WRITE_TO_NETWORK) {
-                tosend->push_back(iovec{_scratch.data(), result.size}, client->epkey);
-            } else if (result.op == WRITE_TO_TUNNEL_IPV4 || result.op == WRITE_TO_TUNNEL_IPV6) {
-                fmt::print("got unexpected tunnel write during timer tick");
-                break;
-            } else {
-                break;
-            }
-             */
-            auto &top = state->buffer.front();
-            for (auto pkt : top) {
-                // TODO
-                auto result = state->peer->encrypt(now, remain, pkt);
-                if (result) {
-                    remain = remain.subspan(result.assume_value().outsize);
-                    // protosgn &= result.signal;
-                    //  TODO: protosgn
-                }
-            }
+    std::span remain(scratch);
+    bool sent_handshake = false, sent_keepalive = false;
+
+    if (!!(ticksgn & ProtoSignal::NeedsHandshake)) {
+        auto hs = state->peer->write_handshake1(now, client->pubkey, remain);
+        if (hs)
+            tosend->push_back({remain.data(), sizeof(Handshake1)}, client->epkey);
+        sent_handshake = true;
+    } else if (!!(ticksgn & ProtoSignal::NeedsKeepalive)) {
+        auto ka = state->peer->encrypt(now, remain, {});
+        if (ka)
+            tosend->push_back({remain.data(), ka.assume_value().outsize}, client->epkey);
+    }
+
+    while (!state->buffer.empty()) {
+        /*
+        auto result = wireguard_tick_raw(client->tunnel, scratch.data(), scratch.size());
+        if (result.op == WRITE_TO_NETWORK) {
+            tosend->push_back(iovec{scratch.data(), result.size}, client->epkey);
+        } else if (result.op == WRITE_TO_TUNNEL_IPV4 || result.op == WRITE_TO_TUNNEL_IPV6) {
+            fmt::print("got unexpected tunnel write during timer tick");
+            break;
+        } else {
+            break;
+        }
+         */
+        auto &top = state->buffer.front();
+        auto result = unbuffer_packets(top, client, state, tosend, remain, now);
+        if (!result)
+            break;
+        ProtoSignal protosgn;
+        std::tie(remain, protosgn) = result.assume_value();
+        if (!sent_handshake && !!(protosgn & ProtoSignal::NeedsHandshake)) {
+            auto hs = state->peer->write_handshake1(now, client->pubkey, remain);
+            if (hs)
+                tosend->push_back({remain.data(), sizeof(Handshake1)}, client->epkey);
+            sent_handshake = true;
+        } else if (!sent_keepalive & !!(protosgn & ProtoSignal::NeedsKeepalive)) {
+            auto ka = state->peer->encrypt(now, remain, {});
+            if (ka)
+                tosend->push_back({remain.data(), ka.assume_value().outsize}, client->epkey);
+            sent_keepalive = true;
         }
     }
+
     tosend->finalize();
     if (tosend->send(_arg.server->fd())) {
         delete tosend;
@@ -121,7 +173,7 @@ void TimerWorker::do_timer(epoll_event *ev) {
     bool overloaded = false;
     auto now = gettime64(CLOCK_MONOTONIC);
     RundownGuard rcu;
-    auto tq = _arg.queue.queue.synchronize();
+    auto tq = _arg.queue->synchronize();
     while (!tq->empty() && tq->top().nexttime <= now) {
         bool expired = false;
         // make a copy for mutability
@@ -155,7 +207,7 @@ void TimerWorker::do_server(epoll_event *ev) {
         while (!_sendq.empty()) {
             auto ret = _sendq.front().send(_arg.server->fd());
             if (ret)
-                _sendq.pop_front_and_dispose(ServerSendBase::deleter{});
+                _sendq.pop_front_and_dispose(std::default_delete<ServerSendBase>{});
             else
                 break;
         }

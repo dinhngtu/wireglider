@@ -28,19 +28,19 @@ struct PacketBatch {
     }
 };
 
-constexpr PacketBatchIterator begin(PacketBatch &pb) {
+static inline PacketBatchIterator begin(PacketBatch &pb) {
     return PacketBatchIterator(pb.segment_size, pb.data.begin(), pb.data.end());
 }
 
-constexpr PacketBatchIterator end(PacketBatch &pb) {
+static inline PacketBatchIterator end(PacketBatch &pb) {
     return PacketBatchIterator(pb.segment_size, pb.data.end(), pb.data.end());
 }
 
-constexpr PacketBatchIterator begin(const PacketBatch &pb) {
+static inline PacketBatchIterator begin(const PacketBatch &pb) {
     return PacketBatchIterator(pb.segment_size, pb.data.begin(), pb.data.end());
 }
 
-constexpr PacketBatchIterator end(const PacketBatch &pb) {
+static inline PacketBatchIterator end(const PacketBatch &pb) {
     return PacketBatchIterator(pb.segment_size, pb.data.end(), pb.data.end());
 }
 

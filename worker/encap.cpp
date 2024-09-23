@@ -96,20 +96,6 @@ outcome::result<std::span<uint8_t>> Worker::do_tun_recv(std::vector<uint8_t> &ou
     return rest;
 }
 
-static outcome::result<std::pair<std::span<uint8_t>, ProtoSignal>, EncryptError> encrypt_packets(
-    PacketBatch &pb,
-    boost::strict_lock_ptr<ClientState> &state,
-    std::span<uint8_t> remain,
-    const timespec &now) {
-    auto protosgn = ProtoSignal::Ok;
-    for (auto pkt : pb) {
-        auto result = BOOST_OUTCOME_TRYX(state->peer->encrypt(now, remain, pkt));
-        remain = remain.subspan(result.outsize);
-        protosgn &= result.signal;
-    }
-    return {remain, protosgn};
-}
-
 std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     PacketBatch &pb,
     std::vector<uint8_t> &outbuf,
@@ -144,23 +130,30 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
 
     std::span<uint8_t> remain(outbuf);
     auto expected_segment_size = Peer::expected_encrypt_size(pb.segment_size);
-    size_t unrel_current = 0;
     auto now = time::gettime(CLOCK_MONOTONIC);
     {
         auto state = client->state.synchronize();
-        auto result = encrypt_packets(pb, state, remain, now);
-        if (!result) {
-            switch (result.assume_error()) {
-            case EncryptError::NoSession: {
+        auto protosgn = ProtoSignal::Ok;
+        for (auto pkt : pb) {
+            auto result = state->peer->encrypt(now, remain, pkt);
+            if (result) {
+                remain = remain.subspan(result.assume_value().outsize);
+                protosgn &= result.assume_value().signal;
+            } else if (result.assume_error() == EncryptError::NoSession) {
                 auto buf = new ClientBuffer(remain.begin(), remain.end(), pb.segment_size, true);
                 state->buffer.push_back(*buf);
-                break;
             }
-            case EncryptError::BufferError:
-                throw std::runtime_error("insufficient encrypt buffer");
-            default:
-                throw std::runtime_error("unhandled encrypt error");
-            }
+        }
+        if (!!(protosgn & ProtoSignal::NeedsHandshake)) {
+            auto hs = state->peer->write_handshake1(now, client->pubkey, unrelbuf);
+            if (hs)
+                unreliov.push_back({unrelbuf.data(), sizeof(Handshake1)});
+            else
+                return std::nullopt;
+        } else if (!!(protosgn & ProtoSignal::NeedsKeepalive)) {
+            auto ka = state->peer->encrypt(now, unrelbuf, {});
+            if (ka)
+                unreliov.push_back({unrelbuf.data(), ka.assume_value().outsize});
         }
     }
     PacketBatch newpb{
