@@ -201,6 +201,7 @@ OBJECTS=\
 	netutil.o \
 	prefix.o \
 	checksum.o \
+	base64.o \
 	liblinux/maple_tree.o \
 	liblinux/kernel_compat.o \
 

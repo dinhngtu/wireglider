@@ -1,9 +1,12 @@
+#include <boost/algorithm/hex.hpp>
 #include <boost/endian/conversion.hpp>
 #include <cstring>
 #include <noise/protocol/constants.h>
+#include <string_view>
 #include <tdutil/util.hpp>
 
 #include "proto.hpp"
+#include "util/base64.hpp"
 
 /*
  * Protocol conformance:
@@ -81,9 +84,26 @@ static constexpr NoiseBuffer noise_inout(std::span<uint8_t> span, size_t datasiz
 
 namespace wireglider {
 
-bool parse_keybytes(uint8_t (&key)[32], const char *str) {
-    // TODO
-    return false;
+bool parse_keybytes(uint8_t (&key)[32], const char *str) { // NOLINT(cppcoreguidelines-avoid-c-arrays)
+    auto s = std::string_view(str);
+    switch (s.length()) {
+    case 64:
+        /*
+        for (auto i = 0; i < 32; i++) {
+            auto res = std::from_chars(&s[i], &s[i + 2], key[i], 16);
+            if (res.ec != std::errc{} || res.ptr != &s[i + 2])
+                return false;
+        }
+        */
+        return boost::algorithm::unhex(s.begin(), s.end(), std::begin(key)) == std::end(key);
+    case 43:
+    case 44: {
+        auto [written, read] = wireglider::base64::decode(&key[0], s.data(), s.size());
+        return written == 32;
+    }
+    default:
+        return false;
+    }
 }
 
 } // namespace wireglider
