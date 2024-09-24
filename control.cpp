@@ -250,7 +250,7 @@ static std::vector<ClientSetCommand> parse_set(std::deque<std::string> &input, I
                 cmds.back().update_only = true;
             } else if (cmd.starts_with("preshared_key=")) {
                 auto psk_str = cmd.substr(sizeof("preshared_key=") - 1);
-                uint8_t psk[32]; // NOLINT
+                uint8_t psk[32]; // NOLINT(cppcoreguidelines-avoid-c-arrays)
                 if (!parse_keybytes(psk, psk_str.c_str()))
                     throw ControlCommandException(EINVAL);
                 cmds.back().preshared_key = std::to_array(psk);
@@ -388,7 +388,7 @@ void ControlWorker::do_cmd_flush_tables(RundownGuard &rcu) {
     _arg.clients->clear(rcu);
 }
 
-const Client *ControlWorker::do_remove_client(RundownGuard &rcu, Config *config, const PublicKey &public_key) {
+const Client *ControlWorker::do_remove_client(RundownGuard &rcu, Config *config, const Key256 &public_key) {
     auto it = _arg.clients->find(rcu, public_key);
     if (it != _arg.clients->end()) {
         auto oldclient = it.get();

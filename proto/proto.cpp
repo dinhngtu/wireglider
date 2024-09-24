@@ -2,10 +2,12 @@
 #include <boost/endian/conversion.hpp>
 #include <cstring>
 #include <noise/protocol/constants.h>
+#include <noise/protocol/hashstate.h>
 #include <string_view>
 #include <tdutil/util.hpp>
 
 #include "proto.hpp"
+#include "dbgprint.hpp"
 #include "util/base64.hpp"
 
 /*
@@ -140,8 +142,8 @@ outcome::result<NoiseProtocolId> Peer::make_proto_id() {
 
 outcome::result<Handshake> Peer::create_handshake(
     const NoiseProtocolId &nid,
-    const PublicKey &server_privkey,
-    const PublicKey *pubkey,
+    const Key256 &server_privkey,
+    const Key256 *pubkey,
     std::span<const uint8_t, 32> psk,
     int role) {
     Handshake hs;
@@ -192,8 +194,8 @@ void Peer::reset_handshake(const timespec &now) {
 
 outcome::result<void> Peer::configure_initiator(
     const timespec &now,
-    const PublicKey &server_privkey,
-    const PublicKey &pubkey,
+    const Key256 &server_privkey,
+    const Key256 &pubkey,
     std::span<const uint8_t, 32> psk) {
     reset_handshake(now);
 
@@ -210,7 +212,7 @@ outcome::result<void> Peer::configure_initiator(
 
 outcome::result<void> Peer::configure_responder(
     const timespec &now,
-    const PublicKey &server_privkey,
+    const Key256 &server_privkey,
     std::span<const uint8_t, 32> psk) {
     reset_handshake(now);
 
@@ -270,15 +272,15 @@ outcome::result<void> Peer::read_handshake_raw(NoiseHandshakeState *hs, NoiseBuf
     return outcome::success();
 }
 
-outcome::result<void> Peer::make_mac1key(const PublicKey &pubkey, std::array<uint8_t, 64> &out) {
+outcome::result<void> Peer::make_mac1key(const Key256 &pubkey, std::span<uint8_t, 32> out) {
     auto err = noise_hashstate_hash_two(
         _blake2s.get(),
         reinterpret_cast<const uint8_t *>(WIREGUARD_LABEL_MAC1),
         strlen(WIREGUARD_LABEL_MAC1),
         &pubkey.key[0],
         std::size(pubkey.key),
-        &out[0],
-        32);
+        out.data(),
+        out.size());
     if (err != NOISE_ERROR_NONE)
         // I feel like this should be fatal but whatever
         return outcome::failure(std::error_code(err, noise_category()));
@@ -286,22 +288,24 @@ outcome::result<void> Peer::make_mac1key(const PublicKey &pubkey, std::array<uin
 }
 
 outcome::result<void> Peer::calculate_mac1(
-    const PublicKey &pubkey,
+    const Key256 &pubkey,
     std::span<const uint8_t> payload,
     std::span<uint8_t, 16> out) {
     std::array<uint8_t, 64> mac1key = {0};
+    std::array<uint8_t, 32> tmpout = {0};
     auto_cleanup zeroize([&] { sodium_memzero(mac1key.data(), mac1key.size()); });
-    BOOST_OUTCOME_TRY(make_mac1key(pubkey, mac1key));
+    BOOST_OUTCOME_TRY(make_mac1key(pubkey, std::span(mac1key).subspan<0, 32>()));
     auto err = noise_hashstate_hash_two(
         _blake2s.get(),
         mac1key.data(),
         mac1key.size(),
         payload.data(),
         payload.size(),
-        out.data(),
-        out.size());
+        tmpout.data(),
+        tmpout.size());
     if (err != NOISE_ERROR_NONE)
         return outcome::failure(std::error_code(err, noise_category()));
+    std::copy(&tmpout[0], &tmpout[out.size()], &out[0]);
     return outcome::success();
 }
 
@@ -335,7 +339,7 @@ Peer::decode_pkt(std::span<const uint8_t> in) {
 
 outcome::result<Handshake1 *> Peer::write_handshake1(
     const timespec &now,
-    const PublicKey &pubkey,
+    const Key256 &pubkey,
     std::span<uint8_t> out) {
     if (!_proto.is_role(NOISE_ROLE_INITIATOR) || !_proto.is_action(NOISE_ACTION_WRITE_MESSAGE) ||
         !std::holds_alternative<std::monostate>(_pending))
@@ -401,7 +405,7 @@ outcome::result<void> Peer::read_handshake2(const Handshake2 *hs2, const timespe
     return outcome::success();
 }
 
-outcome::result<void> Peer::read_handshake1(const Handshake1 *hs1, const PublicKey &pubkey) {
+outcome::result<void> Peer::read_handshake1(const Handshake1 *hs1, const Key256 &pubkey) {
     if (!_proto.is_role(NOISE_ROLE_RESPONDER) || !_proto.is_action(NOISE_ACTION_READ_MESSAGE) ||
         !std::holds_alternative<std::monostate>(_pending))
         return outcome::failure(std::error_code(EINVAL, std::generic_category()));
@@ -434,7 +438,7 @@ outcome::result<void> Peer::read_handshake1(const Handshake1 *hs1, const PublicK
 
 outcome::result<std::span<uint8_t>> Peer::write_handshake2(
     const timespec &now,
-    const PublicKey &pubkey,
+    const Key256 &pubkey,
     std::span<uint8_t> out) {
     auto half = std::get_if<HalfSessionState>(&_pending);
     if (!_proto.is_role(NOISE_ROLE_RESPONDER) || !_proto.is_action(NOISE_ACTION_WRITE_MESSAGE) || !half)

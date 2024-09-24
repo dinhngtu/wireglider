@@ -1,4 +1,6 @@
+#include "proto.hpp"
 #include "worker.hpp"
+#include <variant>
 
 using namespace wireglider::proto;
 using namespace wireglider::worker_impl;
@@ -48,13 +50,35 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
         auto state = it->state.synchronize();
         auto protosgn = ProtoSignal::Ok;
         for (auto pkt : pb) {
-            auto result = state->peer->decrypt(now, remain, pkt);
-            if (result) {
-                auto outsize = result.assume_value().outsize;
-                auto outpkt = remain.subspan(0, outsize);
-                remain = remain.subspan(outsize);
-                batch.push_packet(outpkt, pb.ecn);
-                protosgn &= result.assume_value().signal;
+            auto ptype = state->peer->decode_pkt(pkt);
+            if (auto hs1 = std::get_if<const Handshake1 *>(&ptype)) {
+                {
+                    auto config = _arg.config(rcu);
+                    if (!state->peer->configure_responder(now, config->privkey, config->psk.key))
+                        continue;
+                }
+                if (!state->peer->read_handshake1(*hs1, it->pubkey))
+                    continue;
+                auto hs2 = state->peer->write_handshake2(now, it->pubkey, remain);
+                if (hs2)
+                    batch.retpkt.push_back({remain.data(), sizeof(Handshake2)});
+                else
+                    continue;
+                remain = remain.subspan(0, sizeof(Handshake2));
+            } else if (auto hs2 = std::get_if<const Handshake2 *>(&ptype)) {
+                if (!state->peer->read_handshake2(*hs2, now))
+                    continue;
+            } else if (std::holds_alternative<const CookiePacket *>(ptype)) {
+                // not implemented
+            } else if (std::holds_alternative<std::span<const uint8_t>>(ptype)) {
+                auto result = state->peer->decrypt(now, remain, pkt);
+                if (result) {
+                    auto outsize = result.assume_value().outsize;
+                    auto outpkt = remain.subspan(0, outsize);
+                    remain = remain.subspan(outsize);
+                    batch.push_packet(outpkt, pb.ecn);
+                    protosgn &= result.assume_value().signal;
+                }
             }
         }
         if (!!(protosgn & ProtoSignal::NeedsHandshake)) {

@@ -47,6 +47,8 @@ static const long CookieRefreshTime = OneSecond * 120;
 static const long HandshakeInitationRate = OneSecond / 50;
 static const uint64_t PaddingMultiple = 16;
 
+// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays)
+
 struct [[gnu::packed]] Handshake1 {
     boost::endian::little_uint32_t message_type_and_zeroes;
     boost::endian::little_uint32_t sender_index;
@@ -76,6 +78,8 @@ struct [[gnu::packed]] DataHeader {
     boost::endian::little_uint32_t receiver_index;
     boost::endian::little_uint64_t counter;
 };
+
+// NOLINTEND(cppcoreguidelines-avoid-c-arrays)
 
 using Handshake = tdutil::auto_handle<noise_handshakestate_free>;
 using Hash = tdutil::auto_handle<noise_hashstate_free>;
@@ -225,27 +229,26 @@ public:
     ~Peer() {
     }
 
-    // Reset handshake state and set handshake birth time.
-    void reset_handshake(const timespec &now);
-    // Reset handshake and active session.
-    void reset_all(const timespec &now) {
-        reset_handshake(now);
-        _session.reset();
-    }
+    outcome::result<void> configure_initiator(
+        const timespec &now,
+        const Key256 &server_privkey,
+        const Key256 &pubkey,
+        std::span<const uint8_t, 32> psk);
+    outcome::result<void> configure_responder(
+        const timespec &now,
+        const Key256 &server_privkey,
+        std::span<const uint8_t, 32> psk);
 
     std::variant<std::monostate, const Handshake1 *, const Handshake2 *, const CookiePacket *, std::span<const uint8_t>>
     decode_pkt(std::span<const uint8_t> in);
 
-    outcome::result<Handshake1 *> write_handshake1(
-        const timespec &now,
-        const PublicKey &pubkey,
-        std::span<uint8_t> out);
+    outcome::result<Handshake1 *> write_handshake1(const timespec &now, const Key256 &pubkey, std::span<uint8_t> out);
     outcome::result<void> read_handshake2(const Handshake2 *hs2, const timespec &now);
 
-    outcome::result<void> read_handshake1(const Handshake1 *hs1, const PublicKey &pubkey);
+    outcome::result<void> read_handshake1(const Handshake1 *hs1, const Key256 &pubkey);
     outcome::result<std::span<uint8_t>> write_handshake2(
         const timespec &now,
-        const PublicKey &pubkey,
+        const Key256 &pubkey,
         std::span<uint8_t> out);
 
     DecryptResult decrypt(const timespec &now, std::span<uint8_t> out, std::span<const uint8_t> in);
@@ -267,28 +270,27 @@ public:
     }
 
 private:
+    // Reset handshake state and set handshake birth time.
+    void reset_handshake(const timespec &now);
+    // Reset handshake and active session.
+    void reset_all(const timespec &now) {
+        reset_handshake(now);
+        _session.reset();
+    }
+
     static outcome::result<NoiseProtocolId> make_proto_id();
     static outcome::result<Handshake> create_handshake(
         const NoiseProtocolId &nid,
-        const PublicKey &server_privkey,
-        const PublicKey *pubkey,
+        const Key256 &server_privkey,
+        const Key256 *pubkey,
         std::span<const uint8_t, 32> psk,
         int role);
-    outcome::result<void> configure_initiator(
-        const timespec &now,
-        const PublicKey &server_privkey,
-        const PublicKey &pubkey,
-        std::span<const uint8_t, 32> psk);
-    outcome::result<void> configure_responder(
-        const timespec &now,
-        const PublicKey &server_privkey,
-        std::span<const uint8_t, 32> psk);
     static outcome::result<void> write_handshake_raw(NoiseHandshakeState *hs, NoiseBuffer *out);
     static outcome::result<void> write_handshake_raw(NoiseHandshakeState *hs, time::TAI64N now, NoiseBuffer *out);
     static outcome::result<void> read_handshake_raw(NoiseHandshakeState *hs, NoiseBuffer *in, NoiseBuffer *out);
-    outcome::result<void> make_mac1key(const PublicKey &pubkey, std::array<uint8_t, 64> &out);
+    outcome::result<void> make_mac1key(const Key256 &pubkey, std::span<uint8_t, 32> out);
     outcome::result<void> calculate_mac1(
-        const PublicKey &pubkey,
+        const Key256 &pubkey,
         std::span<const uint8_t> payload,
         std::span<uint8_t, 16> out);
 

@@ -44,14 +44,14 @@ struct ControlClient {
 };
 
 struct InterfaceCommand {
-    PublicKey private_key;
+    Key256 private_key;
     bool has_privkey = false;
     bool replace_peers = false;
 };
 
 struct ClientSetCommand {
     // std::string public_key;
-    PublicKey public_key;
+    Key256 public_key;
     bool remove = false;
     bool update_only = false;
     std::optional<std::array<uint8_t, 32>> preshared_key;
@@ -86,12 +86,12 @@ private:
     void do_cmd_set(control_impl::ControlClient *client);
     void do_cmd_set_privkey(const control_impl::InterfaceCommand &iface_cmd);
     void do_cmd_flush_tables(RundownGuard &rcu);
-    const Client *do_remove_client(RundownGuard &rcu, Config *config, const PublicKey &public_key);
+    const Client *do_remove_client(RundownGuard &rcu, Config *config, const Key256 &public_key);
     // returns **old** client to delete
     const Client *do_add_client(RundownGuard &rcu, Config *config, control_impl::ClientSetCommand &cmd);
 
-    unsigned int client_timer_id(const PublicKey &k) const {
-        return std::hash<PublicKey>{}(k) % _arg.timerq->size();
+    unsigned int client_timer_id(const Key256 &k) const {
+        return std::hash<Key256>{}(k) % _arg.timerq->size();
     }
 
     uint32_t alloc_client_id(Client *client);

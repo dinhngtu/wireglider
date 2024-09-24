@@ -24,7 +24,7 @@ struct ClientTimer {
     };
     using ClientTimerQueue = boost::heap::fibonacci_heap<ClientTimer, boost::heap::compare<ClientTimer::Compare>>;
 
-    PublicKey pubkey;
+    Key256 pubkey;
     mutable uint64_t lasttime, nexttime;
     ClientTimerQueue::handle_type handle;
 };

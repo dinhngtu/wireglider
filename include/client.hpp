@@ -56,7 +56,7 @@ struct Client {
     struct EndpointTag {};
 
     mutable cds_lfht_node pubnode;
-    PublicKey pubkey;
+    Key256 pubkey;
     mutable cds_lfht_node epnode;
     ClientEndpoint epkey;
 
@@ -68,7 +68,7 @@ struct Client {
     mutable boost::synchronized_value<ClientState> state;
 
     // is there a better way to implement this stuff?
-    constexpr const PublicKey &key([[maybe_unused]] PubkeyTag tag) const {
+    constexpr const Key256 &key([[maybe_unused]] PubkeyTag tag) const {
         return pubkey;
     }
     constexpr cds_lfht_node &node([[maybe_unused]] PubkeyTag tag) const {

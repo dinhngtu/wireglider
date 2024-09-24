@@ -69,6 +69,7 @@ static Config *make_config(const Args &args) {
     cfg->prefix6 = prefix6;
     if (!parse_keybytes(cfg->privkey.key, args.private_key.c_str()))
         throw std::invalid_argument("invalid server private key");
+    memset(&cfg->psk.key[0], 0, sizeof(cfg->psk.key));
     return cfg;
 }
 
