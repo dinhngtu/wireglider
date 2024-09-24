@@ -56,9 +56,9 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
                     auto config = _arg.config(rcu);
                     if (!state->peer->configure_responder(now, config->privkey, config->psk.key))
                         continue;
+                    if (!state->peer->read_handshake1(*hs1))
+                        continue;
                 }
-                if (!state->peer->read_handshake1(*hs1, it->pubkey))
-                    continue;
                 auto hs2 = state->peer->write_handshake2(now, it->pubkey, remain);
                 if (hs2)
                     batch.retpkt.push_back({remain.data(), sizeof(Handshake2)});

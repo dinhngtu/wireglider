@@ -244,8 +244,7 @@ public:
 
     outcome::result<Handshake1 *> write_handshake1(const timespec &now, const Key256 &pubkey, std::span<uint8_t> out);
     outcome::result<void> read_handshake2(const Handshake2 *hs2, const timespec &now);
-
-    outcome::result<void> read_handshake1(const Handshake1 *hs1, const Key256 &pubkey);
+    outcome::result<void> read_handshake1(const Handshake1 *hs1);
     outcome::result<std::span<uint8_t>> write_handshake2(
         const timespec &now,
         const Key256 &pubkey,
@@ -288,7 +287,9 @@ private:
     static outcome::result<void> write_handshake_raw(NoiseHandshakeState *hs, NoiseBuffer *out);
     static outcome::result<void> write_handshake_raw(NoiseHandshakeState *hs, time::TAI64N now, NoiseBuffer *out);
     static outcome::result<void> read_handshake_raw(NoiseHandshakeState *hs, NoiseBuffer *in, NoiseBuffer *out);
-    outcome::result<void> make_mac1key(const Key256 &pubkey, std::span<uint8_t, 32> out);
+
+    Key256 get_my_pubkey();
+    void make_mac1key(const Key256 &pubkey, std::span<uint8_t, 32> out);
     outcome::result<void> calculate_mac1(
         const Key256 &pubkey,
         std::span<const uint8_t> payload,

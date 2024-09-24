@@ -8,6 +8,7 @@
 
 #include "proto.hpp"
 #include "dbgprint.hpp"
+#include "keys.hpp"
 #include "util/base64.hpp"
 
 /*
@@ -272,7 +273,18 @@ outcome::result<void> Peer::read_handshake_raw(NoiseHandshakeState *hs, NoiseBuf
     return outcome::success();
 }
 
-outcome::result<void> Peer::make_mac1key(const Key256 &pubkey, std::span<uint8_t, 32> out) {
+Key256 Peer::get_my_pubkey() {
+    Key256 my_pubkey;
+    auto mydh = noise_handshakestate_get_local_keypair_dh(_proto.handshake.get());
+    if (!mydh)
+        throw std::runtime_error("cannot get local pubkey");
+    auto err = noise_dhstate_get_public_key(mydh, &my_pubkey.key[0], std::size(my_pubkey.key));
+    if (err != NOISE_ERROR_NONE)
+        throw std::system_error(err, noise_category(), "noise_dhstate_get_public_key");
+    return my_pubkey;
+}
+
+void Peer::make_mac1key(const Key256 &pubkey, std::span<uint8_t, 32> out) {
     auto err = noise_hashstate_hash_two(
         _blake2s.get(),
         reinterpret_cast<const uint8_t *>(WIREGUARD_LABEL_MAC1),
@@ -282,9 +294,7 @@ outcome::result<void> Peer::make_mac1key(const Key256 &pubkey, std::span<uint8_t
         out.data(),
         out.size());
     if (err != NOISE_ERROR_NONE)
-        // I feel like this should be fatal but whatever
-        return outcome::failure(std::error_code(err, noise_category()));
-    return outcome::success();
+        throw std::system_error(err, noise_category(), "make_mac1key");
 }
 
 outcome::result<void> Peer::calculate_mac1(
@@ -294,7 +304,7 @@ outcome::result<void> Peer::calculate_mac1(
     std::array<uint8_t, 64> mac1key = {0};
     std::array<uint8_t, 32> tmpout = {0};
     auto_cleanup zeroize([&] { sodium_memzero(mac1key.data(), mac1key.size()); });
-    BOOST_OUTCOME_TRY(make_mac1key(pubkey, std::span(mac1key).subspan<0, 32>()));
+    make_mac1key(pubkey, std::span(mac1key).subspan<0, 32>());
     auto err = noise_hashstate_hash_two(
         _blake2s.get(),
         mac1key.data(),
@@ -382,6 +392,16 @@ outcome::result<void> Peer::read_handshake2(const Handshake2 *hs2, const timespe
         !std::holds_alternative<std::monostate>(_pending))
         return outcome::failure(std::error_code(EINVAL, std::generic_category()));
 
+    auto my_pubkey = get_my_pubkey();
+
+    std::array<uint8_t, 16> mac1test;
+    BOOST_OUTCOME_TRY(calculate_mac1(
+        my_pubkey,
+        std::span(reinterpret_cast<const uint8_t *>(hs2), offsetof(Handshake2, mac1)),
+        std::span(mac1test)));
+    if (sodium_memcmp(&mac1test[0], &hs2->mac1[0], std::size(mac1test)) != 0)
+        return outcome::failure(std::error_code(ENOENT, std::generic_category()));
+
     uint32_t rid = hs2->sender_index, lid = hs2->receiver_index;
     if (lid != _local_index)
         return outcome::failure(std::error_code(ENOENT, std::generic_category()));
@@ -405,16 +425,18 @@ outcome::result<void> Peer::read_handshake2(const Handshake2 *hs2, const timespe
     return outcome::success();
 }
 
-outcome::result<void> Peer::read_handshake1(const Handshake1 *hs1, const Key256 &pubkey) {
+outcome::result<void> Peer::read_handshake1(const Handshake1 *hs1) {
     if (!_proto.is_role(NOISE_ROLE_RESPONDER) || !_proto.is_action(NOISE_ACTION_READ_MESSAGE) ||
         !std::holds_alternative<std::monostate>(_pending))
         return outcome::failure(std::error_code(EINVAL, std::generic_category()));
 
     // TODO: verify mac2
 
+    auto my_pubkey = get_my_pubkey();
+
     std::array<uint8_t, 16> mac1test;
     BOOST_OUTCOME_TRY(calculate_mac1(
-        pubkey,
+        my_pubkey,
         std::span(reinterpret_cast<const uint8_t *>(hs1), offsetof(Handshake1, mac1)),
         std::span(mac1test)));
     if (sodium_memcmp(&mac1test[0], &hs1->mac1[0], std::size(mac1test)) != 0)
