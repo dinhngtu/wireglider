@@ -5,6 +5,50 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "(gdb) Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/wireglider",
+            "args": [
+                "-a",
+                "0.0.0.0:51820",
+                "-A",
+                "10.77.44.1/24",
+                "-k",
+                "CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM="
+            ],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "${workspaceFolder}/gdb-root.sh",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                },
+                {
+                    "text": "-exec skip -gfi /usr/include/c++/*/*/*",
+                    "ignoreFailures": true,
+                },
+                {
+                    "text": "-exec skip -gfi /usr/include/c++/*/*",
+                    "ignoreFailures": true,
+                },
+                {
+                    "text": "-exec skip -gfi /usr/include/c++/*",
+                    "ignoreFailures": true,
+                }
+            ]
+        },
+        {
             "name": "tests/offload",
             "type": "cppdbg",
             "request": "launch",

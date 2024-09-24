@@ -249,8 +249,8 @@ endif
 run: wireglider
 	sudo ./run.sh
 
-debug: wireglider
-	sudo gdb -ex "start -a 0.0.0.0:51820 -A 10.77.44.1/24 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM=" ./$<
+debug:
+	sudo gdb -ex "start -a 0.0.0.0:51820 -A 10.77.44.1/24 -k CFuyy4SGWowjnqtGOlq3ywHObkOU4EXvD/UFErXcqlM=" ./wireglider
 
 check: tests
 	@if (for test in $(TESTS); do echo $$test; $$test || exit; done); then \

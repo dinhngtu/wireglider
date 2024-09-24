@@ -95,5 +95,20 @@
         "scoped_allocator": "cpp",
         "any": "cpp"
     },
-    "C_Cpp.intelliSenseEngine": "disabled"
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "makefile.configurations": [
+        {
+            "name": "debug",
+            "makeArgs": [
+                "-j",
+                "DEBUG=1"
+            ]
+        },
+        {
+            "name": "release",
+            "makeArgs": [
+                "-j"
+            ]
+        }
+    ]
 }
