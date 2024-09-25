@@ -127,11 +127,6 @@ std::string NoiseErrorCategory::message(int cond) const {
 }
 
 Peer::Peer(uint32_t index) : _nid(make_proto_id().value()), _local_index(index) {
-    NoiseHashState *hash;
-    auto err = noise_hashstate_new_by_id(&hash, NOISE_HASH_BLAKE2s);
-    if (err != NOISE_ERROR_NONE)
-        throw std::system_error(err, noise_category(), "noise_hashstate_new_by_id");
-    _blake2s = Hash(hash);
 }
 
 outcome::result<NoiseProtocolId> Peer::make_proto_id() {
@@ -358,18 +353,16 @@ outcome::result<Handshake1 *> Peer::write_handshake1(
         std::span<const uint8_t>(reinterpret_cast<uint8_t *>(hs1), offsetof(Handshake1, mac1)),
         std::span(hs1->mac1)));
 
-    // TODO: calculate mac2 correctly
     if (now < _proto.cookie_until && !sodium_is_zero(_proto.cookie.data(), _proto.cookie.size())) {
-        auto err = noise_hashstate_hash_two(
-            _blake2s.get(),
-            _proto.cookie.data(),
-            _proto.cookie.size(),
+        auto err = blake2s(
+            std::begin(hs1->mac2),
             reinterpret_cast<uint8_t *>(hs1),
+            _proto.cookie.data(),
+            std::size(hs1->mac2),
             offsetof(Handshake1, mac2),
-            &hs1->mac2[0],
-            std::size(hs1->mac2));
-        if (err != NOISE_ERROR_NONE)
-            return outcome::failure(std::error_code(err, noise_category()));
+            _proto.cookie.size());
+        if (err)
+            throw std::runtime_error("write_handshake1");
     }
 
     zeroize_result.reset();
@@ -475,18 +468,16 @@ outcome::result<std::span<uint8_t>> Peer::write_handshake2(
         std::span<const uint8_t>(reinterpret_cast<uint8_t *>(hs2), offsetof(Handshake2, mac1)),
         std::span(hs2->mac1)));
 
-    // TODO: calculate mac2 correctly
     if (now < _proto.cookie_until && !sodium_is_zero(_proto.cookie.data(), _proto.cookie.size())) {
-        auto err = noise_hashstate_hash_two(
-            _blake2s.get(),
-            _proto.cookie.data(),
-            _proto.cookie.size(),
+        auto err = blake2s(
+            std::begin(hs2->mac2),
             reinterpret_cast<uint8_t *>(hs2),
+            _proto.cookie.data(),
+            std::size(hs2->mac2),
             offsetof(Handshake2, mac2),
-            &hs2->mac2[0],
-            std::size(hs2->mac2));
-        if (err != NOISE_ERROR_NONE)
-            return outcome::failure(std::error_code(err, noise_category()));
+            _proto.cookie.size());
+        if (err)
+            throw std::runtime_error("write_handshake2");
     }
 
     std::array<uint8_t, 32> key1, key2;

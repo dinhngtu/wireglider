@@ -298,7 +298,6 @@ private:
 private:
     // configuration
     NoiseProtocolId _nid;
-    Hash _blake2s;
     uint32_t _local_index = 0;
 
     // sticky states
