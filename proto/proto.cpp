@@ -163,11 +163,9 @@ outcome::result<Handshake> Peer::create_handshake(
     if (err != NOISE_ERROR_NONE)
         throw std::system_error(err, noise_category(), "noise_handshakestate_set_prologue");
 
-    if (!sodium_is_zero(psk.data(), psk.size())) {
-        err = noise_handshakestate_set_pre_shared_key(hs.get(), psk.data(), psk.size());
-        if (err != NOISE_ERROR_NONE)
-            throw std::system_error(err, noise_category(), "noise_handshakestate_set_pre_shared_key");
-    }
+    err = noise_handshakestate_set_pre_shared_key(hs.get(), psk.data(), psk.size());
+    if (err != NOISE_ERROR_NONE)
+        throw std::system_error(err, noise_category(), "noise_handshakestate_set_pre_shared_key");
 
     auto dhl = noise_handshakestate_get_local_keypair_dh(hs.get());
     err = noise_dhstate_set_keypair_private(dhl, &server_privkey.key[0], std::size(server_privkey.key));
@@ -231,10 +229,7 @@ outcome::result<void> Peer::write_handshake_raw(NoiseHandshakeState *hs, NoiseBu
     if (noise_handshakestate_get_action(hs) != NOISE_ACTION_WRITE_MESSAGE)
         throw std::runtime_error("handshake in incorrect state for write");
 
-    NoiseBuffer payload;
-    noise_buffer_init(payload);
-
-    auto err = noise_handshakestate_write_message(hs, out, &payload);
+    auto err = noise_handshakestate_write_message(hs, out, nullptr);
     if (err != NOISE_ERROR_NONE)
         return outcome::failure(std::error_code(err, noise_category()));
 
