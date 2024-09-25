@@ -133,17 +133,18 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
     auto now = time::gettime(CLOCK_MONOTONIC);
     {
         auto state = client->state.synchronize();
-        auto protosgn = ProtoSignal::Ok;
+        if (!state->peer->encrypt_begin(now))
+            return std::nullopt;
         for (auto pkt : pb) {
-            auto result = state->peer->encrypt(now, remain, pkt);
+            auto result = state->peer->encrypt(remain, pkt);
             if (result) {
                 remain = remain.subspan(result.assume_value().outsize);
-                protosgn &= result.assume_value().signal;
             } else if (result.assume_error() == EncryptError::NoSession) {
                 auto buf = new ClientBuffer(remain.begin(), remain.end(), pb.segment_size, true);
                 state->buffer.push_back(*buf);
             }
         }
+        auto protosgn = state->peer->encrypt_end(now);
         if (!!(protosgn & ProtoSignal::NeedsHandshake)) {
             auto hs = state->peer->write_handshake1(now, client->pubkey, unrelbuf);
             if (hs)
@@ -151,7 +152,7 @@ std::optional<std::pair<PacketBatch, ClientEndpoint>> Worker::do_tun_encap(
             else
                 return std::nullopt;
         } else if (!!(protosgn & ProtoSignal::NeedsKeepalive)) {
-            auto ka = state->peer->encrypt(now, unrelbuf, {});
+            auto ka = state->peer->encrypt(unrelbuf, {});
             if (ka)
                 unreliov.push_back({unrelbuf.data(), ka.assume_value().outsize});
         }

@@ -481,7 +481,7 @@ outcome::result<std::span<uint8_t>> Peer::write_handshake2(
     return outcome::success();
 }
 
-DecryptResult Peer::decrypt(const timespec &now, std::span<uint8_t> out, std::span<const uint8_t> in) {
+outcome::result<std::pair<SessionState *, bool>, DecryptError> Peer::decrypt_begin(const timespec &now) {
     SessionState *session = std::get_if<SessionState>(&_pending);
     bool needs_upgrade = false;
     if (session && !session->expired(now))
@@ -490,7 +490,10 @@ DecryptResult Peer::decrypt(const timespec &now, std::span<uint8_t> out, std::sp
         session = &_session;
     else
         return DecryptError::NoSession;
+    return std::make_pair(session, needs_upgrade);
+}
 
+DecryptResult Peer::decrypt(SessionState *session, std::span<uint8_t> out, std::span<const uint8_t> in) {
     if (in.size() < sizeof(DataHeader))
         return DecryptError::Rejected;
     auto hdr = reinterpret_cast<const DataHeader *>(in.data());
@@ -500,7 +503,6 @@ DecryptResult Peer::decrypt(const timespec &now, std::span<uint8_t> out, std::sp
 
     ProtoSuccess result{
         .outsize = 0,
-        .signal = ProtoSignal::Ok,
     };
     std::array<uint8_t, crypto_aead_chacha20poly1305_IETF_NPUBBYTES> nonce = {0};
     store_little_u64(&nonce[4], hdr->counter);
@@ -517,19 +519,30 @@ DecryptResult Peer::decrypt(const timespec &now, std::span<uint8_t> out, std::sp
         return DecryptError::Rejected;
     if (!session->replay.try_advance(hdr->counter))
         return DecryptError::Rejected;
-    if (needs_upgrade)
-        _session = std::move(*session);
-    if (_session.last_send - now > KeepaliveTimeout)
-        result.signal |= ProtoSignal::NeedsKeepalive;
-    _session.last_recv = now;
-    if (_session.role == NOISE_ROLE_INITIATOR &&
-        _session.expired(now, RekeyAfterTime - KeepaliveTimeout - RekeyTimeout))
-        result.signal |= ProtoSignal::NeedsHandshake;
     return result;
 }
 
-EncryptResult Peer::encrypt(const timespec &now, std::span<uint8_t> out, std::span<const uint8_t> in) {
+ProtoSignal Peer::decrypt_end(const timespec &now, SessionState *session, bool needs_upgrade) {
+    auto signal = ProtoSignal::Ok;
+    if (needs_upgrade)
+        _session = std::move(*session);
+    if (_session.last_send - now > KeepaliveTimeout)
+        signal |= ProtoSignal::NeedsKeepalive;
+    _session.last_recv = now;
+    if (_session.role == NOISE_ROLE_INITIATOR &&
+        _session.expired(now, RekeyAfterTime - KeepaliveTimeout - RekeyTimeout))
+        signal |= ProtoSignal::NeedsHandshake;
+    return signal;
+}
+
+outcome::result<void, EncryptError> Peer::encrypt_begin(const timespec &now) {
     if (!_session.exists() || _session.expired(now))
+        return EncryptError::NoSession;
+    return outcome::success();
+}
+
+EncryptResult Peer::encrypt(std::span<uint8_t> out, std::span<const uint8_t> in) {
+    if (!_session.exists())
         return EncryptError::NoSession;
 
     auto padded_size = round_up(in.size(), 16);
@@ -554,15 +567,7 @@ EncryptResult Peer::encrypt(const timespec &now, std::span<uint8_t> out, std::sp
 
     ProtoSuccess result{
         .outsize = cryptout.size(),
-        .signal = ProtoSignal::Ok,
     };
-    if (_session.encrypt_nonce > RekeyAfterMessages)
-        result.signal |= ProtoSignal::NeedsHandshake;
-    if (_session.role == NOISE_ROLE_INITIATOR && _session.expired(now, RekeyAfterTime))
-        result.signal |= ProtoSignal::NeedsHandshake;
-    if (_session.last_recv - now > (KeepaliveTimeout + RekeyTimeout))
-        result.signal |= ProtoSignal::NeedsHandshake;
-    _session.last_send = now;
     crypto_aead_chacha20poly1305_ietf_encrypt(
         cryptout.data(),
         &result.outsize,
@@ -575,6 +580,18 @@ EncryptResult Peer::encrypt(const timespec &now, std::span<uint8_t> out, std::sp
         _session.skey.data());
     result.outsize += sizeof(DataHeader);
     return result;
+}
+
+ProtoSignal Peer::encrypt_end(const timespec &now) {
+    auto signal = ProtoSignal::Ok;
+    if (_session.encrypt_nonce > RekeyAfterMessages)
+        signal |= ProtoSignal::NeedsHandshake;
+    if (_session.role == NOISE_ROLE_INITIATOR && _session.expired(now, RekeyAfterTime))
+        signal |= ProtoSignal::NeedsHandshake;
+    if (_session.last_recv - now > (KeepaliveTimeout + RekeyTimeout))
+        signal |= ProtoSignal::NeedsHandshake;
+    _session.last_send = now;
+    return signal;
 }
 
 ProtoSignal Peer::tick(const timespec &now) {

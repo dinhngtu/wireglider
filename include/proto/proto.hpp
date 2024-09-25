@@ -208,7 +208,6 @@ static inline ProtoSignal &operator|=(ProtoSignal &a, ProtoSignal b) {
 
 struct ProtoSuccess {
     unsigned long long outsize;
-    ProtoSignal signal;
 };
 
 enum class EncryptError {
@@ -250,8 +249,14 @@ public:
         const Key256 &pubkey,
         std::span<uint8_t> out);
 
-    DecryptResult decrypt(const timespec &now, std::span<uint8_t> out, std::span<const uint8_t> in);
-    EncryptResult encrypt(const timespec &now, std::span<uint8_t> out, std::span<const uint8_t> in);
+    outcome::result<std::pair<SessionState *, bool>, DecryptError> decrypt_begin(const timespec &now);
+    DecryptResult decrypt(SessionState *session, std::span<uint8_t> out, std::span<const uint8_t> in);
+    ProtoSignal decrypt_end(const timespec &now, SessionState *session, bool needs_upgrade);
+
+    outcome::result<void, EncryptError> encrypt_begin(const timespec &now);
+    EncryptResult encrypt(std::span<uint8_t> out, std::span<const uint8_t> in);
+    ProtoSignal encrypt_end(const timespec &now);
+
     ProtoSignal tick(const timespec &now);
 
     uint64_t increment() {

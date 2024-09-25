@@ -84,15 +84,14 @@ static outcome::result<std::pair<std::span<uint8_t>, ProtoSignal>, EncryptError>
     ServerSendMultilist *tosend,
     std::span<uint8_t> remain,
     const timespec &now) {
-    auto protosgn = ProtoSignal::Ok;
+    BOOST_OUTCOME_TRY(state->peer->encrypt_begin(now));
     for (auto pkt : top) {
-        auto result = BOOST_OUTCOME_TRYX(state->peer->encrypt(now, remain, pkt));
+        auto result = BOOST_OUTCOME_TRYX(state->peer->encrypt(remain, pkt));
         auto outsize = result.outsize;
         tosend->push_back({remain.data(), outsize}, client->epkey);
         remain = remain.subspan(outsize);
-        protosgn &= result.signal;
     }
-    return {remain, protosgn};
+    return {remain, state->peer->encrypt_end(now)};
 }
 
 void TimerWorker::do_timer_step(const Client *client) {
@@ -119,7 +118,7 @@ void TimerWorker::do_timer_step(const Client *client) {
             tosend->push_back({remain.data(), sizeof(Handshake1)}, client->epkey);
         sent_handshake = true;
     } else if (!!(ticksgn & ProtoSignal::NeedsKeepalive)) {
-        auto ka = state->peer->encrypt(now, remain, {});
+        auto ka = state->peer->encrypt(remain, {});
         if (ka)
             tosend->push_back({remain.data(), ka.assume_value().outsize}, client->epkey);
     }
@@ -148,7 +147,7 @@ void TimerWorker::do_timer_step(const Client *client) {
                 tosend->push_back({remain.data(), sizeof(Handshake1)}, client->epkey);
             sent_handshake = true;
         } else if (!sent_keepalive & !!(protosgn & ProtoSignal::NeedsKeepalive)) {
-            auto ka = state->peer->encrypt(now, remain, {});
+            auto ka = state->peer->encrypt(remain, {});
             if (ka)
                 tosend->push_back({remain.data(), ka.assume_value().outsize}, client->epkey);
             sent_keepalive = true;

@@ -48,7 +48,10 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
     {
         std::span remain(memory);
         auto state = it->state.synchronize();
-        auto protosgn = ProtoSignal::Ok;
+        auto decrypt_begin_res = state->peer->decrypt_begin(now);
+        if (!decrypt_begin_res)
+            return std::nullopt;
+        auto [session, needs_upgrade] = decrypt_begin_res.assume_value();
         for (auto pkt : pb) {
             auto ptype = state->peer->decode_pkt(pkt);
             if (auto hs1 = std::get_if<const Handshake1 *>(&ptype)) {
@@ -71,16 +74,16 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
             } else if (std::holds_alternative<const CookiePacket *>(ptype)) {
                 // not implemented
             } else if (std::holds_alternative<std::span<const uint8_t>>(ptype)) {
-                auto result = state->peer->decrypt(now, remain, pkt);
+                auto result = state->peer->decrypt(session, remain, pkt);
                 if (result) {
                     auto outsize = result.assume_value().outsize;
                     auto outpkt = remain.subspan(0, outsize);
                     remain = remain.subspan(outsize);
                     batch.push_packet(outpkt, pb.ecn);
-                    protosgn &= result.assume_value().signal;
                 }
             }
         }
+        auto protosgn = state->peer->decrypt_end(now, session, needs_upgrade);
         if (!!(protosgn & ProtoSignal::NeedsHandshake)) {
             auto hs = state->peer->write_handshake1(now, it->pubkey, remain);
             if (hs)
@@ -88,7 +91,7 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
             else
                 return std::nullopt;
         } else if (!!(protosgn & ProtoSignal::NeedsKeepalive)) {
-            auto ka = state->peer->encrypt(now, remain, {});
+            auto ka = state->peer->encrypt(remain, {});
             if (ka)
                 batch.retpkt.push_back({remain.data(), ka.assume_value().outsize});
         }
