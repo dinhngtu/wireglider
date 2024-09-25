@@ -114,6 +114,10 @@ CPPFLAGS+=-isystem $(NOISEC_ROOT)/include
 LDFLAGS+=-L$(NOISEC_ROOT)/src/protocol
 LDLIBS+=-lnoiseprotocol
 
+# requires libb2-dev
+CPPFLAGS+=$(shell pkg-config --cflags libb2)
+LDLIBS+=$(shell pkg-config --libs libb2)
+
 # requires libtins-dev
 TINS_CPPFLAGS+=$(shell pkg-config --cflags libtins)
 TINS_LDLIBS+=$(shell pkg-config --libs libtins)

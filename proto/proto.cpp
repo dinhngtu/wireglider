@@ -1,9 +1,11 @@
+#include <cstring>
+#include <stdexcept>
+#include <string_view>
 #include <boost/algorithm/hex.hpp>
 #include <boost/endian/conversion.hpp>
-#include <cstring>
 #include <noise/protocol/constants.h>
 #include <noise/protocol/hashstate.h>
-#include <string_view>
+#include <blake2.h>
 #include <tdutil/util.hpp>
 
 #include "proto.hpp"
@@ -285,37 +287,24 @@ Key256 Peer::get_my_pubkey() {
 }
 
 void Peer::make_mac1key(const Key256 &pubkey, std::span<uint8_t, 32> out) {
-    auto err = noise_hashstate_hash_two(
-        _blake2s.get(),
-        reinterpret_cast<const uint8_t *>(WIREGUARD_LABEL_MAC1),
-        strlen(WIREGUARD_LABEL_MAC1),
-        &pubkey.key[0],
-        std::size(pubkey.key),
-        out.data(),
-        out.size());
-    if (err != NOISE_ERROR_NONE)
-        throw std::system_error(err, noise_category(), "make_mac1key");
+    std::array<uint8_t, 8 + 32> in;
+    std::copy_n(WIREGUARD_LABEL_MAC1, 8, in.begin());
+    std::copy(std::begin(pubkey.key), std::end(pubkey.key), &in[8]);
+    auto err = blake2s(out.data(), in.data(), nullptr, out.size(), in.size(), 0);
+    if (err)
+        throw std::runtime_error("make_mac1key");
 }
 
 outcome::result<void> Peer::calculate_mac1(
     const Key256 &pubkey,
     std::span<const uint8_t> payload,
     std::span<uint8_t, 16> out) {
-    std::array<uint8_t, 64> mac1key = {0};
-    std::array<uint8_t, 32> tmpout = {0};
+    std::array<uint8_t, 32> mac1key = {0};
     auto_cleanup zeroize([&] { sodium_memzero(mac1key.data(), mac1key.size()); });
-    make_mac1key(pubkey, std::span(mac1key).subspan<0, 32>());
-    auto err = noise_hashstate_hash_two(
-        _blake2s.get(),
-        mac1key.data(),
-        mac1key.size(),
-        payload.data(),
-        payload.size(),
-        tmpout.data(),
-        tmpout.size());
-    if (err != NOISE_ERROR_NONE)
-        return outcome::failure(std::error_code(err, noise_category()));
-    std::copy(&tmpout[0], &tmpout[out.size()], &out[0]);
+    make_mac1key(pubkey, mac1key);
+    auto err = blake2s(out.data(), payload.data(), mac1key.data(), out.size(), payload.size(), mac1key.size());
+    if (err)
+        throw std::runtime_error("calculate_mac1");
     return outcome::success();
 }
 
@@ -369,6 +358,7 @@ outcome::result<Handshake1 *> Peer::write_handshake1(
         std::span<const uint8_t>(reinterpret_cast<uint8_t *>(hs1), offsetof(Handshake1, mac1)),
         std::span(hs1->mac1)));
 
+    // TODO: calculate mac2 correctly
     if (now < _proto.cookie_until && !sodium_is_zero(_proto.cookie.data(), _proto.cookie.size())) {
         auto err = noise_hashstate_hash_two(
             _blake2s.get(),
@@ -485,6 +475,7 @@ outcome::result<std::span<uint8_t>> Peer::write_handshake2(
         std::span<const uint8_t>(reinterpret_cast<uint8_t *>(hs2), offsetof(Handshake2, mac1)),
         std::span(hs2->mac1)));
 
+    // TODO: calculate mac2 correctly
     if (now < _proto.cookie_until && !sodium_is_zero(_proto.cookie.data(), _proto.cookie.size())) {
         auto err = noise_hashstate_hash_two(
             _blake2s.get(),
