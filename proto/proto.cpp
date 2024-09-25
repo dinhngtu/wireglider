@@ -290,7 +290,6 @@ outcome::result<void> Peer::calculate_mac1(
     std::span<const uint8_t> payload,
     std::span<uint8_t, 16> out) {
     std::array<uint8_t, 32> mac1key = {0};
-    auto_cleanup zeroize([&] { sodium_memzero(mac1key.data(), mac1key.size()); });
     make_mac1key(pubkey, mac1key);
     auto err = blake2s(out.data(), payload.data(), mac1key.data(), out.size(), payload.size(), mac1key.size());
     if (err)
@@ -338,7 +337,6 @@ outcome::result<Handshake1 *> Peer::write_handshake1(
     sodium_memzero(out.data(), sizeof(Handshake1));
 
     auto hs1 = reinterpret_cast<Handshake1 *>(out.data());
-    auto_cleanup zeroize_result([=] { sodium_memzero(hs1, sizeof(Handshake1)); });
     hs1->message_type_and_zeroes = static_cast<uint32_t>(MessageType::First);
     hs1->sender_index = _local_index;
     auto hsb = noise_output(hs1->handshake);
@@ -360,7 +358,6 @@ outcome::result<Handshake1 *> Peer::write_handshake1(
             throw std::runtime_error("write_handshake1");
     }
 
-    zeroize_result.reset();
     _next_hs1_retry = now + (RekeyTimeout + randombytes_uniform(RekeyTimeoutJitterMaxMs) * OneMillisecond);
     return hs1;
 }
@@ -449,7 +446,6 @@ outcome::result<std::span<uint8_t>> Peer::write_handshake2(
     sodium_memzero(out.data(), sizeof(Handshake2));
 
     auto hs2 = reinterpret_cast<Handshake2 *>(out.data());
-    auto_cleanup zeroize_result([=] { sodium_memzero(hs2, sizeof(Handshake2)); });
     hs2->message_type_and_zeroes = static_cast<uint32_t>(MessageType::Second);
     hs2->sender_index = _local_index;
     hs2->receiver_index = half->remote_index;
@@ -480,6 +476,7 @@ outcome::result<std::span<uint8_t>> Peer::write_handshake2(
     auto err = noise_handshakestate_split_raw(_proto.handshake.get(), key1.data(), &len1, key2.data(), &len2);
     if (err != NOISE_ERROR_NONE)
         return outcome::failure(std::error_code(err, noise_category()));
+
     _pending = SessionState(half->role, half->remote_index, key1.data(), len1, key2.data(), len2, now);
     return outcome::success();
 }
