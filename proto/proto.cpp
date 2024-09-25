@@ -573,6 +573,7 @@ EncryptResult Peer::encrypt(const timespec &now, std::span<uint8_t> out, std::sp
         nullptr,
         nonce.data(),
         _session.skey.data());
+    result.outsize += sizeof(DataHeader);
     return result;
 }
 
