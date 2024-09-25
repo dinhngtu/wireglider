@@ -385,18 +385,18 @@ outcome::result<void> Peer::read_handshake2(const Handshake2 *hs2, const timespe
     if (!_proto.is_action(NOISE_ACTION_SPLIT))
         return outcome::failure(std::error_code(ENOENT, std::generic_category()));
 
-    std::array<uint8_t, 32> key1, key2;
+    std::array<uint8_t, 32> skey, rkey;
     auto_cleanup zeroize([&] {
-        sodium_memzero(key1.data(), key1.size());
-        sodium_memzero(key2.data(), key2.size());
+        sodium_memzero(skey.data(), skey.size());
+        sodium_memzero(rkey.data(), rkey.size());
     });
-    size_t len1 = key1.size(), len2 = key2.size();
-    auto err = noise_handshakestate_split_raw(_proto.handshake.get(), key1.data(), &len1, key2.data(), &len2);
+    size_t sklen = skey.size(), rklen = rkey.size();
+    auto err = noise_handshakestate_split_raw(_proto.handshake.get(), skey.data(), &sklen, rkey.data(), &rklen);
     if (err != NOISE_ERROR_NONE)
         return outcome::failure(std::error_code(err, noise_category()));
 
     // commit
-    _session = SessionState(NOISE_ROLE_INITIATOR, rid, key1.data(), len1, key2.data(), len2, now);
+    _session = SessionState(NOISE_ROLE_INITIATOR, rid, skey.data(), sklen, rkey.data(), rklen, now);
     return outcome::success();
 }
 
@@ -491,26 +491,29 @@ DecryptResult Peer::decrypt(const timespec &now, std::span<uint8_t> out, std::sp
     else
         return DecryptError::NoSession;
 
+    if (in.size() < sizeof(DataHeader))
+        return DecryptError::Rejected;
     auto hdr = reinterpret_cast<const DataHeader *>(in.data());
     if (hdr->counter > RejectAfterMessages)
         return DecryptError::Rejected;
+    auto cryptin = in.subspan(sizeof(DataHeader));
 
     ProtoSuccess result{
         .outsize = 0,
         .signal = ProtoSignal::Ok,
     };
     std::array<uint8_t, crypto_aead_chacha20poly1305_IETF_NPUBBYTES> nonce = {0};
-    store_little_u64(&nonce[0], hdr->counter);
+    store_little_u64(&nonce[4], hdr->counter);
     if (crypto_aead_chacha20poly1305_ietf_decrypt(
             out.data(),
             &result.outsize,
             nullptr,
-            in.data(),
-            in.size(),
+            cryptin.data(),
+            cryptin.size(),
             nullptr,
             0,
             &nonce[0],
-            session->key2.data()) < 0)
+            session->rkey.data()) < 0)
         return DecryptError::Rejected;
     if (!session->replay.try_advance(hdr->counter))
         return DecryptError::Rejected;
@@ -540,7 +543,7 @@ EncryptResult Peer::encrypt(const timespec &now, std::span<uint8_t> out, std::sp
     store_little_u32(out.data() + offsetof(DataHeader, receiver_index), _session.remote_index);
     store_little_u64(out.data() + offsetof(DataHeader, counter), counter);
     std::array<uint8_t, crypto_aead_chacha20poly1305_IETF_NPUBBYTES> nonce = {0};
-    store_little_u64(nonce.data(), counter);
+    store_little_u64(&nonce[4], counter);
 
     auto cryptout = out.subspan(sizeof(DataHeader));
     if (padded_size != in.size()) {
@@ -569,7 +572,7 @@ EncryptResult Peer::encrypt(const timespec &now, std::span<uint8_t> out, std::sp
         0,
         nullptr,
         nonce.data(),
-        _session.key1.data());
+        _session.skey.data());
     return result;
 }
 

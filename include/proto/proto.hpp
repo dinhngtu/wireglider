@@ -123,21 +123,21 @@ struct SessionState {
     SessionState(
         int _role,
         uint32_t rid,
-        const uint8_t *_key1,
-        size_t len1,
-        const uint8_t *_key2,
-        size_t len2,
+        const uint8_t *_skey,
+        size_t sklen,
+        const uint8_t *_rkey,
+        size_t rklen,
         const timespec &_birth)
         : role(_role), remote_index(rid), birth(_birth), last_send(_birth), last_recv(_birth),
           replay(RejectAfterMessages) {
-        std::copy(_key1, _key1 + len1, key1.begin());
-        std::copy(_key2, _key2 + len2, key2.begin());
+        std::copy(_skey, _skey + sklen, skey.begin());
+        std::copy(_rkey, _rkey + rklen, rkey.begin());
     }
     DISPOSABLE(SessionState);
 
     int role = 0;
     uint32_t remote_index = 0;
-    std::array<uint8_t, 32> key1 = {0}, key2 = {0};
+    std::array<uint8_t, 32> skey = {0}, rkey = {0};
     timespec birth = time::timespec_min();
     timespec last_send = time::timespec_min(), last_recv = time::timespec_min();
     uint64_t encrypt_nonce = 0;
@@ -155,14 +155,14 @@ struct SessionState {
         dispose();
     }
 
-    DEFAULT_SWAP(SessionState, role, remote_index, key1, key2, birth, encrypt_nonce, replay);
+    DEFAULT_SWAP(SessionState, role, remote_index, skey, rkey, birth, encrypt_nonce, replay);
 
 private:
     void dispose() noexcept {
         role = 0;
         remote_index = 0;
-        sodium_memzero(key1.data(), key1.size());
-        sodium_memzero(key2.data(), key2.size());
+        sodium_memzero(skey.data(), skey.size());
+        sodium_memzero(rkey.data(), rkey.size());
         birth = time::timespec_min();
         encrypt_nonce = 0;
         replay.reset();
