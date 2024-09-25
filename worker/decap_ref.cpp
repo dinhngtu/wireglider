@@ -48,10 +48,8 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
     {
         std::span remain(memory);
         auto state = it->state.synchronize();
-        auto decrypt_begin_res = state->peer->decrypt_begin(now);
-        if (!decrypt_begin_res)
-            return std::nullopt;
-        auto [session, needs_upgrade] = decrypt_begin_res.assume_value();
+        SessionState *session = nullptr;
+        bool needs_upgrade = false;
         for (auto pkt : pb) {
             auto ptype = state->peer->decode_pkt(pkt);
             if (auto hs1 = std::get_if<const Handshake1 *>(&ptype)) {
@@ -74,6 +72,12 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
             } else if (std::holds_alternative<const CookiePacket *>(ptype)) {
                 // not implemented
             } else if (std::holds_alternative<std::span<const uint8_t>>(ptype)) {
+                if (!session) {
+                    auto beginres = state->peer->decrypt_begin(now);
+                    if (!beginres)
+                        return std::nullopt;
+                    std::tie(session, needs_upgrade) = beginres.assume_value();
+                }
                 auto result = state->peer->decrypt(session, remain, pkt);
                 if (result) {
                     auto outsize = result.assume_value().outsize;
@@ -83,17 +87,19 @@ std::optional<DecapRefBatch> Worker::do_server_decap_ref(
                 }
             }
         }
-        auto protosgn = state->peer->decrypt_end(now, session, needs_upgrade);
-        if (!!(protosgn & ProtoSignal::NeedsHandshake)) {
-            auto hs = state->peer->write_handshake1(now, it->pubkey, remain);
-            if (hs)
-                batch.retpkt.push_back({remain.data(), sizeof(Handshake1)});
-            else
-                return std::nullopt;
-        } else if (!!(protosgn & ProtoSignal::NeedsKeepalive)) {
-            auto ka = state->peer->encrypt(remain, {});
-            if (ka)
-                batch.retpkt.push_back({remain.data(), ka.assume_value().outsize});
+        if (session) {
+            auto protosgn = state->peer->decrypt_end(now, session, needs_upgrade);
+            if (!!(protosgn & ProtoSignal::NeedsHandshake)) {
+                auto hs = state->peer->write_handshake1(now, it->pubkey, remain);
+                if (hs)
+                    batch.retpkt.push_back({remain.data(), sizeof(Handshake1)});
+                else
+                    return std::nullopt;
+            } else if (!!(protosgn & ProtoSignal::NeedsKeepalive)) {
+                auto ka = state->peer->encrypt(remain, {});
+                if (ka)
+                    batch.retpkt.push_back({remain.data(), ka.assume_value().outsize});
+            }
         }
     }
 
