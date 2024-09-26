@@ -348,7 +348,7 @@ outcome::result<Handshake1 *> Peer::write_handshake1(
 
     if (now < _proto.cookie_until && !sodium_is_zero(_proto.cookie.data(), _proto.cookie.size())) {
         auto err = blake2s(
-            std::begin(hs1->mac2),
+            std::data(hs1->mac2),
             reinterpret_cast<uint8_t *>(hs1),
             _proto.cookie.data(),
             std::size(hs1->mac2),
@@ -461,7 +461,7 @@ outcome::result<std::span<uint8_t>> Peer::write_handshake2(
 
     if (now < _proto.cookie_until && !sodium_is_zero(_proto.cookie.data(), _proto.cookie.size())) {
         auto err = blake2s(
-            std::begin(hs2->mac2),
+            std::data(hs2->mac2),
             reinterpret_cast<uint8_t *>(hs2),
             _proto.cookie.data(),
             std::size(hs2->mac2),
