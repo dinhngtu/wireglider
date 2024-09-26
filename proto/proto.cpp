@@ -519,7 +519,7 @@ DecryptResult Peer::decrypt(SessionState *session, std::span<uint8_t> out, std::
             session->rkey.data()) < 0)
         return DecryptError::Rejected;
         */
-    memcpy(out.data(), cryptin.data(), cryptin.size());
+    memmove(out.data(), cryptin.data(), cryptin.size());
     result.outsize = cryptin.size();
     if (!session->replay.try_advance(hdr->counter))
         return DecryptError::Rejected;
@@ -584,7 +584,7 @@ EncryptResult Peer::encrypt(std::span<uint8_t> out, std::span<const uint8_t> in)
         nonce.data(),
         _session.skey.data());
         */
-    memcpy(cryptout.data(), in.data(), in.size());
+    memmove(cryptout.data(), in.data(), in.size());
     result.outsize = padded_size;
     result.outsize += sizeof(DataHeader);
     return result;
