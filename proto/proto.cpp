@@ -550,7 +550,7 @@ EncryptResult Peer::encrypt(std::span<uint8_t> out, std::span<const uint8_t> in)
         return EncryptError::NoSession;
 
     auto padded_size = round_up(in.size(), 16);
-    if (out.size() < sizeof(DataHeader) + padded_size + crypto_aead_chacha20poly1305_IETF_ABYTES)
+    if (out.size() < sizeof(DataHeader) + padded_size + 0)
         return EncryptError::BufferError;
 
     auto counter = _session.encrypt_nonce++;

@@ -265,12 +265,12 @@ public:
 
     static constexpr size_t expected_encrypt_size(size_t ptext_size) {
         auto padded_size = tdutil::round_up(ptext_size, 16);
-        return sizeof(DataHeader) + padded_size + crypto_aead_chacha20poly1305_IETF_ABYTES;
+        return sizeof(DataHeader) + padded_size + 0;
     }
 
     static constexpr size_t expected_encrypt_overhead(size_t ptext_size) {
         auto padded_size = tdutil::round_up(ptext_size, 16);
-        return sizeof(DataHeader) + padded_size - ptext_size + crypto_aead_chacha20poly1305_IETF_ABYTES;
+        return sizeof(DataHeader) + padded_size - ptext_size + 0;
     }
 
 private:
